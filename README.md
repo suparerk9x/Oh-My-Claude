@@ -9,19 +9,20 @@
 
 A dashboard that monitors your **Claude Code** (CLI) usage in real-time:
 
-| Feature | Description |
-|---------|-------------|
-| **Token Usage** | Track Session (5h) & Weekly usage with model breakdown |
-| **Agent Monitoring** | See main agents and subagents with live status |
-| **Activity Feed** | Watch tool calls, prompts, and errors as they happen |
-| **Cost Estimation** | Monthly cost breakdown by model (Opus/Sonnet/Haiku) |
-| **Chrome Extension** | Sync usage % from Claude.ai (optional) |
+| Feature              | Description                                            |
+| -------------------- | ------------------------------------------------------ |
+| **Token Usage**      | Track Session (5h) & Weekly usage with model breakdown |
+| **Agent Monitoring** | See main agents and subagents with live status         |
+| **Activity Feed**    | Watch tool calls, prompts, and errors as they happen   |
+| **Cost Estimation**  | Monthly cost breakdown by model (Opus/Sonnet/Haiku)    |
+| **Chrome Extension** | Sync usage % from Claude.ai (optional)                 |
 
 
 <img width="938" height="864" alt="Oh-My-Claude--02-17-2026_08_25_PM" src="https://github.com/user-attachments/assets/f4ec79d7-4a30-477d-bdb1-82b1d9df3dc1" />
 
 
 **Layout Structure:**
+
 - **Header**: Connection status, clock, theme toggle, view mode, guide button, usage status
 - **Main (3 columns)**: Token Usage (200px) | Agents Panel (280px) | Activity Feed + Sessions
 - **Footer Row 1**: Event Detail Panel (expandable - shows selected event details)
@@ -31,11 +32,11 @@ A dashboard that monitors your **Claude Code** (CLI) usage in real-time:
 
 ## Prerequisites
 
-| Requirement | Version | Check Command |
-|-------------|---------|---------------|
-| **Node.js** | 18+ | `node --version` |
-| **npm** | 9+ | `npm --version` |
-| **Claude Code** | Latest | `claude --version` |
+| Requirement     | Version | Check Command      |
+| --------------- | ------- | ------------------ |
+| **Node.js**     | 18+     | `node --version`   |
+| **npm**         | 9+      | `npm --version`    |
+| **Claude Code** | Latest  | `claude --version` |
 
 ---
 
@@ -57,6 +58,7 @@ npm run install:all
 ```
 
 Or manually:
+
 ```bash
 npm install
 cd backend && npm install
@@ -69,71 +71,96 @@ cd ../frontend && npm install
 
 Open your Claude settings file:
 
-| OS | Path |
-|----|------|
+| OS      | Path                                        |
+| ------- | ------------------------------------------- |
 | Windows | `C:\Users\<username>\.claude\settings.json` |
-| macOS | `~/.claude/settings.json` |
-| Linux | `~/.claude/settings.json` |
+| macOS   | `~/.claude/settings.json`                   |
+| Linux   | `~/.claude/settings.json`                   |
 
 Add the `hooks` section (replace `<PATH>` with your oh-my-claude folder):
 
 ```json
 {
   "hooks": {
-    "PreToolUse": [{
-      "matcher": "",
-      "hooks": [{
-        "type": "command",
-        "command": "node \"<PATH>/oh-my-claude/hooks/send_event.js\" --event-type PreToolUse"
-      }]
-    }],
-    "PostToolUse": [{
-      "matcher": "",
-      "hooks": [{
-        "type": "command",
-        "command": "node \"<PATH>/oh-my-claude/hooks/send_event.js\" --event-type PostToolUse"
-      }]
-    }],
-    "SubagentStart": [{
-      "hooks": [{
-        "type": "command",
-        "command": "node \"<PATH>/oh-my-claude/hooks/send_event.js\" --event-type SubagentStart"
-      }]
-    }],
-    "SubagentStop": [{
-      "hooks": [{
-        "type": "command",
-        "command": "node \"<PATH>/oh-my-claude/hooks/send_event.js\" --event-type SubagentStop"
-      }]
-    }],
-    "UserPromptSubmit": [{
-      "hooks": [{
-        "type": "command",
-        "command": "node \"<PATH>/oh-my-claude/hooks/send_event.js\" --event-type UserPromptSubmit"
-      }]
-    }],
-    "Stop": [{
-      "hooks": [{
-        "type": "command",
-        "command": "node \"<PATH>/oh-my-claude/hooks/send_event.js\" --event-type Stop"
-      }]
-    }]
+    "PreToolUse": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"<PATH>/oh-my-claude/hooks/send_event.js\" --event-type PreToolUse"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"<PATH>/oh-my-claude/hooks/send_event.js\" --event-type PostToolUse"
+          }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"<PATH>/oh-my-claude/hooks/send_event.js\" --event-type SubagentStart"
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"<PATH>/oh-my-claude/hooks/send_event.js\" --event-type SubagentStop"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"<PATH>/oh-my-claude/hooks/send_event.js\" --event-type UserPromptSubmit"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"<PATH>/oh-my-claude/hooks/send_event.js\" --event-type Stop"
+          }
+        ]
+      }
+    ]
   }
 }
 ```
 
 **Path Examples:**
 
-| OS | Example |
-|----|---------|
+| OS      | Example                                                                           |
+| ------- | --------------------------------------------------------------------------------- |
 | Windows | `"node \"D:/Projects/oh-my-claude/hooks/send_event.js\" --event-type PreToolUse"` |
-| macOS | `"node \"/Users/john/oh-my-claude/hooks/send_event.js\" --event-type PreToolUse"` |
+| macOS   | `"node \"/Users/john/oh-my-claude/hooks/send_event.js\" --event-type PreToolUse"` |
 
 > Use forward slashes `/` even on Windows
 
 ### Step 4: Start Dashboard
 
 **Windows (easiest):**
+
 ```bash
 # Double-click start.bat
 # Or from terminal:
@@ -141,6 +168,7 @@ start.bat
 ```
 
 **Any OS:**
+
 ```bash
 npm run dev
 ```
@@ -148,6 +176,7 @@ npm run dev
 This starts both backend (port 4000) and frontend (port 3001).
 
 **Manual start:**
+
 ```bash
 # Terminal 1: Backend
 cd backend && node server.js
@@ -161,6 +190,7 @@ cd frontend && npm run dev
 Open browser: **http://localhost:3001**
 
 You should see:
+
 - Header shows **LIVE** (green dot)
 - Backend status shows **OK**
 
@@ -184,6 +214,7 @@ curl http://localhost:4000/health
 ### Test 3: Agent Tracking
 
 In the Agents panel:
+
 - Your session should appear as "Main" agent
 - Status should be green (active)
 
@@ -208,6 +239,40 @@ Syncs your Claude.ai usage % to the dashboard.
 
 ---
 
+## System Architecture
+
+```mermaid
+flowchart TD
+    CC["💻 Claude Code\nTerminal / IDE"]
+    CE["🌐 Chrome Extension\nFetches from claude.ai"]
+
+    CC -->|"Hooks send events"| BS
+    CE -->|"Sync usage %"| BS
+
+    BS["🖥️ **Backend Server**\nExpress + WebSocket · port 4000"]
+
+    BS --- Data["Events · Agents · Sessions · Usage %"]
+
+    Data -->|"WebSocket live updates"| DB
+
+    DB["📊 **Dashboard**\nReact UI · port 3001"]
+
+    style CC fill:#1a1a2e,stroke:#7c3aed,color:#e2e8f0
+    style CE fill:#1a1a2e,stroke:#0ea5e9,color:#e2e8f0
+    style BS fill:#065f46,stroke:#10b981,color:#e2e8f0
+    style Data fill:none,stroke:none,color:#94a3b8
+    style DB fill:#1e293b,stroke:#3b82f6,color:#e2e8f0
+```
+
+**Data Flow:**
+
+1. **Claude Code** runs → Hooks fire events (PreToolUse, PostToolUse, SubagentStart, ...) to Backend
+2. **Chrome Extension** fetches usage % from claude.ai → sends to Backend every 1 minute
+3. **Backend** aggregates all data → broadcasts via WebSocket in real-time
+4. **Dashboard** receives data via WebSocket → renders instantly
+
+---
+
 ## Project Structure
 
 ```
@@ -220,7 +285,6 @@ oh-my-claude/
 ├── backend/
 │   ├── server.js          # Express + WebSocket server (port 4000)
 │   ├── statsReader.js     # Read transcript files for token stats
-│   ├── fileWatcher.js     # Watch for file changes
 │   ├── events.json        # Event history (auto-created)
 │   ├── agents.json        # Agent state (auto-created)
 │   └── __tests__/         # Jest tests
@@ -257,13 +321,13 @@ oh-my-claude/
 
 ## NPM Scripts
 
-| Script | Description |
-|--------|-------------|
-| `npm run dev` | Start both backend + frontend |
-| `npm run install:all` | Install all dependencies |
-| `npm run build` | Build frontend for production |
-| `npm run dev:backend` | Start backend only |
-| `npm run dev:frontend` | Start frontend only |
+| Script                 | Description                   |
+| ---------------------- | ----------------------------- |
+| `npm run dev`          | Start both backend + frontend |
+| `npm run install:all`  | Install all dependencies      |
+| `npm run build`        | Build frontend for production |
+| `npm run dev:backend`  | Start backend only            |
+| `npm run dev:frontend` | Start frontend only           |
 
 ---
 
@@ -271,21 +335,22 @@ oh-my-claude/
 
 ### Ports
 
-| Service | Port | Configure In |
-|---------|------|--------------|
-| Backend | 4000 | `backend/server.js` |
+| Service  | Port | Configure In              |
+| -------- | ---- | ------------------------- |
+| Backend  | 4000 | `backend/server.js`       |
 | Frontend | 3001 | `frontend/vite.config.js` |
 
 ### Agent Timeout
 
 Agents auto-timeout after inactivity:
 
-| Setting | Default | Description |
-|---------|---------|-------------|
-| Timeout | 30 min | Mark as inactive (gray) |
-| Cleanup | 60 min | Remove from list |
+| Setting | Default | Description             |
+| ------- | ------- | ----------------------- |
+| Timeout | 30 min  | Mark as inactive (gray) |
+| Cleanup | 60 min  | Remove from list        |
 
 Edit in `backend/server.js`:
+
 ```javascript
 const AGENT_TIMEOUT_MS = 30 * 60 * 1000;
 const AGENT_CLEANUP_MS = 60 * 60 * 1000;
@@ -297,75 +362,75 @@ const AGENT_CLEANUP_MS = 60 * 60 * 1000;
 
 ### Header Bar
 
-| Element | Description |
-|---------|-------------|
-| **LIVE/OFF** | WebSocket connection status (green = connected) |
-| **Sync** | Shows when Chrome extension is syncing data |
-| **Clock** | Live clock (HH:MM:SS) |
-| **Dark/Light** | Theme toggle |
-| **Full/Compact** | Agent panel view mode toggle |
-| **Guide** | Opens help modal (EN/TH) |
-| **Status** | Usage status (Normal/High/Near limit) |
+| Element          | Description                                     |
+| ---------------- | ----------------------------------------------- |
+| **LIVE/OFF**     | WebSocket connection status (green = connected) |
+| **Sync**         | Shows when Chrome extension is syncing data     |
+| **Clock**        | Live clock (HH:MM:SS)                           |
+| **Dark/Light**   | Theme toggle                                    |
+| **Full/Compact** | Agent panel view mode toggle                    |
+| **Guide**        | Opens help modal (EN/TH)                        |
+| **Status**       | Usage status (Normal/High/Near limit)           |
 
 ### Token Usage Panel (Left)
 
-| Section | Description |
-|---------|-------------|
+| Section           | Description                                    |
+| ----------------- | ---------------------------------------------- |
 | **Session Gauge** | 5-hour rolling usage % (from Chrome extension) |
-| **Weekly Gauge** | 7-day rolling usage % (from Chrome extension) |
-| **Last 12 Hours** | Hourly token breakdown chart |
-| **By Model** | Token count per model (Opus/Sonnet/Haiku) |
+| **Weekly Gauge**  | 7-day rolling usage % (from Chrome extension)  |
+| **Last 12 Hours** | Hourly token breakdown chart                   |
+| **By Model**      | Token count per model (Opus/Sonnet/Haiku)      |
 
 ### Agents Panel (Center)
 
-| Element | Description |
-|---------|-------------|
-| **Main agents** | Your Claude Code sessions |
-| **Subagents** | Task/Explore agents spawned by main |
-| **Status dot** | Green=active, Gray=timeout, Red=stopped |
-| **Duration** | How long agent has been running |
-| **Tokens** | Token count for that agent |
+| Element         | Description                             |
+| --------------- | --------------------------------------- |
+| **Main agents** | Your Claude Code sessions               |
+| **Subagents**   | Task/Explore agents spawned by main     |
+| **Status dot**  | Green=active, Gray=timeout, Red=stopped |
+| **Duration**    | How long agent has been running         |
+| **Tokens**      | Token count for that agent              |
 
 ### Activity Feed (Right)
 
-| Element | Description |
-|---------|-------------|
-| **Event list** | Scrollable list of recent events (last 100) |
-| **Quick filters** | 🔧 Tools, ✓ Success, ✗ Errors, ▸ Prompts |
-| **Session selector** | Filter events by session |
+| Element              | Description                                 |
+| -------------------- | ------------------------------------------- |
+| **Event list**       | Scrollable list of recent events (last 100) |
+| **Quick filters**    | 🔧 Tools, ✓ Success, ✗ Errors, ▸ Prompts    |
+| **Session selector** | Filter events by session                    |
 
 ### Footer - Event Detail Panel
 
-| Element | Description |
-|---------|-------------|
-| **Event type** | Color-coded (cyan=tool, green=success, red=error, amber=prompt) |
-| **Tool name** | Which tool was called |
-| **Session ID** | Which session this event belongs to |
-| **Input/Output** | Tool parameters and response |
-| **Collapse button** | Hide/show detail panel |
+| Element             | Description                                                     |
+| ------------------- | --------------------------------------------------------------- |
+| **Event type**      | Color-coded (cyan=tool, green=success, red=error, amber=prompt) |
+| **Tool name**       | Which tool was called                                           |
+| **Session ID**      | Which session this event belongs to                             |
+| **Input/Output**    | Tool parameters and response                                    |
+| **Collapse button** | Hide/show detail panel                                          |
 
 ### Footer - Status Bar
 
-| Left Side | Right Side |
-|-----------|------------|
-| Event filters: 🔧 ✅ ❌ 💬 | Monthly cost by model: ◆ ● ▪ |
-| Click to filter Activity Feed | ◆ Opus, ● Sonnet, ▪ Haiku |
+| Left Side                     | Right Side                   |
+| ----------------------------- | ---------------------------- |
+| Event filters: 🔧 ✅ ❌ 💬    | Monthly cost by model: ◆ ● ▪ |
+| Click to filter Activity Feed | ◆ Opus, ● Sonnet, ▪ Haiku    |
 
 ### Model Icons
 
-| Model | Icon | Color |
-|-------|------|-------|
-| Opus 4.5 | ◆ | Violet |
-| Sonnet 4.5 | ● | Blue |
-| Haiku 3.5 | ▪ | Green |
+| Model      | Icon | Color  |
+| ---------- | ---- | ------ |
+| Opus 4.5   | ◆    | Violet |
+| Sonnet 4.5 | ●    | Blue   |
+| Haiku 3.5  | ▪    | Green  |
 
 ### Agent Status Colors
 
-| Status | Color | Meaning |
-|--------|-------|---------|
-| Active | Green | Receiving events |
-| Timeout | Gray | 30+ min no activity |
-| Stopped | Red | Subagent finished |
+| Status  | Color | Meaning             |
+| ------- | ----- | ------------------- |
+| Active  | Green | Receiving events    |
+| Timeout | Gray  | 30+ min no activity |
+| Stopped | Red   | Subagent finished   |
 
 ---
 
@@ -396,36 +461,36 @@ const AGENT_CLEANUP_MS = 60 * 60 * 1000;
 
 ### REST Endpoints
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/health` | Health check |
-| GET | `/stats` | Token stats + agents |
-| GET | `/events` | Recent events (last 100) |
-| GET | `/sessions` | Session list |
-| POST | `/events` | Receive hook events |
-| POST | `/usage` | Receive Chrome extension data |
+| Method | Endpoint    | Description                   |
+| ------ | ----------- | ----------------------------- |
+| GET    | `/health`   | Health check                  |
+| GET    | `/stats`    | Token stats + agents          |
+| GET    | `/events`   | Recent events (last 100)      |
+| GET    | `/sessions` | Session list                  |
+| POST   | `/events`   | Receive hook events           |
+| POST   | `/usage`    | Receive Chrome extension data |
 
 ### WebSocket
 
 Connect: `ws://localhost:4000`
 
-| Message | Direction | Description |
-|---------|-----------|-------------|
-| `init` | Server → Client | Initial state |
-| `event` | Server → Client | New event |
-| `stats` | Server → Client | Updated stats |
+| Message  | Direction       | Description    |
+| -------- | --------------- | -------------- |
+| `init`   | Server → Client | Initial state  |
+| `event`  | Server → Client | New event      |
+| `stats`  | Server → Client | Updated stats  |
 | `agents` | Server → Client | Updated agents |
-| `usage` | Server → Client | Usage data |
+| `usage`  | Server → Client | Usage data     |
 
 ---
 
 ## Tech Stack
 
-| Layer | Technology |
-|-------|------------|
-| Backend | Node.js, Express, WebSocket (ws) |
-| Frontend | React 18, Vite, Tailwind CSS |
-| Extension | Chrome Manifest V3 |
+| Layer     | Technology                       |
+| --------- | -------------------------------- |
+| Backend   | Node.js, Express, WebSocket (ws) |
+| Frontend  | React 18, Vite, Tailwind CSS     |
+| Extension | Chrome Manifest V3               |
 
 ---
 
@@ -442,7 +507,3 @@ MIT
 3. Commit changes: `git commit -m 'Add amazing feature'`
 4. Push: `git push origin feature/amazing`
 5. Open Pull Request
-
----
-
-*Built with Claude Code*
