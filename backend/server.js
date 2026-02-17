@@ -1,0 +1,1178 @@
+import express from 'express';
+import cors from 'cors';
+import rateLimit from 'express-rate-limit';
+import { WebSocketServer } from 'ws';
+import { createServer } from 'http';
+import path from 'path';
+import fs from 'fs';
+import fsPromises from 'fs/promises';
+import { fileURLToPath } from 'url';
+import { createInterface } from 'readline';
+import { readStatsCache } from './statsReader.js';
+import { execSync } from 'child_process';
+import { z } from 'zod';
+
+// Claude projects directory
+const CLAUDE_PROJECTS_DIR = path.join(process.env.USERPROFILE || process.env.HOME, '.claude', 'projects');
+
+// Security configuration
+const ALLOWED_ORIGINS = process.env.ALLOWED_ORIGINS?.split(',') || [
+  'http://localhost:3001',
+  'http://localhost:5173',
+  'http://127.0.0.1:3001',
+  'http://127.0.0.1:5173'
+];
+
+// Rate limiting configuration
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 1000, // limit each IP to 1000 requests per windowMs (high for dashboard polling)
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests, please try again later.' }
+});
+
+// Stricter rate limit for event posting (prevents abuse)
+const eventLimiter = rateLimit({
+  windowMs: 1 * 60 * 1000, // 1 minute
+  max: 300, // 300 events per minute max
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Event rate limit exceeded.' }
+});
+
+// Sanitize file paths to prevent path traversal attacks
+function sanitizePath(filePath) {
+  if (!filePath || typeof filePath !== 'string') return null;
+
+  // Normalize path and resolve to absolute
+  const normalized = path.normalize(filePath);
+
+  // Check for path traversal attempts
+  if (normalized.includes('..')) {
+    console.warn(`[SECURITY] Blocked path traversal attempt: ${filePath}`);
+    return null;
+  }
+
+  // Only allow paths within Claude directory or common safe locations
+  const claudeDir = path.join(process.env.USERPROFILE || process.env.HOME || '', '.claude');
+  const resolved = path.resolve(normalized);
+
+  // Allow Claude directory and subdirectories
+  if (resolved.startsWith(claudeDir)) {
+    return resolved;
+  }
+
+  // Block other paths
+  console.warn(`[SECURITY] Blocked access to path outside allowed directories: ${filePath}`);
+  return null;
+}
+
+// Event validation schema
+const eventSchema = z.object({
+  id: z.string().optional(),
+  type: z.string().min(1),
+  timestamp: z.string().optional(),
+  sessionId: z.string().optional().nullable(),
+  toolName: z.string().optional().nullable(),
+  toolInput: z.any().optional().nullable(),
+  toolOutput: z.any().optional().nullable(),
+  agentId: z.string().optional().nullable(),
+  agentType: z.string().optional().nullable(),
+  parentAgentId: z.string().optional().nullable(),
+  model: z.string().optional().nullable(),
+  cwd: z.string().optional().nullable(),
+  stopReason: z.string().optional().nullable(),
+  prompt: z.string().optional().nullable(),
+  inputTokens: z.number().optional().nullable(),
+  outputTokens: z.number().optional().nullable(),
+  error: z.any().optional().nullable(),
+  raw: z.any().optional(),
+  source: z.string().optional(),
+});
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const PORT = 4000;
+
+// Initialize Express
+const app = express();
+
+// Security middleware
+app.use(cors({
+  origin: (origin, callback) => {
+    // Allow requests with no origin (like mobile apps or curl)
+    if (!origin) return callback(null, true);
+    if (ALLOWED_ORIGINS.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(null, true); // Allow all for now, but log unknown origins
+      console.log(`[CORS] Request from unknown origin: ${origin}`);
+    }
+  },
+  credentials: true
+}));
+app.use(limiter); // Apply rate limiting
+app.use(express.json({ limit: '10mb' }));
+
+// Initialize HTTP server
+const server = createServer(app);
+
+// Initialize WebSocket
+const wss = new WebSocketServer({ server });
+const clients = new Set();
+
+wss.on('connection', (ws) => {
+  clients.add(ws);
+  console.log(`[WS] Client connected (${clients.size} total)`);
+
+  // Send recent events + stats on connect (async)
+  (async () => {
+    const initData = {
+      type: 'init',
+      events: getRecentEvents(100),
+      stats: await getStats(),
+      agents: await getAgents(),
+      sessions: getSessions(),
+      usage: claudeUsage
+    };
+    ws.send(JSON.stringify(initData));
+  })();
+
+  ws.on('close', () => {
+    clients.delete(ws);
+    console.log(`[WS] Client disconnected (${clients.size} total)`);
+  });
+});
+
+// Broadcast to all clients
+function broadcast(data) {
+  const message = JSON.stringify(data);
+  clients.forEach((client) => {
+    if (client.readyState === 1) {
+      client.send(message);
+    }
+  });
+}
+
+// Simple in-memory event store (with file persistence)
+const DB_FILE = path.join(__dirname, 'events.json');
+const AGENTS_FILE = path.join(__dirname, 'agents.json');
+let events = [];
+let agents = new Map();
+let sessions = new Map();
+
+// Agent timeout settings (5-level status hierarchy)
+const AGENT_IDLE_MS = 5 * 60 * 1000;      // 5 minutes - mark as idle
+const AGENT_STALE_MS = 10 * 60 * 1000;    // 10 minutes - mark as stale
+const AGENT_TIMEOUT_MS = 30 * 60 * 1000;  // 30 minutes - mark as timeout
+const AGENT_CLEANUP_MS = 60 * 60 * 1000;  // 60 minutes - remove from list
+
+// Claude.ai usage data (from extension)
+let claudeUsage = {
+  five_hour: null,
+  seven_day: null,
+  seven_day_sonnet: null,
+  seven_day_opus: null,
+  lastSync: null,
+  source: null
+};
+
+// Try to find the actual transcript file (Claude Code sometimes reports wrong path)
+function findAgentTranscript(reportedPath, agentId, startTime) {
+  if (!reportedPath) return null;
+
+  // First try the reported path
+  if (fs.existsSync(reportedPath)) return reportedPath;
+
+  // Extract the subagents directory from the reported path
+  const subagentsDir = path.dirname(reportedPath);
+  if (!fs.existsSync(subagentsDir)) return null;
+
+  try {
+    const files = fs.readdirSync(subagentsDir);
+
+    // Look for files that might match this agent
+    // Patterns: agent-{id}.jsonl, agent-acompact-{id}.jsonl, etc.
+    const candidates = files
+      .filter(f => f.endsWith('.jsonl') && f.startsWith('agent-'))
+      .map(f => ({
+        name: f,
+        path: path.join(subagentsDir, f),
+        stat: fs.statSync(path.join(subagentsDir, f))
+      }))
+      // Sort by modification time descending (most recent first)
+      .sort((a, b) => b.stat.mtimeMs - a.stat.mtimeMs);
+
+    // If we have a start time, find files modified after that time
+    if (startTime && candidates.length > 0) {
+      const startMs = new Date(startTime).getTime();
+      const matching = candidates.filter(c => c.stat.mtimeMs >= startMs);
+      if (matching.length > 0) {
+        console.log(`[AGENT] Found transcript by time: ${matching[0].name} (original: ${path.basename(reportedPath)})`);
+        return matching[0].path;
+      }
+    }
+
+    // Fallback: return most recently modified file
+    if (candidates.length > 0) {
+      console.log(`[AGENT] Using most recent transcript: ${candidates[0].name} (original: ${path.basename(reportedPath)})`);
+      return candidates[0].path;
+    }
+  } catch (err) {
+    console.error(`Error finding agent transcript: ${err.message}`);
+  }
+
+  return null;
+}
+
+// Parse agent transcript file to extract model, tokens, task
+function parseAgentTranscript(transcriptPath) {
+  try {
+    if (!fs.existsSync(transcriptPath)) return null;
+
+    const content = fs.readFileSync(transcriptPath, 'utf-8');
+    const lines = content.trim().split('\n').filter(Boolean);
+
+    let model = null;
+    let task = null;
+    let totalInputTokens = 0;
+    let totalOutputTokens = 0;
+    let startTime = null;
+    let endTime = null;
+    let toolsUsed = new Set();
+
+    for (const line of lines) {
+      try {
+        const entry = JSON.parse(line);
+
+        // Get timestamp for duration
+        if (entry.timestamp) {
+          const ts = new Date(entry.timestamp).getTime();
+          if (!startTime || ts < startTime) startTime = ts;
+          if (!endTime || ts > endTime) endTime = ts;
+        }
+
+        // Get first user message as task description
+        if (!task && entry.type === 'user' && entry.message?.content) {
+          const content = entry.message.content;
+          if (typeof content === 'string') {
+            task = content.slice(0, 100);
+          } else if (Array.isArray(content)) {
+            const textPart = content.find(p => p.type === 'text');
+            if (textPart?.text) task = textPart.text.slice(0, 100);
+          }
+        }
+
+        // Get model from assistant messages
+        if (!model && entry.message?.model) {
+          model = entry.message.model;
+        }
+
+        // Sum tokens from usage
+        if (entry.message?.usage) {
+          const usage = entry.message.usage;
+          totalInputTokens += (usage.input_tokens || 0) + (usage.cache_read_input_tokens || 0);
+          totalOutputTokens += usage.output_tokens || 0;
+        }
+
+        // Track tools used
+        if (entry.message?.content && Array.isArray(entry.message.content)) {
+          for (const part of entry.message.content) {
+            if (part.type === 'tool_use' && part.name) {
+              toolsUsed.add(part.name);
+            }
+          }
+        }
+      } catch (e) {
+        // Skip malformed lines
+      }
+    }
+
+    return {
+      model,
+      task,
+      tokens: totalInputTokens + totalOutputTokens,
+      inputTokens: totalInputTokens,
+      outputTokens: totalOutputTokens,
+      startTime,
+      endTime,
+      duration: startTime && endTime ? endTime - startTime : null,
+      toolsUsed: Array.from(toolsUsed).slice(0, 5) // Top 5 tools
+    };
+  } catch (err) {
+    console.error(`Error parsing agent transcript ${transcriptPath}:`, err.message);
+    return null;
+  }
+}
+
+// Format duration in human readable form
+function formatDuration(ms) {
+  if (!ms || ms < 0) return null;
+  const seconds = Math.floor(ms / 1000);
+  const minutes = Math.floor(seconds / 60);
+  const hours = Math.floor(minutes / 60);
+
+  if (hours > 0) return `${hours}h ${minutes % 60}m`;
+  if (minutes > 0) return `${minutes}m ${seconds % 60}s`;
+  return `${seconds}s`;
+}
+
+// Load existing events
+function loadEvents() {
+  try {
+    if (fs.existsSync(DB_FILE)) {
+      const data = JSON.parse(fs.readFileSync(DB_FILE, 'utf-8'));
+      events = data.events || [];
+      console.log(`[LOAD] Loaded ${events.length} events from disk`);
+    }
+  } catch (err) {
+    console.error('Error loading events:', err.message);
+  }
+}
+
+// Sanitize event for storage (remove large payloads)
+function sanitizeEventForStorage(event) {
+  const sanitized = { ...event };
+
+  // Remove large raw data but keep essential fields
+  if (sanitized.raw) {
+    const { tool_response, tool_output, ...essentialRaw } = sanitized.raw;
+    sanitized.raw = essentialRaw;
+
+    // Keep only summary of tool response if it exists
+    if (tool_response?.file?.content) {
+      sanitized.raw.tool_response_summary = `[File: ${tool_response.file.filePath}, ${tool_response.file.content.length} chars]`;
+    } else if (tool_response?.type) {
+      sanitized.raw.tool_response_type = tool_response.type;
+    }
+  }
+
+  // Truncate large toolInput/toolOutput
+  if (sanitized.toolInput && JSON.stringify(sanitized.toolInput).length > 500) {
+    sanitized.toolInput = { _truncated: true, keys: Object.keys(sanitized.toolInput) };
+  }
+  if (sanitized.toolOutput && JSON.stringify(sanitized.toolOutput).length > 500) {
+    sanitized.toolOutput = { _truncated: true, length: JSON.stringify(sanitized.toolOutput).length };
+  }
+
+  return sanitized;
+}
+
+// Save events to disk (debounced, sanitized)
+let saveTimeout = null;
+function saveEvents() {
+  if (saveTimeout) clearTimeout(saveTimeout);
+  saveTimeout = setTimeout(() => {
+    try {
+      const sanitizedEvents = events.slice(-1000).map(sanitizeEventForStorage);
+      fs.writeFileSync(DB_FILE, JSON.stringify({ events: sanitizedEvents }));
+      console.log(`[SAVE] Saved ${sanitizedEvents.length} events to disk`);
+    } catch (err) {
+      console.error('Error saving events:', err.message);
+    }
+  }, 1000);
+}
+
+// Save agents to disk (debounced)
+let saveAgentsTimeout = null;
+function saveAgents() {
+  if (saveAgentsTimeout) clearTimeout(saveAgentsTimeout);
+  saveAgentsTimeout = setTimeout(() => {
+    try {
+      const agentsArray = Array.from(agents.entries()).map(([id, agent]) => ({ id, ...agent }));
+      fs.writeFileSync(AGENTS_FILE, JSON.stringify({ agents: agentsArray, savedAt: new Date().toISOString() }));
+      console.log(`[SAVE] Saved ${agentsArray.length} agents to disk`);
+    } catch (err) {
+      console.error('Error saving agents:', err.message);
+    }
+  }, 1000);
+}
+
+// Load agents from disk
+function loadAgents() {
+  try {
+    if (fs.existsSync(AGENTS_FILE)) {
+      const data = JSON.parse(fs.readFileSync(AGENTS_FILE, 'utf-8'));
+      if (data.agents && Array.isArray(data.agents)) {
+        agents.clear();
+        data.agents.forEach(agent => {
+          agents.set(agent.id, agent);
+        });
+        console.log(`[LOAD] Loaded ${agents.size} agents from disk`);
+      }
+    }
+  } catch (err) {
+    console.error('Error loading agents:', err.message);
+  }
+}
+
+// Check and update agent timeouts (5-level: active → idle → stale → timeout → cleanup)
+function checkAgentTimeouts() {
+  const now = Date.now();
+  let changed = false;
+
+  for (const [id, agent] of agents.entries()) {
+    const lastSeen = agent.lastSeen ? new Date(agent.lastSeen).getTime() : 0;
+    const elapsed = now - lastSeen;
+
+    // 5-level status transitions for active/idle/stale agents
+    if (agent.status === 'active' && elapsed > AGENT_IDLE_MS) {
+      agents.set(id, { ...agent, status: 'idle' });
+      console.log(`[AGENT] ${id} → idle (${Math.round(elapsed / 60000)}m inactive)`);
+      changed = true;
+    }
+    if (agent.status === 'idle' && elapsed > AGENT_STALE_MS) {
+      agents.set(id, { ...agent, status: 'stale' });
+      console.log(`[AGENT] ${id} → stale (${Math.round(elapsed / 60000)}m inactive)`);
+      changed = true;
+    }
+    if ((agent.status === 'stale' || agent.status === 'active') && elapsed > AGENT_TIMEOUT_MS) {
+      agents.set(id, { ...agent, status: 'timeout', timeoutAt: new Date().toISOString() });
+      console.log(`[AGENT] ${id} → timeout (${Math.round(elapsed / 60000)}m inactive)`);
+      changed = true;
+    }
+
+    // Remove old stopped/timeout agents after 60 min
+    if ((agent.status === 'stopped' || agent.status === 'timeout') && elapsed > AGENT_CLEANUP_MS) {
+      agents.delete(id);
+      console.log(`[AGENT] ${id} removed (cleanup after ${Math.round(elapsed / 60000)}m)`);
+      changed = true;
+    }
+  }
+
+  if (changed) {
+    saveAgents();
+  }
+}
+
+// Run timeout check every minute
+setInterval(checkAgentTimeouts, 60 * 1000);
+
+// Process incoming event
+function processEvent(event) {
+  // Add to events list
+  events.push(event);
+  if (events.length > 1000) events.shift();
+
+  // Track agents from SubagentStart events
+  if (event.type === 'SubagentStart' && event.agentId) {
+    const agentId = event.agentId;
+    const existing = agents.get(agentId) || {};
+
+    // Try to correlate with pending Task tool call to get model/description
+    let pendingTask = null;
+    if (!processEvent.pendingTasks) processEvent.pendingTasks = [];
+    if (processEvent.pendingTasks.length > 0) {
+      // Find matching pending task by subagent_type
+      const agentType = event.agentType || event.raw?.subagent_type;
+      pendingTask = processEvent.pendingTasks.find(t =>
+        t.subagentType?.toLowerCase() === agentType?.toLowerCase() ||
+        t.subagentType === 'subagent'
+      );
+      if (pendingTask) {
+        // Remove from pending
+        processEvent.pendingTasks = processEvent.pendingTasks.filter(t => t !== pendingTask);
+      }
+    }
+
+    // Get model: event > pending task > default based on type
+    let model = event.model || pendingTask?.model;
+    if (!model) {
+      // Default model based on agent type
+      const agentType = event.agentType || pendingTask?.subagentType || '';
+      if (agentType.toLowerCase() === 'explore') model = 'haiku';
+      else if (agentType.toLowerCase() === 'plan') model = 'sonnet';
+    }
+
+    // Determine parentId - prefer event.parentAgentId, then construct from pending task's sessionId
+    let parentId = event.parentAgentId;
+    if (!parentId && pendingTask?.sessionId) {
+      // Use the session that spawned this Task as the parent
+      parentId = `main_${pendingTask.sessionId}`;
+    }
+    if (!parentId) {
+      parentId = 'main';
+    }
+
+    // Use parent's sessionId for grouping (subagent should be grouped with parent)
+    const effectiveSessionId = pendingTask?.sessionId || event.sessionId;
+
+    // Initialize toolsUsed Set for tracking tools from events (not just transcript)
+    const toolsUsedSet = new Set(existing.toolsUsed || []);
+
+    agents.set(agentId, {
+      ...existing,
+      id: agentId,
+      type: event.agentType || pendingTask?.subagentType || existing.type || 'subagent',
+      model: model || existing.model,
+      sessionId: effectiveSessionId,
+      parentId: parentId,
+      startedAt: event.timestamp,
+      lastSeen: event.timestamp,
+      status: 'active',
+      tokens: existing.tokens || 0,
+      description: pendingTask?.description || existing.description,
+      toolsUsed: Array.from(toolsUsedSet) // Store as array but track as Set
+    });
+    console.log(`[AGENT] Agent ${agentId} started (${event.agentType || pendingTask?.subagentType || 'subagent'}, model: ${model || 'unknown'})`);
+  }
+
+  // Track agents from SubagentStop events - parse transcript for rich data
+  if (event.type === 'SubagentStop' && event.agentId) {
+    const agentId = event.agentId;
+    const existing = agents.get(agentId) || {};
+    const rawTranscriptPath = event.raw?.agent_transcript_path;
+    const transcriptPath = sanitizePath(rawTranscriptPath);
+
+    // Try to find the actual transcript file (may differ from reported path)
+    const actualTranscriptPath = transcriptPath
+      ? findAgentTranscript(transcriptPath, agentId, existing.startedAt)
+      : null;
+
+    // Parse transcript for model, tokens, task info (only if path is safe)
+    let transcriptData = null;
+    if (actualTranscriptPath) {
+      transcriptData = parseAgentTranscript(actualTranscriptPath);
+      if (!transcriptData) {
+        console.log(`[AGENT] Failed to parse transcript for ${agentId}: ${actualTranscriptPath}`);
+      }
+    } else if (transcriptPath) {
+      console.log(`[AGENT] Transcript not found for ${agentId}: ${transcriptPath}`);
+    }
+
+    // Calculate duration
+    const startTime = existing.startedAt ? new Date(existing.startedAt).getTime() : null;
+    const endTime = new Date(event.timestamp).getTime();
+    const duration = startTime ? endTime - startTime : transcriptData?.duration;
+
+    // Merge toolsUsed: prefer transcript data, but fall back to existing (from events)
+    // Also merge both sets if both exist
+    const existingTools = new Set(existing.toolsUsed || []);
+    const transcriptTools = transcriptData?.toolsUsed || [];
+    transcriptTools.forEach(t => existingTools.add(t));
+    const mergedToolsUsed = Array.from(existingTools).slice(0, 8); // Limit to 8 tools
+
+    agents.set(agentId, {
+      ...existing,
+      id: agentId,
+      type: event.agentType || existing.type || 'subagent',
+      model: transcriptData?.model || existing.model,
+      // Preserve the sessionId from SubagentStart (which has correct parent grouping)
+      sessionId: existing.sessionId || event.sessionId,
+      parentId: event.parentAgentId || existing.parentId || 'main',
+      lastSeen: event.timestamp,
+      stoppedAt: event.timestamp,
+      status: 'stopped',
+      // Preserve description from SubagentStart, use transcript task as fallback
+      description: existing.description || transcriptData?.task,
+      lastTask: transcriptData?.task || existing.lastTask || existing.description,
+      tokens: transcriptData?.tokens || existing.tokens || 0,
+      inputTokens: transcriptData?.inputTokens || existing.inputTokens || 0,
+      outputTokens: transcriptData?.outputTokens || existing.outputTokens || 0,
+      duration: duration,
+      durationFormatted: formatDuration(duration),
+      toolsUsed: mergedToolsUsed,
+      transcriptPath: actualTranscriptPath || transcriptPath
+    });
+    console.log(`[AGENT] Agent ${agentId} stopped (${formatDuration(duration) || 'unknown duration'}, ${transcriptData?.tokens || 0} tokens, tools: ${mergedToolsUsed.join(', ') || 'none'})`);
+  }
+
+  // Track tools used by subagents from PreToolUse events
+  if (event.type === 'PreToolUse' && event.agentId && event.toolName) {
+    const agentId = event.agentId;
+    const existing = agents.get(agentId);
+    if (existing && (existing.status === 'active' || existing.status === 'idle' || existing.status === 'stale')) {
+      const toolsSet = new Set(existing.toolsUsed || []);
+      toolsSet.add(event.toolName);
+      agents.set(agentId, {
+        ...existing,
+        status: 'active', // Reset idle/stale back to active
+        toolsUsed: Array.from(toolsSet).slice(0, 8),
+        lastSeen: event.timestamp
+      });
+    }
+  }
+
+  // Detect Task tool usage as subagent spawn (backup detection)
+  if (event.toolName === 'Task' && event.type === 'PreToolUse') {
+    const taskInput = event.toolInput || {};
+    // Don't create duplicate - SubagentStart will handle it
+    // But store the task description for later correlation
+    const description = taskInput.description || taskInput.prompt?.slice(0, 100) || 'Task';
+    const subagentType = taskInput.subagent_type || 'subagent';
+    const model = taskInput.model || null;
+
+    // Store pending task info for correlation with SubagentStart
+    if (!processEvent.pendingTasks) processEvent.pendingTasks = [];
+    processEvent.pendingTasks.push({
+      timestamp: event.timestamp,
+      description,
+      subagentType,
+      model,
+      sessionId: event.sessionId
+    });
+
+    // Clean up old pending tasks (older than 1 minute)
+    const oneMinAgo = Date.now() - 60 * 1000;
+    processEvent.pendingTasks = processEvent.pendingTasks.filter(
+      t => new Date(t.timestamp).getTime() > oneMinAgo
+    );
+  }
+
+  // Track main session as an "agent" for visibility
+  // Use session-specific main agent ID to support multiple sessions
+  if (event.sessionId) {
+    const mainAgentId = `main_${event.sessionId}`;
+
+    if (!agents.has(mainAgentId)) {
+      // Default to sonnet since most sessions use sonnet
+      const defaultModel = event.model || 'claude-sonnet-4-5-20250929';
+      agents.set(mainAgentId, {
+        id: mainAgentId,
+        type: 'main',
+        model: defaultModel,
+        sessionId: event.sessionId,
+        startedAt: event.timestamp,
+        lastSeen: event.timestamp,
+        status: 'active',
+        lastTask: 'Main Session',
+        tokens: 0
+      });
+      console.log(`[AGENT] Main agent created for session ${event.sessionId.slice(0, 8)}...`);
+    }
+
+    // Update main agent activity
+    const main = agents.get(mainAgentId);
+    if (main) {
+      // Reset idle/stale back to active on new event
+      const reactivatedStatus = (main.status === 'idle' || main.status === 'stale') ? 'active' : main.status;
+      // Update model if event has more specific info
+      const updatedModel = event.model || main.model;
+
+      // Get last tool or prompt as activity indicator with details
+      let activity = main.lastTask;
+      if (event.type === 'UserPromptSubmit' && event.prompt) {
+        activity = event.prompt.slice(0, 50) + (event.prompt.length > 50 ? '...' : '');
+      } else if (event.toolName && event.type === 'PreToolUse') {
+        // Build detailed activity string based on tool type
+        const input = event.toolInput || {};
+        let detail = '';
+
+        switch (event.toolName) {
+          case 'Edit':
+          case 'Read':
+          case 'Write':
+            // Show filename from path
+            if (input.file_path) {
+              const filename = input.file_path.split(/[\\/]/).pop();
+              detail = filename;
+            }
+            break;
+          case 'Bash':
+            // Show command (truncated)
+            if (input.command) {
+              detail = input.command.slice(0, 40) + (input.command.length > 40 ? '...' : '');
+            }
+            break;
+          case 'Task':
+            // Show description
+            if (input.description) {
+              detail = input.description;
+            }
+            break;
+          case 'Grep':
+            // Show pattern
+            if (input.pattern) {
+              detail = `"${input.pattern.slice(0, 30)}"`;
+            }
+            break;
+          case 'Glob':
+            // Show pattern
+            if (input.pattern) {
+              detail = input.pattern;
+            }
+            break;
+          case 'WebFetch':
+          case 'WebSearch':
+            // Show query or url
+            detail = input.query || input.url?.slice(0, 40) || '';
+            break;
+          default:
+            // For other tools, try to get a meaningful detail
+            if (input.description) detail = input.description;
+            else if (input.prompt) detail = input.prompt.slice(0, 40);
+            else if (input.file_path) detail = input.file_path.split(/[\\/]/).pop();
+        }
+
+        activity = detail ? `${event.toolName} ${detail}` : event.toolName;
+      }
+
+      agents.set(mainAgentId, {
+        ...main,
+        status: reactivatedStatus,
+        lastSeen: event.timestamp,
+        model: updatedModel,
+        lastTask: activity,
+        cwd: event.cwd || main.cwd,
+        tokens: main.tokens + (event.inputTokens || 0) + (event.outputTokens || 0)
+      });
+    }
+  }
+
+  // Track sessions - use cwd as fallback key if sessionId not provided
+  const sessionKey = event.sessionId || event.cwd;
+  if (sessionKey) {
+    const existing = sessions.get(sessionKey) || {
+      id: event.sessionId || `session_${Buffer.from(event.cwd || '').toString('base64').slice(0, 16)}`,
+      startedAt: event.timestamp,
+      eventCount: 0,
+      tokens: 0
+    };
+    sessions.set(sessionKey, {
+      ...existing,
+      lastActivity: event.timestamp,
+      eventCount: existing.eventCount + 1,
+      tokens: existing.tokens + (event.inputTokens || 0) + (event.outputTokens || 0),
+      model: event.model || existing.model,
+      cwd: event.cwd || existing.cwd
+    });
+  }
+
+  // Save to disk (cleanup handled by checkAgentTimeouts interval)
+  saveEvents();
+  saveAgents();
+}
+
+// Get recent events
+function getRecentEvents(limit = 100) {
+  return events.slice(-limit).reverse();
+}
+
+// Get stats (async - statsReader uses async file I/O)
+async function getStats() {
+  const tokens = await readStatsCache();
+  const eventCounts = {};
+  events.forEach(e => {
+    eventCounts[e.type] = (eventCounts[e.type] || 0) + 1;
+  });
+
+  return {
+    eventCounts,
+    tokens: tokens || {
+      today_used: 0,
+      daily_limit: 1000000,
+      week_used: 0,
+      weekly_limit: 5000000,
+      modelUsage: {}
+    }
+  };
+}
+
+// Cache for session token data (refresh every 30 seconds)
+const sessionTokenCache = new Map();
+const SESSION_TOKEN_CACHE_TTL = 30000;
+
+// Read tokens from a session transcript file using STREAMING
+async function readSessionTokens(sessionId) {
+  // Check cache first
+  const cached = sessionTokenCache.get(sessionId);
+  if (cached && (Date.now() - cached.timestamp) < SESSION_TOKEN_CACHE_TTL) {
+    return cached.data;
+  }
+
+  // Find the session transcript file
+  const projectDirs = fs.readdirSync(CLAUDE_PROJECTS_DIR).filter(d => {
+    const stat = fs.statSync(path.join(CLAUDE_PROJECTS_DIR, d));
+    return stat.isDirectory();
+  });
+
+  for (const projectDir of projectDirs) {
+    const transcriptPath = path.join(CLAUDE_PROJECTS_DIR, projectDir, `${sessionId}.jsonl`);
+    if (fs.existsSync(transcriptPath)) {
+      try {
+        // Use readline streaming instead of loading entire file
+        const rl = createInterface({
+          input: fs.createReadStream(transcriptPath, { highWaterMark: 64 * 1024 }),
+          crlfDelay: Infinity
+        });
+
+        let inputTokens = 0;
+        let outputTokens = 0;
+        let cacheReadTokens = 0;
+        let cacheCreationTokens = 0;
+
+        for await (const line of rl) {
+          if (!line.trim()) continue;
+          try {
+            const parsed = JSON.parse(line);
+            if (parsed.message?.usage) {
+              const usage = parsed.message.usage;
+              inputTokens += usage.input_tokens || 0;
+              outputTokens += usage.output_tokens || 0;
+              cacheReadTokens += usage.cache_read_input_tokens || 0;
+              cacheCreationTokens += usage.cache_creation_input_tokens || 0;
+            }
+          } catch {
+            // Skip invalid lines
+          }
+        }
+
+        const data = {
+          inputTokens,
+          outputTokens,
+          cacheReadTokens,
+          cacheCreationTokens,
+          totalTokens: inputTokens + outputTokens
+        };
+
+        // Cache the result
+        sessionTokenCache.set(sessionId, { data, timestamp: Date.now() });
+        return data;
+      } catch (err) {
+        console.error(`Error reading session tokens for ${sessionId}:`, err.message);
+      }
+    }
+  }
+
+  return null;
+}
+
+// Git diff stats cache (per cwd, TTL 12 seconds)
+const gitDiffCache = new Map();
+const GIT_DIFF_CACHE_TTL = 12000;
+
+function getGitDiffStats(cwd) {
+  if (!cwd) return null;
+
+  const cached = gitDiffCache.get(cwd);
+  if (cached && (Date.now() - cached.timestamp) < GIT_DIFF_CACHE_TTL) {
+    return cached.data;
+  }
+
+  try {
+    const output = execSync('git diff --numstat HEAD', {
+      cwd,
+      encoding: 'utf-8',
+      timeout: 5000,
+      windowsHide: true,
+      stdio: ['pipe', 'pipe', 'pipe']
+    });
+
+    let additions = 0;
+    let deletions = 0;
+    let files = 0;
+
+    for (const line of output.trim().split('\n')) {
+      if (!line.trim()) continue;
+      const [add, del] = line.split('\t');
+      if (add !== '-') additions += parseInt(add) || 0;
+      if (del !== '-') deletions += parseInt(del) || 0;
+      files++;
+    }
+
+    const data = files > 0 ? { additions, deletions, files } : null;
+    gitDiffCache.set(cwd, { data, timestamp: Date.now() });
+    return data;
+  } catch {
+    gitDiffCache.set(cwd, { data: null, timestamp: Date.now() });
+    return null;
+  }
+}
+
+// Get agents (async - statsReader uses async file I/O)
+async function getAgents() {
+  // Get primary model from stats
+  const tokens = await readStatsCache();
+  const primaryModel = tokens?.session_primary_model;
+
+  // Update main agents' model based on actual usage
+  if (primaryModel) {
+    const modelName = primaryModel === 'opus' ? 'claude-opus-4-5-20251101' :
+                      primaryModel === 'sonnet' ? 'claude-sonnet-4-5-20250929' :
+                      primaryModel === 'haiku' ? 'claude-haiku-4-5-20251001' : null;
+    if (modelName) {
+      for (const [id, agent] of agents.entries()) {
+        if (agent.type === 'main') {
+          agents.set(id, { ...agent, model: modelName });
+        }
+      }
+    }
+  }
+
+  const now = Date.now();
+
+  // Get all agents and fetch token data for main agents
+  const agentList = Array.from(agents.values());
+
+  // Fetch session tokens for all main agents in parallel
+  const mainAgents = agentList.filter(a => a.type === 'main' && a.sessionId);
+  const tokenPromises = mainAgents.map(async (agent) => {
+    const sessionTokens = await readSessionTokens(agent.sessionId);
+    return { sessionId: agent.sessionId, tokens: sessionTokens };
+  });
+
+  const tokenResults = await Promise.all(tokenPromises);
+  const sessionTokenMap = new Map(tokenResults.map(r => [r.sessionId, r.tokens]));
+
+  return agentList
+    .map(agent => {
+      // Calculate elapsed time for active agents
+      const result = { ...agent };
+
+      if (agent.status === 'active' && agent.startedAt) {
+        const startTime = new Date(agent.startedAt).getTime();
+        const elapsed = now - startTime;
+        result.elapsed = elapsed;
+        result.elapsedFormatted = formatDuration(elapsed);
+      }
+
+      // Add session tokens for main agents
+      if (agent.type === 'main' && agent.sessionId) {
+        const sessionTokens = sessionTokenMap.get(agent.sessionId);
+        if (sessionTokens) {
+          result.tokens = sessionTokens.totalTokens;
+          result.inputTokens = sessionTokens.inputTokens;
+          result.outputTokens = sessionTokens.outputTokens;
+          result.cacheReadTokens = sessionTokens.cacheReadTokens;
+        }
+      }
+
+      // Add git diff stats for main agents with cwd
+      if (agent.type === 'main' && agent.cwd) {
+        result.gitDiff = getGitDiffStats(agent.cwd);
+      }
+
+      return result;
+    })
+    .sort((a, b) => {
+      // Sort: active first, then by lastSeen
+      if (a.status === 'active' && b.status !== 'active') return -1;
+      if (b.status === 'active' && a.status !== 'active') return 1;
+      // Main agents always first among active (sorted by type)
+      if (a.type === 'main' && b.type !== 'main') return -1;
+      if (b.type === 'main' && a.type !== 'main') return 1;
+      return new Date(b.lastSeen) - new Date(a.lastSeen);
+    });
+}
+
+// Get sessions
+function getSessions() {
+  return Array.from(sessions.values())
+    .sort((a, b) => new Date(b.lastActivity) - new Date(a.lastActivity))
+    .slice(0, 20);
+}
+
+// API Routes
+
+// Deduplicate events - track recent event hashes
+const recentEventHashes = new Map(); // hash -> timestamp
+const EVENT_DEDUP_WINDOW_MS = 5000; // 5 second window for deduplication
+
+// Generate hash from event content for deduplication
+// NOTE: Do NOT include timestamp - hooks may be called multiple times with different timestamps
+function getEventHash(event) {
+  // Use tool_use_id if available (unique per tool call from Claude Code)
+  const toolUseId = event.raw?.tool_use_id || '';
+
+  // For tool events, use tool_use_id as primary dedup key
+  if (toolUseId) {
+    return `tid_${toolUseId}_${event.type}`;
+  }
+
+  // For non-tool events (SessionStart, Stop, etc.), use content-based hash WITHOUT timestamp
+  const key = `${event.type}|${event.sessionId || ''}|${event.toolName || ''}|${JSON.stringify(event.toolInput || {}).slice(0, 100)}`;
+  let hash = 0;
+  for (let i = 0; i < key.length; i++) {
+    hash = ((hash << 5) - hash) + key.charCodeAt(i);
+    hash |= 0;
+  }
+  return hash.toString(36);
+}
+
+// Clean old hashes periodically
+setInterval(() => {
+  const now = Date.now();
+  for (const [hash, timestamp] of recentEventHashes.entries()) {
+    if (now - timestamp > EVENT_DEDUP_WINDOW_MS * 2) {
+      recentEventHashes.delete(hash);
+    }
+  }
+}, 10000);
+
+// Receive events from hook scripts (with stricter rate limiting)
+app.post('/events', eventLimiter, (req, res) => {
+  try {
+    // Validate incoming event
+    const parseResult = eventSchema.safeParse(req.body);
+    if (!parseResult.success) {
+      return res.status(400).json({
+        error: 'Invalid event format',
+        details: parseResult.error.issues.map(i => `${i.path.join('.')}: ${i.message}`)
+      });
+    }
+
+    // Check for duplicate event
+    const eventHash = getEventHash(parseResult.data);
+    const now = Date.now();
+
+    if (recentEventHashes.has(eventHash)) {
+      const lastSeen = recentEventHashes.get(eventHash);
+      if (now - lastSeen < EVENT_DEDUP_WINDOW_MS) {
+        console.log(`[DEDUP] Skipping duplicate event: ${parseResult.data.type} (hash: ${eventHash})`);
+        return res.json({ success: true, id: 'duplicate', skipped: true });
+      }
+    }
+    recentEventHashes.set(eventHash, now);
+
+    const event = {
+      id: req.body.id || `evt_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      ...parseResult.data,
+      receivedAt: new Date().toISOString()
+    };
+
+    processEvent(event);
+    broadcast({ type: 'event', event });
+
+    res.json({ success: true, id: event.id });
+  } catch (err) {
+    console.error('Error processing event:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Get recent events
+app.get('/events', (req, res) => {
+  const limit = parseInt(req.query.limit) || 100;
+  const type = req.query.type;
+
+  let result = getRecentEvents(limit);
+  if (type) {
+    result = result.filter(e => e.type === type);
+  }
+  res.json(result);
+});
+
+// Get stats
+app.get('/stats', async (req, res) => {
+  res.json(await getStats());
+});
+
+// Get agents
+app.get('/agents', async (req, res) => {
+  res.json(await getAgents());
+});
+
+// Get sessions
+app.get('/sessions', (req, res) => {
+  res.json(getSessions());
+});
+
+// Health check
+app.get('/health', (req, res) => {
+  res.json({
+    status: 'ok',
+    clients: clients.size,
+    events: events.length,
+    uptime: process.uptime()
+  });
+});
+
+// Clear all events
+app.delete('/events', (req, res) => {
+  events = [];
+  agents.clear();
+  sessions.clear();
+  saveEvents();
+  saveAgents();
+  broadcast({ type: 'clear' });
+  res.json({ success: true });
+});
+
+// Clear only agents (keep events)
+app.delete('/agents', (req, res) => {
+  const agentCount = agents.size;
+  agents.clear();
+  saveAgents();
+  broadcast({ type: 'agents_cleared' });
+  console.log(`[CLEAR] Cleared ${agentCount} agents`);
+  res.json({ success: true, cleared: agentCount });
+});
+
+// Receive Claude.ai usage from extension
+app.post('/usage', (req, res) => {
+  try {
+    const { usage, timestamp, source } = req.body;
+
+    if (!usage) {
+      return res.status(400).json({ error: 'Missing usage data' });
+    }
+
+    // Update usage data
+    claudeUsage = {
+      five_hour: usage.five_hour || null,
+      seven_day: usage.seven_day || null,
+      seven_day_sonnet: usage.seven_day_sonnet || null,
+      seven_day_opus: usage.seven_day_opus || null,
+      seven_day_cowork: usage.seven_day_cowork || null,
+      extra_usage: usage.extra_usage || null,
+      lastSync: timestamp || new Date().toISOString(),
+      source: source || 'extension'
+    };
+
+    console.log(`[USAGE] Claude usage updated: Session ${usage.five_hour?.utilization || 0}%, Weekly ${usage.seven_day?.utilization || 0}%`);
+
+    // Broadcast to all clients
+    broadcast({
+      type: 'usage',
+      usage: claudeUsage
+    });
+
+    res.json({ success: true, received: claudeUsage });
+  } catch (err) {
+    console.error('Error processing usage:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Get Claude.ai usage
+app.get('/usage', (req, res) => {
+  res.json(claudeUsage);
+});
+
+// Load existing data
+loadEvents();
+loadAgents();
+
+// Periodic stats broadcast (async)
+setInterval(async () => {
+  broadcast({
+    type: 'stats',
+    stats: await getStats(),
+    agents: await getAgents(),
+    sessions: getSessions(),
+    usage: claudeUsage
+  });
+}, 5000);
+
+// Start server
+server.listen(PORT, () => {
+  console.log(`
+🚀 Claude Code Monitor Server v2.1
+
+   HTTP:      http://localhost:${PORT}
+   WebSocket: ws://localhost:${PORT}
+
+   Endpoints:
+   POST /events     - Receive hook events
+   GET  /events     - Get recent events
+   GET  /stats      - Get stats + tokens
+   GET  /agents     - Get active agents
+   GET  /sessions   - Get sessions
+   POST /usage      - Receive Claude.ai usage (from extension)
+   GET  /usage      - Get Claude.ai usage
+   GET  /health     - Health check
+
+   Waiting for events from Claude Code hooks...
+   Install Chrome extension for Claude.ai usage sync.
+`);
+});

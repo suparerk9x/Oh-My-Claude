@@ -1,0 +1,121 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body, #root {
+  height: 100%;
+  overflow: hidden;
+}
+
+body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Dark theme (default) */
+body.dark {
+  background-color: #0a0a0f;
+  color: #f0f0f5;
+}
+
+/* Light theme */
+body.light {
+  background-color: #f1f5f9;
+  color: #1e293b;
+}
+
+/* Thin scrollbar - Dark theme */
+body.dark ::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+
+body.dark ::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+body.dark ::-webkit-scrollbar-thumb {
+  background: #2a2a36;
+  border-radius: 2px;
+}
+
+body.dark ::-webkit-scrollbar-thumb:hover {
+  background: #3a3a46;
+}
+
+/* Thin scrollbar - Light theme */
+body.light ::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+
+body.light ::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+body.light ::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 2px;
+}
+
+body.light ::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* Table row hover */
+tr {
+  transition: background-color 0.1s ease;
+}
+
+/* Smooth transitions */
+.transition-all {
+  transition-property: all;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  transition-duration: 200ms;
+}
+
+/* Monospace font */
+.font-mono {
+  font-family: 'JetBrains Mono', 'SF Mono', Consolas, monospace;
+}
+
+/* Pulse animation for live indicator */
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+.animate-pulse {
+  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* Gradient animation for active agent border */
+@keyframes gradient {
+  0%, 100% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+}
+
+/* Shimmer animation for active agent card */
+@keyframes shimmer {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(200%);
+  }
+}
