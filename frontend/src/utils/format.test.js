@@ -1,62 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
-  formatDuration,
-  formatTime,
-  formatNumber,
   formatTokens,
   formatRelativeTime,
   formatTimeWithSeconds
 } from './format';
-
-describe('formatDuration', () => {
-  it('formats minutes only when less than 1 hour', () => {
-    const start = new Date('2026-02-11T10:00:00');
-    const end = new Date('2026-02-11T10:30:00');
-    expect(formatDuration(start, end)).toBe('30m');
-  });
-
-  it('formats hours and minutes', () => {
-    const start = new Date('2026-02-11T10:00:00');
-    const end = new Date('2026-02-11T12:45:00');
-    expect(formatDuration(start, end)).toBe('2h 45m');
-  });
-
-  it('uses current time when endedAt is null', () => {
-    const start = new Date(Date.now() - 15 * 60 * 1000); // 15 min ago
-    const result = formatDuration(start, null);
-    expect(result).toBe('15m');
-  });
-});
-
-describe('formatTime', () => {
-  it('returns empty string for null input', () => {
-    expect(formatTime(null)).toBe('');
-    expect(formatTime(undefined)).toBe('');
-  });
-
-  it('formats ISO string to HH:MM', () => {
-    const result = formatTime('2026-02-11T14:30:00');
-    // Result depends on locale, but should be 2-digit format
-    expect(result).toMatch(/\d{2}:\d{2}/);
-  });
-});
-
-describe('formatNumber', () => {
-  it('returns number as string when less than 1000', () => {
-    expect(formatNumber(500)).toBe('500');
-    expect(formatNumber(0)).toBe('0');
-  });
-
-  it('formats thousands with k suffix', () => {
-    expect(formatNumber(1500)).toBe('1.5k');
-    expect(formatNumber(10000)).toBe('10.0k');
-  });
-
-  it('formats millions with M suffix', () => {
-    expect(formatNumber(1500000)).toBe('1.5M');
-    expect(formatNumber(2000000)).toBe('2.0M');
-  });
-});
 
 describe('formatTokens', () => {
   it('returns "0" for falsy values', () => {

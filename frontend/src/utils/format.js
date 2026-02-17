@@ -7,49 +7,6 @@ const getUserLocale = () => {
 };
 
 /**
- * Format duration between two timestamps
- */
-export function formatDuration(startedAt, endedAt) {
-  const start = new Date(startedAt);
-  const end = endedAt ? new Date(endedAt) : new Date();
-  const diffMs = end - start;
-
-  const hours = Math.floor(diffMs / (1000 * 60 * 60));
-  const minutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
-
-  if (hours > 0) {
-    return `${hours}h ${minutes}m`;
-  }
-  return `${minutes}m`;
-}
-
-/**
- * Format time from ISO string (uses browser locale)
- */
-export function formatTime(isoString) {
-  if (!isoString) return '';
-  const date = new Date(isoString);
-  return date.toLocaleTimeString(getUserLocale(), {
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false
-  });
-}
-
-/**
- * Format number with k/M suffix
- */
-export function formatNumber(num) {
-  if (num >= 1000000) {
-    return (num / 1000000).toFixed(1) + 'M';
-  }
-  if (num >= 1000) {
-    return (num / 1000).toFixed(1) + 'k';
-  }
-  return num.toString();
-}
-
-/**
  * Format token count with k/M suffix (with null handling)
  */
 export function formatTokens(n) {
@@ -75,7 +32,11 @@ export function formatRelativeTime(timestamp) {
   if (seconds < 60) return `${seconds}s`;
   if (minutes < 60) return `${minutes}m`;
   if (hours < 24) return `${hours}h`;
-  return formatTime(timestamp);
+  return new Date(timestamp).toLocaleTimeString(getUserLocale(), {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false
+  });
 }
 
 /**
