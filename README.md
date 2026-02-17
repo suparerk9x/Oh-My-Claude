@@ -1,5 +1,3 @@
-<img width="938" height="864" alt="Oh-My-Claude--02-17-2026_08_25_PM" src="https://github.com/user-attachments/assets/f4ec79d7-4a30-477d-bdb1-82b1d9df3dc1" /># Oh My Claude
-
 > Real-time monitoring dashboard for Claude Code usage and multi-agent observability.
 
 ![Version](https://img.shields.io/badge/version-2.0-blue)
