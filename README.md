@@ -18,7 +18,7 @@ A dashboard that monitors your **Claude Code** (CLI) usage in real-time:
 | **Chrome Extension** | Sync usage % from Claude.ai (optional) |
 
 
-<img width="938" height="864" alt="Oh-My-Claude--02-17-2026_08_25_PM" src="https://github.com/user-attachments/assets/f4ec79d7-4a30-477d-bdb1-82b1d9df3dc1" /># Oh My Claude
+<img width="938" height="864" alt="Oh-My-Claude--02-17-2026_08_25_PM" src="https://github.com/user-attachments/assets/f4ec79d7-4a30-477d-bdb1-82b1d9df3dc1" />
 
 
 **Layout Structure:**
