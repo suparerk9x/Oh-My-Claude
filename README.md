@@ -1,4 +1,4 @@
-# Oh My Claude
+<img width="938" height="864" alt="Oh-My-Claude--02-17-2026_08_25_PM" src="https://github.com/user-attachments/assets/f4ec79d7-4a30-477d-bdb1-82b1d9df3dc1" /># Oh My Claude
 
 > Real-time monitoring dashboard for Claude Code usage and multi-agent observability.
 
@@ -20,21 +20,9 @@ A dashboard that monitors your **Claude Code** (CLI) usage in real-time:
 | **Chrome Extension** | Sync usage % from Claude.ai (optional) |
 
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│ 🟢 LIVE  Sync │  12:34:56  │  Dark  Full  Guide  │  ✅ Normal      │  ← Header
-├──────────┬────────────┬──────────────────────────────────────────────┤
-│  Token   │   Agents   │              Activity Feed                   │
-│  Usage   │   Panel    │  ┌──────────────────────────────────────┐   │
-│          │            │  │  Event list (clickable)              │   │  ← Main
-│  Session │  Main (1)  │  └──────────────────────────────────────┘   │
-│  Weekly  │  └ Sub (4) │  ┌──────────────────────────────────────┐   │
-│          │            │  │  Sessions: All | abc123 | def456     │   │
-│  (200px) │   (280px)  │  └──────────────────────────────────────┘   │
-├──────────┴────────────┴──────────────────────────────────────────────┤
-│  ▶ PostToolUse │ Read │ Session: abc123 │ Input: {...}              │  ← Event Detail
-├─────────────────────────────────────────────────────────────────────┤
-│  Events 100  🔧42 ✅38 ❌3 💬12          │  Month $12.50  ◆$10 ●$2 ▪$0 │  ← Status Bar
-└─────────────────────────────────────────────────────────────────────┘
+
+<img width="938" height="864" alt="Oh-My-Claude--02-17-2026_08_25_PM" src="https://github.com/user-attachments/assets/93bee527-52e9-45e3-a05e-28152b8e2040" />
+
 ```
 
 **Layout Structure:**
