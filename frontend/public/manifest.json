@@ -1,6 +1,6 @@
 {
-  "name": "<",
-  "short_name": "<",
+  "name": "Oh My Claude",
+  "short_name": "Oh My Claude",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#0f0f17",
