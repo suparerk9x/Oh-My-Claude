@@ -175,7 +175,7 @@ Open **http://localhost:4825** — you should see:
 Oh My Claude supports **Progressive Web App** — you can install it as a standalone desktop app:
 
 1. Open **http://localhost:4825** in Chrome
-2. Click the **install icon** (⊕) in the address bar
+2. Click the **Install app** icon (monitor with ↓ arrow) in the address bar
 3. Click **"Install"** in the popup dialog
 4. App opens in its own window — pin to taskbar!
 
