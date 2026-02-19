@@ -7,7 +7,8 @@
 ![Node](https://img.shields.io/badge/node-18%2B-brightgreen)
 ![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey)
 
-<img width="942" height="859" alt="image" src="https://github.com/user-attachments/assets/76026c07-61f5-43d7-aac1-a665261ca3e4" />
+<img width="940" height="970" alt="Thinking-·-39-·-OMC--02-19-2026_07_24_PM" src="https://github.com/user-attachments/assets/e387421d-c99b-43e0-ba2f-172ed11afb7a" />
+
 
 ---
 
