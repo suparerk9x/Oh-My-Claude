@@ -164,10 +164,10 @@ let sessions = new Map();
 let smartStatusMap = {}; // sessionId -> { status, label, icon, color }
 
 // Agent timeout settings (5-level status hierarchy)
-const AGENT_IDLE_MS = 5 * 60 * 1000;      // 5 minutes - mark as idle
-const AGENT_STALE_MS = 10 * 60 * 1000;    // 10 minutes - mark as stale
-const AGENT_TIMEOUT_MS = 30 * 60 * 1000;  // 30 minutes - mark as timeout
-const AGENT_CLEANUP_MS = 60 * 60 * 1000;  // 60 minutes - remove from list
+const AGENT_IDLE_MS = 3 * 60 * 1000;      // 3 minutes - mark as idle
+const AGENT_STALE_MS = 8 * 60 * 1000;     // 8 minutes - mark as stale
+const AGENT_TIMEOUT_MS = 20 * 60 * 1000;  // 20 minutes - mark as timeout
+const AGENT_CLEANUP_MS = 30 * 60 * 1000;  // 30 minutes - remove from list
 
 // Claude.ai usage data (from extension)
 let claudeUsage = {
@@ -597,11 +597,21 @@ function processEvent(event) {
     console.log(`[AGENT] Agent ${agentId} stopped (${formatDuration(duration) || 'unknown duration'}, ${transcriptData?.tokens || 0} tokens, tools: ${mergedToolsUsed.join(', ') || 'none'})`);
   }
 
+  // Invalidate git diff cache when file-modifying tools complete
+  if (event.type === 'PostToolUse' && ['Write', 'Edit', 'Bash', 'NotebookEdit'].includes(event.toolName)) {
+    if (event.cwd) {
+      // Clear all cache entries for this cwd
+      for (const key of gitDiffCache.keys()) {
+        if (key.startsWith(event.cwd)) gitDiffCache.delete(key);
+      }
+    }
+  }
+
   // Track tools used by subagents from PreToolUse events
   if (event.type === 'PreToolUse' && event.agentId && event.toolName) {
     const agentId = event.agentId;
     const existing = agents.get(agentId);
-    if (existing && (existing.status === 'active' || existing.status === 'idle' || existing.status === 'stale')) {
+    if (existing && existing.status !== 'stopped') {
       const toolsSet = new Set(existing.toolsUsed || []);
       toolsSet.add(event.toolName);
       agents.set(agentId, {
@@ -645,8 +655,21 @@ function processEvent(event) {
     const mainAgentId = `main_${event.sessionId}`;
 
     if (!agents.has(mainAgentId)) {
-      // Default to sonnet since most sessions use sonnet
       const defaultModel = normalizeModel(event.model) || 'claude-sonnet-4-5-20250929';
+      // Capture git HEAD at session start to track total session diff
+      let initialCommit = null;
+      const cwd = event.cwd;
+      if (cwd) {
+        try {
+          initialCommit = execSync('git rev-parse HEAD', {
+            cwd, encoding: 'utf-8', timeout: 3000, windowsHide: true,
+            stdio: ['pipe', 'pipe', 'pipe']
+          }).trim();
+        } catch {
+          // New repo or no commits — use empty tree hash
+          initialCommit = '4b825dc642cb6eb9a060e54bf899d15363d7d628';
+        }
+      }
       agents.set(mainAgentId, {
         id: mainAgentId,
         type: 'main',
@@ -655,17 +678,25 @@ function processEvent(event) {
         startedAt: event.timestamp,
         lastSeen: event.timestamp,
         status: 'active',
+        tokens: 0,
         lastTask: 'Main Session',
-        tokens: 0
+        initialCommit
       });
-      console.log(`[AGENT] Main agent created for session ${event.sessionId.slice(0, 8)}...`);
+      console.log(`[AGENT] Main agent created for session ${event.sessionId.slice(0, 8)}... (baseline: ${initialCommit?.slice(0, 7) || 'none'})`);
     }
 
     // Update main agent activity
     const main = agents.get(mainAgentId);
     if (main) {
-      // Reset idle/stale back to active on new event
-      const reactivatedStatus = (main.status === 'idle' || main.status === 'stale') ? 'active' : main.status;
+      // Determine agent status based on event type
+      // Stop fires at end of each turn (not session end), so any new event should reactivate
+      let reactivatedStatus;
+      if (event.type === 'Stop' || event.type === 'SessionEnd') {
+        reactivatedStatus = 'stopped';
+      } else {
+        // Any non-Stop event reactivates the agent (even from stopped state)
+        reactivatedStatus = 'active';
+      }
       // Update model if event has more specific info
       const updatedModel = event.model || main.model;
 
@@ -727,7 +758,7 @@ function processEvent(event) {
         activity = detail ? `${event.toolName} ${detail}` : event.toolName;
       }
 
-      agents.set(mainAgentId, {
+      const agentUpdate = {
         ...main,
         status: reactivatedStatus,
         lastSeen: event.timestamp,
@@ -735,7 +766,12 @@ function processEvent(event) {
         lastTask: activity,
         cwd: event.cwd || main.cwd,
         tokens: main.tokens + (event.inputTokens || 0) + (event.outputTokens || 0)
-      });
+      };
+      // Add stoppedAt when transitioning to stopped
+      if (reactivatedStatus === 'stopped' && !main.stoppedAt) {
+        agentUpdate.stoppedAt = event.timestamp;
+      }
+      agents.set(mainAgentId, agentUpdate);
     }
   }
 
@@ -818,9 +854,9 @@ async function getStats() {
   };
 }
 
-// Cache for session token data (refresh every 30 seconds)
+// Cache for session token data (refresh every 5 seconds for realtime)
 const sessionTokenCache = new Map();
-const SESSION_TOKEN_CACHE_TTL = 30000;
+const SESSION_TOKEN_CACHE_TTL = 5000;
 
 // Read tokens from a session transcript file using STREAMING
 async function readSessionTokens(sessionId) {
@@ -889,18 +925,23 @@ async function readSessionTokens(sessionId) {
 
 // Git diff stats cache (per cwd, TTL 12 seconds)
 const gitDiffCache = new Map();
-const GIT_DIFF_CACHE_TTL = 12000;
+const GIT_DIFF_CACHE_TTL = 5000;
 
-function getGitDiffStats(cwd) {
+function getGitDiffStats(cwd, initialCommit) {
   if (!cwd) return null;
 
-  const cached = gitDiffCache.get(cwd);
+  // Cache key includes initialCommit to separate session-based vs HEAD-based diffs
+  const cacheKey = `${cwd}::${initialCommit || 'HEAD'}`;
+  const cached = gitDiffCache.get(cacheKey);
   if (cached && (Date.now() - cached.timestamp) < GIT_DIFF_CACHE_TTL) {
     return cached.data;
   }
 
   try {
-    const output = execSync('git diff --numstat HEAD', {
+    // If initialCommit is set, diff from session start (includes committed + uncommitted)
+    // Otherwise fall back to HEAD (uncommitted only)
+    const diffBase = initialCommit || 'HEAD';
+    const output = execSync(`git diff --numstat ${diffBase}`, {
       cwd,
       encoding: 'utf-8',
       timeout: 5000,
@@ -921,15 +962,49 @@ function getGitDiffStats(cwd) {
     }
 
     const data = files > 0 ? { additions, deletions, files } : null;
-    gitDiffCache.set(cwd, { data, timestamp: Date.now() });
+    gitDiffCache.set(cacheKey, { data, timestamp: Date.now() });
     return data;
   } catch {
-    gitDiffCache.set(cwd, { data: null, timestamp: Date.now() });
+    gitDiffCache.set(cacheKey, { data: null, timestamp: Date.now() });
     return null;
   }
 }
 
-// Get agents (async - statsReader uses async file I/O)
+// Get agents lightweight (sync, no I/O) - for immediate broadcast after events
+function getAgentsLightweight() {
+  const now = Date.now();
+  return Array.from(agents.values())
+    .map(agent => {
+      const result = { ...agent, model: normalizeModel(agent.model) || agent.model };
+      if (agent.status === 'active' && agent.startedAt) {
+        const elapsed = now - new Date(agent.startedAt).getTime();
+        result.elapsed = elapsed;
+        result.elapsedFormatted = formatDuration(elapsed);
+      }
+      // Include git diff stats - persist on agent so it survives status changes
+      if (agent.type === 'main' && agent.cwd) {
+        const freshDiff = getGitDiffStats(agent.cwd, agent.initialCommit);
+        if (freshDiff) {
+          result.gitDiff = freshDiff;
+          // Persist on the stored agent for future fallback
+          agents.set(agent.id, { ...agents.get(agent.id), gitDiff: freshDiff });
+        } else {
+          // Use previously stored gitDiff as fallback
+          result.gitDiff = agent.gitDiff || null;
+        }
+      }
+      return result;
+    })
+    .sort((a, b) => {
+      if (a.status === 'active' && b.status !== 'active') return -1;
+      if (b.status === 'active' && a.status !== 'active') return 1;
+      if (a.type === 'main' && b.type !== 'main') return -1;
+      if (b.type === 'main' && a.type !== 'main') return 1;
+      return new Date(b.lastSeen) - new Date(a.lastSeen);
+    });
+}
+
+// Get agents (async - statsReader uses async file I/O, enriched with tokens/git)
 async function getAgents() {
   // Get primary model from stats
   const tokens = await readStatsCache();
@@ -987,9 +1062,15 @@ async function getAgents() {
         }
       }
 
-      // Add git diff stats for main agents with cwd
+      // Add git diff stats - persist on agent so it survives status changes
       if (agent.type === 'main' && agent.cwd) {
-        result.gitDiff = getGitDiffStats(agent.cwd);
+        const freshDiff = getGitDiffStats(agent.cwd, agent.initialCommit);
+        if (freshDiff) {
+          result.gitDiff = freshDiff;
+          agents.set(agent.id, { ...agents.get(agent.id), gitDiff: freshDiff });
+        } else {
+          result.gitDiff = agent.gitDiff || null;
+        }
       }
 
       return result;
@@ -1082,6 +1163,9 @@ app.post('/events', eventLimiter, (req, res) => {
 
     processEvent(event);
     broadcast({ type: 'event', event });
+
+    // Broadcast lightweight agents immediately (no I/O) for realtime UI
+    broadcast({ type: 'agents_update', agents: getAgentsLightweight() });
 
     res.json({ success: true, id: event.id });
   } catch (err) {

@@ -60,6 +60,26 @@ export default function MiniApp({ onSwitchToFull }) {
     ws.onmessage = (e) => {
       try {
         const data = JSON.parse(e.data);
+        // Merge agents: preserve enriched fields from previous state
+        const mergeAgents = (incoming) => {
+          setAgents(prev => {
+            if (!prev.length) return incoming;
+            const prevMap = new Map(prev.map(a => [a.id, a]));
+            return incoming.map(a => {
+              const old = prevMap.get(a.id);
+              if (!old) return a;
+              const merged = { ...a };
+              if (!merged.gitDiff && old.gitDiff) merged.gitDiff = old.gitDiff;
+              if (!merged.inputTokens && old.inputTokens) {
+                merged.tokens = old.tokens;
+                merged.inputTokens = old.inputTokens;
+                merged.outputTokens = old.outputTokens;
+                merged.cacheReadTokens = old.cacheReadTokens;
+              }
+              return merged;
+            });
+          });
+        };
         if (data.type === 'init') {
           setStats(data.stats);
           setAgents(data.agents || []);
@@ -67,9 +87,11 @@ export default function MiniApp({ onSwitchToFull }) {
           if (data.smartStatus) setSmartStatus(data.smartStatus);
         } else if (data.type === 'stats') {
           setStats(data.stats);
-          setAgents(data.agents || []);
+          mergeAgents(data.agents || []);
           if (data.usage) setClaudeUsage(data.usage);
           if (data.smartStatus) setSmartStatus(data.smartStatus);
+        } else if (data.type === 'agents_update') {
+          mergeAgents(data.agents || []);
         } else if (data.type === 'event' && data.event?.sessionId) {
           // Live update smart status from individual events
           const evt = data.event;

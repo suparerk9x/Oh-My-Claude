@@ -116,6 +116,30 @@ export default function App() {
       try {
         const data = JSON.parse(e.data);
 
+        // Merge agents: preserve enriched fields (gitDiff, tokens) from previous state
+        // when new data doesn't include them (e.g. lightweight updates)
+        const mergeAgents = (incoming) => {
+          setAgents(prev => {
+            if (!prev.length) return incoming;
+            const prevMap = new Map(prev.map(a => [a.id, a]));
+            return incoming.map(a => {
+              const old = prevMap.get(a.id);
+              if (!old) return a;
+              const merged = { ...a };
+              // Preserve gitDiff if new data doesn't have it
+              if (!merged.gitDiff && old.gitDiff) merged.gitDiff = old.gitDiff;
+              // Preserve enriched token data if new data has less info
+              if (!merged.inputTokens && old.inputTokens) {
+                merged.tokens = old.tokens;
+                merged.inputTokens = old.inputTokens;
+                merged.outputTokens = old.outputTokens;
+                merged.cacheReadTokens = old.cacheReadTokens;
+              }
+              return merged;
+            });
+          });
+        };
+
         if (data.type === 'init') {
           // Reset seen IDs and populate with init events
           seenEventIds.current.clear();
@@ -141,10 +165,13 @@ export default function App() {
           setEvents(prev => [data.event, ...prev].slice(0, 100));
         } else if (data.type === 'stats') {
           setStats(data.stats);
-          setAgents(data.agents || []);
+          mergeAgents(data.agents || []);
           checkAgentChanges(data.agents || []);
           setSessions(data.sessions || []);
           if (data.usage) setClaudeUsage(data.usage);
+        } else if (data.type === 'agents_update') {
+          mergeAgents(data.agents || []);
+          checkAgentChanges(data.agents || []);
         } else if (data.type === 'usage') {
           setClaudeUsage(data.usage);
         } else if (data.type === 'clear') {
