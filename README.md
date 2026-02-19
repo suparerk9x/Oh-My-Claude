@@ -7,7 +7,8 @@
 ![Node](https://img.shields.io/badge/node-18%2B-brightgreen)
 ![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey)
 
-<img width="942" height="864" alt="Oh My Claude Dashboard" src="https://github.com/user-attachments/assets/aab6c6ec-392a-4974-b184-f4cbe0bdde65" />
+<img width="942" height="859" alt="image" src="https://github.com/user-attachments/assets/fb8bc85d-6e9b-4622-ad1b-430ed21d2e89" />
+
 
 ---
 
