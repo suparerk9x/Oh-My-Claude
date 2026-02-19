@@ -43,7 +43,7 @@ const getThemeColors = (theme) => ({
  * Help Guide Modal Component
  * Displays documentation about the dashboard with bilingual support (EN/TH)
  */
-export function HelpGuide({ onClose, theme = 'dark' }) {
+export function HelpGuide({ onClose, theme = 'dark', demoMode = false, onDemoToggle }) {
   const [activeSection, setActiveSection] = useState('overview');
   const [lang, setLang] = useState(() => localStorage.getItem('guideLang') || 'en');
   const colors = getThemeColors(theme);
@@ -119,6 +119,17 @@ export function HelpGuide({ onClose, theme = 'dark' }) {
               {sections.find(s => s.id === activeSection)?.icon} {sections.find(s => s.id === activeSection)?.label}
             </h2>
             <div className="flex items-center gap-2">
+              {/* Demo Toggle */}
+              {onDemoToggle && (
+                <button
+                  onClick={onDemoToggle}
+                  className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg ${colors.button.bg} border ${colors.button.border} transition-all text-[11px] font-medium ${demoMode ? 'text-amber-400 ring-1 ring-amber-500/50' : colors.text.muted}`}
+                  title="Toggle Demo Data"
+                >
+                  <span className="text-[13px]">🧪</span>
+                  <span>Demo</span>
+                </button>
+              )}
               {/* Language Toggle */}
               <button
                 onClick={toggleLang}
@@ -161,7 +172,9 @@ export function HelpGuide({ onClose, theme = 'dark' }) {
 
 HelpGuide.propTypes = {
   onClose: PropTypes.func.isRequired,
-  theme: PropTypes.oneOf(['dark', 'light'])
+  theme: PropTypes.oneOf(['dark', 'light']),
+  demoMode: PropTypes.bool,
+  onDemoToggle: PropTypes.func
 };
 
 // Section Components
@@ -198,23 +211,32 @@ function OverviewSection({ lang, theme = 'dark' }) {
       headerLeft: 'Left: App title, LIVE/OFF indicator, sync status',
       headerRight: 'Right: Toolbar buttons (icon-only for compact layout)',
       toolbarViewMode: 'Agent View Mode',
-      toolbarViewModeDesc: 'Cycle: Full > Compact > Expanded > Hidden. Only button with text label.',
+      toolbarViewModeDesc: 'Cycle: Full > Compact > Expanded > Hidden',
+      toolbarViewModeNote: 'Only button with text label',
       toolbarTheme: 'Theme',
       toolbarThemeDesc: 'Toggle Dark / Light mode',
       toolbarMini: 'Mini Pop-out',
       toolbarMiniDesc: 'Open floating mini window (220x450px)',
       toolbarNotif: 'Notifications',
-      toolbarNotifDesc: 'Cycle: Off > Bell > Voice',
+      toolbarNotifDesc: 'Toggle: Off / Bell',
       toolbarGuide: 'Guide',
-      toolbarGuideDesc: 'Open this help guide',
+      toolbarGuideDesc: 'Open this help guide (includes Demo toggle)',
       toolbarStatus: 'Status Badge',
-      toolbarStatusDesc: 'Session usage indicator (Normal / High / Near limit)',
+      toolbarStatusLabel: 'Session usage status (5-hour window):',
+      statusNormal: 'Normal',
+      statusNormalRange: '< 60%',
+      statusHigh: 'High',
+      statusHighRange: '60-84%',
+      statusNear: 'Near limit',
+      statusNearRange: '85-99%',
+      statusFull: 'Full',
+      statusFullRange: '100%',
       leftPanel: 'Left Panel',
       leftContent: 'Token Usage (200px)',
       centerPanel: 'Center Panel',
-      centerContent: 'Agents (300px)',
+      centerContent: 'Agents (340px)',
       rightPanel: 'Right Panel',
-      rightContent: 'Activity Feed (250px)',
+      rightContent: 'Activity Feed (210px, flex when agents hidden)',
       footer: 'Footer',
       footerContent: 'Event filters, monthly cost, clock'
     },
@@ -248,23 +270,32 @@ function OverviewSection({ lang, theme = 'dark' }) {
       headerLeft: 'ซ้าย: ชื่อแอป, ไฟ LIVE/OFF, สถานะ sync',
       headerRight: 'ขวา: ปุ่ม Toolbar (แสดงแค่ icon เพื่อประหยัดเนื้อที่)',
       toolbarViewMode: 'Agent View Mode',
-      toolbarViewModeDesc: 'สลับ: Full > Compact > Expanded > Hidden ปุ่มเดียวที่แสดงชื่อโหมด',
+      toolbarViewModeDesc: 'สลับ: Full > Compact > Expanded > Hidden',
+      toolbarViewModeNote: 'ปุ่มเดียวที่แสดงชื่อโหมด',
       toolbarTheme: 'Theme',
       toolbarThemeDesc: 'สลับ Dark / Light',
       toolbarMini: 'Mini Pop-out',
       toolbarMiniDesc: 'เปิดหน้าต่างลอย mini (220x450px)',
       toolbarNotif: 'Notifications',
-      toolbarNotifDesc: 'สลับ: Off > Bell > Voice',
+      toolbarNotifDesc: 'สลับ: Off / Bell',
       toolbarGuide: 'Guide',
-      toolbarGuideDesc: 'เปิดหน้า help นี้',
+      toolbarGuideDesc: 'เปิดหน้า help นี้ (มีปุ่ม Demo toggle ด้านใน)',
       toolbarStatus: 'Status Badge',
-      toolbarStatusDesc: 'แสดงสถานะ session (Normal / High / Near limit)',
+      toolbarStatusLabel: 'สถานะ session usage (5-hour window):',
+      statusNormal: 'Normal',
+      statusNormalRange: '< 60%',
+      statusHigh: 'High',
+      statusHighRange: '60-84%',
+      statusNear: 'Near limit',
+      statusNearRange: '85-99%',
+      statusFull: 'Full',
+      statusFullRange: '100%',
       leftPanel: 'Left Panel',
       leftContent: 'Token Usage (200px)',
       centerPanel: 'Center Panel',
-      centerContent: 'Agents (300px)',
+      centerContent: 'Agents (340px)',
       rightPanel: 'Right Panel',
-      rightContent: 'Activity Feed (250px)',
+      rightContent: 'Activity Feed (210px, flex เมื่อซ่อน agents)',
       footer: 'Footer',
       footerContent: 'Event filters, monthly cost, นาฬิกา'
     }
@@ -341,7 +372,7 @@ function OverviewSection({ lang, theme = 'dark' }) {
                 <span className="text-lg">🖥️</span>
                 <span className="text-[11px] text-emerald-500 font-semibold">{txt.archBackend}</span>
               </div>
-              <span className={`text-[9px] ${colors.text.dimmed}`}>{txt.archBackendDesc} (port 4000)</span>
+              <span className={`text-[9px] ${colors.text.dimmed}`}>{txt.archBackendDesc} (port 4824)</span>
               <div className="flex justify-center gap-1 mt-2">
                 {txt.archDataItems.map((item, i) => (
                   <span key={i} className="text-[7px] px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-600">
@@ -365,7 +396,7 @@ function OverviewSection({ lang, theme = 'dark' }) {
                 <span className="text-lg">📊</span>
                 <span className="text-[11px] text-blue-500 font-semibold">{txt.archDashboard}</span>
               </div>
-              <span className={`text-[9px] ${colors.text.dimmed}`}>{txt.archDashboardDesc} (port 3001)</span>
+              <span className={`text-[9px] ${colors.text.dimmed}`}>{txt.archDashboardDesc} (port 4825)</span>
             </div>
           </div>
         </div>
@@ -375,80 +406,107 @@ function OverviewSection({ lang, theme = 'dark' }) {
       <div>
         <h4 className={`text-[13px] font-semibold ${colors.text.tertiary} uppercase tracking-wider mb-3`}>{txt.headerToolbarTitle}</h4>
         <p className={`text-[11px] ${colors.text.dimmed} mb-3`}>{txt.headerRight}</p>
+
+        {/* Toolbar Buttons Grid */}
+        <div className="grid grid-cols-2 gap-2 mb-3">
+          {/* View Mode */}
+          <div className={`flex items-start gap-2.5 p-2.5 rounded-lg ${colors.card.bg} border ${colors.card.border}`}>
+            <div className={`flex items-center gap-1 px-1.5 py-1 rounded-md ${colors.card.bgAlt} border ${colors.card.border} shrink-0 mt-0.5`}>
+              <svg className={`w-3 h-3 ${colors.text.muted}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+              </svg>
+              <span className={`text-[9px] font-medium ${colors.text.muted}`}>Full</span>
+            </div>
+            <div className="min-w-0">
+              <div className={`text-[11px] font-semibold ${colors.text.secondary}`}>{txt.toolbarViewMode}</div>
+              <div className={`text-[10px] ${colors.text.dimmed} leading-snug`}>{txt.toolbarViewModeDesc}</div>
+              <div className={`text-[9px] ${colors.text.faint} mt-0.5 italic`}>{txt.toolbarViewModeNote}</div>
+            </div>
+          </div>
+
+          {/* Theme */}
+          <div className={`flex items-start gap-2.5 p-2.5 rounded-lg ${colors.card.bg} border ${colors.card.border}`}>
+            <div className={`p-1 rounded-md ${colors.card.bgAlt} border ${colors.card.border} shrink-0 mt-0.5`}>
+              <svg className={`w-3.5 h-3.5 ${colors.text.muted}`} fill="currentColor" viewBox="0 0 24 24">
+                <path d="M21.752 15.002A9.718 9.718 0 0118 15.75c-5.385 0-9.75-4.365-9.75-9.75 0-1.33.266-2.597.748-3.752A9.753 9.753 0 003 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 009.002-5.998z" />
+              </svg>
+            </div>
+            <div className="min-w-0">
+              <div className={`text-[11px] font-semibold ${colors.text.secondary}`}>{txt.toolbarTheme}</div>
+              <div className={`text-[10px] ${colors.text.dimmed} leading-snug`}>{txt.toolbarThemeDesc}</div>
+            </div>
+          </div>
+
+          {/* Mini Pop-out */}
+          <div className={`flex items-start gap-2.5 p-2.5 rounded-lg ${colors.card.bg} border ${colors.card.border}`}>
+            <div className={`p-1 rounded-md ${colors.card.bgAlt} border ${colors.card.border} shrink-0 mt-0.5`}>
+              <svg className={`w-3.5 h-3.5 ${colors.text.muted}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+              </svg>
+            </div>
+            <div className="min-w-0">
+              <div className={`text-[11px] font-semibold ${colors.text.secondary}`}>{txt.toolbarMini}</div>
+              <div className={`text-[10px] ${colors.text.dimmed} leading-snug`}>{txt.toolbarMiniDesc}</div>
+            </div>
+          </div>
+
+          {/* Notifications */}
+          <div className={`flex items-start gap-2.5 p-2.5 rounded-lg ${colors.card.bg} border ${colors.card.border}`}>
+            <div className={`p-1 rounded-md ${colors.card.bgAlt} border ${colors.card.border} shrink-0 mt-0.5`}>
+              <svg className={`w-3.5 h-3.5 ${colors.text.muted}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+              </svg>
+            </div>
+            <div className="min-w-0">
+              <div className={`text-[11px] font-semibold ${colors.text.secondary}`}>{txt.toolbarNotif}</div>
+              <div className={`text-[10px] ${colors.text.dimmed} leading-snug`}>{txt.toolbarNotifDesc}</div>
+            </div>
+          </div>
+
+          {/* Guide */}
+          <div className={`flex items-start gap-2.5 p-2.5 rounded-lg ${colors.card.bg} border ${colors.card.border} col-span-2`}>
+            <div className={`p-1 rounded-md ${colors.card.bgAlt} border ${colors.card.border} shrink-0 mt-0.5`}>
+              <svg className={`w-3.5 h-3.5 ${colors.text.muted}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </div>
+            <div className="min-w-0">
+              <div className={`text-[11px] font-semibold ${colors.text.secondary}`}>{txt.toolbarGuide}</div>
+              <div className={`text-[10px] ${colors.text.dimmed} leading-snug`}>{txt.toolbarGuideDesc}</div>
+            </div>
+          </div>
+        </div>
+
+        {/* Status Badge - Separate Card */}
         <div className={`rounded-xl border ${colors.card.border} overflow-hidden`}>
-          {/* Toolbar visual mockup */}
-          <div className={`${colors.card.bgAlt} px-3 py-2.5 flex flex-wrap gap-x-4 gap-y-2`}>
-            {/* Group 1: Layout */}
-            <div className="flex items-center gap-2">
-              <div className={`flex items-center gap-1 px-1.5 py-1 rounded-lg ${colors.card.bg} border ${colors.card.border}`}>
-                <svg className={`w-3.5 h-3.5 ${colors.text.muted}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-                </svg>
-                <span className={`text-[10px] font-medium ${colors.text.muted}`}>Full</span>
-              </div>
-              <div className="text-[10px]">
-                <div className={`font-semibold ${colors.text.secondary}`}>{txt.toolbarViewMode}</div>
-                <div className={colors.text.dimmed}>{txt.toolbarViewModeDesc}</div>
-              </div>
+          <div className={`${colors.card.bgAlt} px-3 py-2 flex items-center gap-2`}>
+            <span className={`text-[11px] font-semibold ${colors.text.secondary}`}>🚦 {txt.toolbarStatus}</span>
+            <span className={`text-[10px] ${colors.text.dimmed}`}>— {txt.toolbarStatusLabel}</span>
+          </div>
+          <div className={`grid grid-cols-4 gap-0 border-t ${colors.card.border}`}>
+            {/* Normal */}
+            <div className={`p-2.5 text-center border-r ${colors.card.border} ${colors.card.bg}`}>
+              <div className="text-lg mb-1">🪴</div>
+              <div className="text-[10px] font-semibold text-emerald-500 mb-0.5">{txt.statusNormal}</div>
+              <div className={`text-[9px] ${colors.text.dimmed}`}>{txt.statusNormalRange}</div>
             </div>
-            <div className="flex items-center gap-2">
-              <div className={`p-1.5 rounded-lg ${colors.card.bg} border ${colors.card.border}`}>
-                <svg className={`w-3.5 h-3.5 ${colors.text.muted}`} fill="currentColor" viewBox="0 0 24 24">
-                  <path d="M21.752 15.002A9.718 9.718 0 0118 15.75c-5.385 0-9.75-4.365-9.75-9.75 0-1.33.266-2.597.748-3.752A9.753 9.753 0 003 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 009.002-5.998z" />
-                </svg>
-              </div>
-              <div className="text-[10px]">
-                <div className={`font-semibold ${colors.text.secondary}`}>{txt.toolbarTheme}</div>
-                <div className={colors.text.dimmed}>{txt.toolbarThemeDesc}</div>
-              </div>
+            {/* High */}
+            <div className={`p-2.5 text-center border-r ${colors.card.border} ${colors.card.bg}`}>
+              <div className="text-lg mb-1">⚡</div>
+              <div className="text-[10px] font-semibold text-amber-500 mb-0.5">{txt.statusHigh}</div>
+              <div className={`text-[9px] ${colors.text.dimmed}`}>{txt.statusHighRange}</div>
             </div>
-            {/* Separator */}
-            <div className={`w-px h-8 self-center ${theme === 'light' ? 'bg-slate-200' : 'bg-white/10'}`} />
-            {/* Group 2: Utilities */}
-            <div className="flex items-center gap-2">
-              <div className={`p-1.5 rounded-lg ${colors.card.bg} border ${colors.card.border}`}>
-                <svg className={`w-3.5 h-3.5 ${colors.text.muted}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                </svg>
-              </div>
-              <div className="text-[10px]">
-                <div className={`font-semibold ${colors.text.secondary}`}>{txt.toolbarMini}</div>
-                <div className={colors.text.dimmed}>{txt.toolbarMiniDesc}</div>
-              </div>
+            {/* Near limit */}
+            <div className={`p-2.5 text-center border-r ${colors.card.border} ${colors.card.bg}`}>
+              <div className="text-lg mb-1">🚨</div>
+              <div className="text-[10px] font-semibold text-red-500 mb-0.5">{txt.statusNear}</div>
+              <div className={`text-[9px] ${colors.text.dimmed}`}>{txt.statusNearRange}</div>
             </div>
-            <div className="flex items-center gap-2">
-              <div className={`p-1.5 rounded-lg ${colors.card.bg} border ${colors.card.border}`}>
-                <svg className={`w-3.5 h-3.5 ${colors.text.muted}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
-                </svg>
-              </div>
-              <div className="text-[10px]">
-                <div className={`font-semibold ${colors.text.secondary}`}>{txt.toolbarNotif}</div>
-                <div className={colors.text.dimmed}>{txt.toolbarNotifDesc}</div>
-              </div>
-            </div>
-            {/* Separator */}
-            <div className={`w-px h-8 self-center ${theme === 'light' ? 'bg-slate-200' : 'bg-white/10'}`} />
-            {/* Group 3: Info */}
-            <div className="flex items-center gap-2">
-              <div className={`p-1.5 rounded-lg ${colors.card.bg} border ${colors.card.border}`}>
-                <svg className={`w-3.5 h-3.5 ${colors.text.muted}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-              </div>
-              <div className="text-[10px]">
-                <div className={`font-semibold ${colors.text.secondary}`}>{txt.toolbarGuide}</div>
-                <div className={colors.text.dimmed}>{txt.toolbarGuideDesc}</div>
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="px-1.5 py-1 rounded-lg bg-emerald-500/10 text-emerald-500 text-[10px] font-semibold">
-                Normal
-              </div>
-              <div className="text-[10px]">
-                <div className={`font-semibold ${colors.text.secondary}`}>{txt.toolbarStatus}</div>
-                <div className={colors.text.dimmed}>{txt.toolbarStatusDesc}</div>
-              </div>
+            {/* Full */}
+            <div className={`p-2.5 text-center ${colors.card.bg}`}>
+              <div className="text-lg mb-1">🫗</div>
+              <div className="text-[10px] font-semibold text-rose-500 mb-0.5">{txt.statusFull}</div>
+              <div className={`text-[9px] ${colors.text.dimmed}`}>{txt.statusFullRange}</div>
             </div>
           </div>
         </div>
@@ -499,7 +557,7 @@ function SetupSection({ lang, theme = 'dark' }) {
       step2File: '~/.claude/settings.json',
       step2FileWin: 'C:\\Users\\<username>\\.claude\\settings.json',
       step2Note: 'Replace <PATH> with your oh-my-claude folder path',
-      step2Hooks: ['PreToolUse', 'PostToolUse', 'SubagentStart', 'SubagentStop', 'UserPromptSubmit', 'Stop'],
+      step2Hooks: ['PreToolUse', 'PostToolUse', 'SubagentStart', 'SubagentStop', 'UserPromptSubmit', 'Stop', 'PreCompact'],
       step3: 'Install Chrome Extension',
       step3For: 'Optional - for Sync Usage',
       step3Desc: 'Pull Session % and Weekly % directly from Claude.ai:',
@@ -510,6 +568,11 @@ function SetupSection({ lang, theme = 'dark' }) {
       step4: 'Start the Dashboard',
       step4Desc: 'Run both backend and frontend:',
       step4Note: 'Dashboard opens at',
+      step5: 'Install as App (PWA)',
+      step5For: 'Optional',
+      step5Desc: 'Install as a standalone desktop app for quick access:',
+      step5Steps: ['Open http://localhost:4825 in Chrome', 'Click the install icon (⊕) in the address bar', 'Click "Install" in the popup dialog', 'App opens in its own window — pin to taskbar!'],
+      step5Note: 'Supports mini mode (280×400) and full dashboard (765×870)',
       ports: 'Ports Used',
       hookExample: 'Hook Configuration Example',
       important: 'Important',
@@ -527,7 +590,7 @@ function SetupSection({ lang, theme = 'dark' }) {
       step2File: '~/.claude/settings.json',
       step2FileWin: 'C:\\Users\\<username>\\.claude\\settings.json',
       step2Note: 'แทนที่ <PATH> ด้วย path ไปยัง folder oh-my-claude ของคุณ',
-      step2Hooks: ['PreToolUse', 'PostToolUse', 'SubagentStart', 'SubagentStop', 'UserPromptSubmit', 'Stop'],
+      step2Hooks: ['PreToolUse', 'PostToolUse', 'SubagentStart', 'SubagentStop', 'UserPromptSubmit', 'Stop', 'PreCompact'],
       step3: 'ติดตั้ง Chrome Extension',
       step3For: 'Optional - สำหรับ Sync Usage',
       step3Desc: 'ดึง Session % และ Weekly % จาก Claude.ai โดยตรง:',
@@ -538,6 +601,11 @@ function SetupSection({ lang, theme = 'dark' }) {
       step4: 'เริ่มใช้งาน Dashboard',
       step4Desc: 'รัน backend และ frontend:',
       step4Note: 'Dashboard เปิดที่',
+      step5: 'ติดตั้งเป็น App (PWA)',
+      step5For: 'Optional',
+      step5Desc: 'ติดตั้งเป็น desktop app เพื่อเข้าถึงได้ง่าย:',
+      step5Steps: ['เปิด http://localhost:4825 ใน Chrome', 'คลิก icon ติดตั้ง (⊕) ที่ address bar', 'คลิก "Install" ในหน้าต่าง popup', 'App เปิดในหน้าต่างแยก — ปักหมุดที่ taskbar ได้เลย!'],
+      step5Note: 'รองรับ mini mode (280×400) และ full dashboard (765×870)',
       ports: 'Ports ที่ใช้',
       hookExample: 'ตัวอย่าง Hook Configuration',
       important: 'สำคัญ',
@@ -559,12 +627,12 @@ function SetupSection({ lang, theme = 'dark' }) {
         <div className={`p-4 rounded-xl ${colors.card.bgAlt} border ${colors.card.border} font-mono text-[11px]`}>
           <div className={colors.text.muted}>oh-my-claude/</div>
           <div className={`pl-4 ${colors.text.dimmed}`}>├── <span className="text-blue-500">backend/</span></div>
-          <div className={`pl-8 ${colors.text.dimmed}`}>├── <span className="text-emerald-500">server.js</span> <span className={colors.text.faint}>← Express + WebSocket (port 4000)</span></div>
+          <div className={`pl-8 ${colors.text.dimmed}`}>├── <span className="text-emerald-500">server.js</span> <span className={colors.text.faint}>← Express + WebSocket (port 4824)</span></div>
           <div className={`pl-8 ${colors.text.dimmed}`}>├── <span className="text-emerald-500">statsReader.js</span> <span className={colors.text.faint}>← Read transcript data</span></div>
           <div className={`pl-8 ${colors.text.dimmed}`}>└── <span className="text-amber-500">events.json</span> <span className={colors.text.faint}>← Event storage (auto)</span></div>
           <div className={`pl-4 ${colors.text.dimmed}`}>├── <span className="text-blue-500">frontend/</span></div>
           <div className={`pl-8 ${colors.text.dimmed}`}>├── <span className="text-emerald-500">src/App.jsx</span> <span className={colors.text.faint}>← React dashboard</span></div>
-          <div className={`pl-8 ${colors.text.dimmed}`}>└── <span className="text-amber-500">vite.config.js</span> <span className={colors.text.faint}>← port 3001</span></div>
+          <div className={`pl-8 ${colors.text.dimmed}`}>└── <span className="text-amber-500">vite.config.js</span> <span className={colors.text.faint}>← port 4825</span></div>
           <div className={`pl-4 ${colors.text.dimmed}`}>├── <span className="text-violet-500">hooks/</span></div>
           <div className={`pl-8 ${colors.text.dimmed}`}>└── <span className="text-emerald-500">send_event.js</span> <span className={colors.text.faint}>← Hook script (sends to backend)</span></div>
           <div className={`pl-4 ${colors.text.dimmed}`}>├── <span className="text-cyan-500">extension/</span> <span className={colors.text.faint}>← Chrome Extension (optional)</span></div>
@@ -611,7 +679,7 @@ function SetupSection({ lang, theme = 'dark' }) {
               <div className="pl-6 text-emerald-500">{'"type": "command",'}</div>
               <div className="pl-6 text-amber-500">{'"command": "node \\"<PATH>/hooks/send_event.js\\" --event-type PreToolUse"'}</div>
               <div className="pl-4 text-cyan-500">{'  }]}],'}</div>
-              <div className={`pl-4 ${colors.text.faint}`}>{'// ... same for PostToolUse, SubagentStart, SubagentStop, UserPromptSubmit, Stop'}</div>
+              <div className={`pl-4 ${colors.text.faint}`}>{'// ... same for PostToolUse, SubagentStart, SubagentStop, UserPromptSubmit, Stop, PreCompact'}</div>
               <div className={`pl-2 ${colors.text.dimmed}`}>{'}'}</div>
               <div className={colors.text.dimmed}>{'}'}</div>
             </div>
@@ -661,7 +729,28 @@ function SetupSection({ lang, theme = 'dark' }) {
               <div>cd frontend && npm run dev</div>
             </div>
             <div className="text-[10px] text-emerald-500/80 mt-2">
-              ✓ {txt.step4Note} <code className="bg-emerald-500/20 px-1 rounded">http://localhost:3001</code>
+              ✓ {txt.step4Note} <code className="bg-emerald-500/20 px-1 rounded">http://localhost:4825</code>
+            </div>
+          </div>
+
+          {/* Step 5: Install as App */}
+          <div className={`p-3 rounded-lg ${colors.card.bg} border border-violet-500/30`}>
+            <div className="flex items-center gap-2 mb-2">
+              <span className="w-5 h-5 rounded-full bg-violet-500/20 text-violet-500 text-[11px] flex items-center justify-center font-bold">5</span>
+              <span className={`text-[13px] font-semibold ${colors.text.secondary}`}>{txt.step5}</span>
+              <span className="text-[9px] text-violet-500 bg-violet-500/20 px-1.5 py-0.5 rounded">{txt.step5For}</span>
+            </div>
+            <p className={`text-[11px] ${colors.text.dimmed} mb-2`}>{txt.step5Desc}</p>
+            <div className="space-y-1 mb-2">
+              {txt.step5Steps.map((step, i) => (
+                <div key={i} className="flex items-center gap-2 text-[11px]">
+                  <span className="text-violet-500/60">{i + 1}.</span>
+                  <span className={colors.text.muted}>{step}</span>
+                </div>
+              ))}
+            </div>
+            <div className="text-[10px] text-violet-500/80">
+              ✓ {txt.step5Note}
             </div>
           </div>
         </div>
@@ -672,12 +761,12 @@ function SetupSection({ lang, theme = 'dark' }) {
         <h4 className={`text-[13px] font-semibold ${colors.text.tertiary} uppercase tracking-wider mb-3`}>{txt.ports}</h4>
         <div className="grid grid-cols-2 gap-3">
           <div className={`p-3 rounded-lg ${colors.card.bg} border ${colors.card.border}`}>
-            <div className="text-[12px] font-semibold text-emerald-500 mb-1">Backend: 4000</div>
+            <div className="text-[12px] font-semibold text-emerald-500 mb-1">Backend: 4824</div>
             <div className={`text-[11px] ${colors.text.dimmed}`}>HTTP API + WebSocket</div>
             <div className={`text-[10px] ${colors.text.faint} mt-1`}>POST /events, GET /stats</div>
           </div>
           <div className={`p-3 rounded-lg ${colors.card.bg} border ${colors.card.border}`}>
-            <div className="text-[12px] font-semibold text-blue-500 mb-1">Frontend: 3001</div>
+            <div className="text-[12px] font-semibold text-blue-500 mb-1">Frontend: 4825</div>
             <div className={`text-[11px] ${colors.text.dimmed}`}>Vite dev server</div>
             <div className={`text-[10px] ${colors.text.faint} mt-1`}>React dashboard UI</div>
           </div>
@@ -700,6 +789,7 @@ function StatusSection({ lang, theme = 'dark' }) {
       normal: 'Normal',
       high: 'High Usage',
       near: 'Near Limit',
+      full: 'Full',
       ofLimit: 'of session limit',
     },
     th: {
@@ -712,6 +802,7 @@ function StatusSection({ lang, theme = 'dark' }) {
       normal: 'Normal',
       high: 'High Usage',
       near: 'Near Limit',
+      full: 'Full',
       ofLimit: 'ของ session limit',
     }
   };
@@ -748,7 +839,7 @@ function StatusSection({ lang, theme = 'dark' }) {
         <div className="space-y-2">
           <div className="flex items-center justify-between p-3 rounded-lg bg-green-500/10 border border-green-500/20">
             <div className="flex items-center gap-2">
-              <span className="text-sm">✅</span>
+              <span className="text-sm">🪴</span>
               <span className="text-[13px] font-semibold text-green-500">{txt.normal}</span>
             </div>
             <div className={`text-[12px] ${colors.text.muted}`}>
@@ -757,7 +848,7 @@ function StatusSection({ lang, theme = 'dark' }) {
           </div>
           <div className="flex items-center justify-between p-3 rounded-lg bg-yellow-500/10 border border-yellow-500/20">
             <div className="flex items-center gap-2">
-              <span className="text-sm">⚠️</span>
+              <span className="text-sm">⚡</span>
               <span className="text-[13px] font-semibold text-yellow-500">{txt.high}</span>
             </div>
             <div className={`text-[12px] ${colors.text.muted}`}>
@@ -766,11 +857,20 @@ function StatusSection({ lang, theme = 'dark' }) {
           </div>
           <div className="flex items-center justify-between p-3 rounded-lg bg-red-500/10 border border-red-500/20">
             <div className="flex items-center gap-2">
-              <span className="text-sm">⚠️</span>
+              <span className="text-sm">🚨</span>
               <span className="text-[13px] font-semibold text-red-500">{txt.near}</span>
             </div>
             <div className={`text-[12px] ${colors.text.muted}`}>
-              <span className="font-mono text-red-500">≥ 85%</span> {txt.ofLimit}
+              <span className="font-mono text-red-500">85% - 99%</span> {txt.ofLimit}
+            </div>
+          </div>
+          <div className="flex items-center justify-between p-3 rounded-lg bg-red-500/10 border border-red-500/20">
+            <div className="flex items-center gap-2">
+              <span className="text-sm">🫗</span>
+              <span className="text-[13px] font-semibold text-red-400">{txt.full}</span>
+            </div>
+            <div className={`text-[12px] ${colors.text.muted}`}>
+              <span className="font-mono text-red-400">100%</span> {txt.ofLimit}
             </div>
           </div>
         </div>
@@ -812,6 +912,8 @@ function TokensSection({ lang, theme = 'dark' }) {
       highDesc: 'Consider pausing complex tasks',
       near: 'Near Limit',
       nearDesc: 'Risk of hitting rate limit soon',
+      full: 'Full',
+      fullDesc: 'Rate limited, wait for reset',
       tipsTitle: 'Tips',
       tips: [
         'Use Haiku for simple tasks to save quota',
@@ -849,6 +951,8 @@ function TokensSection({ lang, theme = 'dark' }) {
       highDesc: 'พิจารณาหยุดงานใหญ่',
       near: 'ใกล้ Limit',
       nearDesc: 'เสี่ยงโดน rate limit เร็วๆ นี้',
+      full: 'เต็ม',
+      fullDesc: 'โดน rate limit แล้ว รอ reset',
       tipsTitle: 'Tips',
       tips: [
         'ใช้ Haiku สำหรับงานง่ายเพื่อประหยัด quota',
@@ -940,24 +1044,31 @@ function TokensSection({ lang, theme = 'dark' }) {
         <div className="space-y-2">
           <div className="flex items-center justify-between p-2 rounded-lg bg-green-500/10 border border-green-500/20">
             <div className="flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-green-500" />
+              <span className="text-sm">🪴</span>
               <span className="text-[12px] font-medium text-green-500">{txt.normal}</span>
             </div>
             <span className={`text-[10px] ${colors.text.dimmed}`}>{txt.normalDesc}</span>
           </div>
           <div className="flex items-center justify-between p-2 rounded-lg bg-yellow-500/10 border border-yellow-500/20">
             <div className="flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-yellow-500" />
+              <span className="text-sm">⚡</span>
               <span className="text-[12px] font-medium text-yellow-500">{txt.high}</span>
             </div>
             <span className={`text-[10px] ${colors.text.dimmed}`}>{txt.highDesc}</span>
           </div>
           <div className="flex items-center justify-between p-2 rounded-lg bg-red-500/10 border border-red-500/20">
             <div className="flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-red-500" />
+              <span className="text-sm">🚨</span>
               <span className="text-[12px] font-medium text-red-500">{txt.near}</span>
             </div>
             <span className={`text-[10px] ${colors.text.dimmed}`}>{txt.nearDesc}</span>
+          </div>
+          <div className="flex items-center justify-between p-2 rounded-lg bg-red-500/10 border border-red-500/20">
+            <div className="flex items-center gap-2">
+              <span className="text-sm">🫗</span>
+              <span className="text-[12px] font-medium text-red-400">{txt.full}</span>
+            </div>
+            <span className={`text-[10px] ${colors.text.dimmed}`}>{txt.fullDesc}</span>
           </div>
         </div>
       </div>
@@ -987,15 +1098,15 @@ function ModelsSection({ lang, theme = 'dark' }) {
       whenToUse: 'When to Use',
       speedCost: 'Speed & Cost',
       useCases: 'Use Cases',
-      opusName: 'Opus 4.5',
+      opusName: 'Opus',
       opusWhen: 'Complex reasoning, architecture decisions, multi-file refactoring',
       opusSpeed: 'Slowest but highest quality • Most expensive',
       opusUseCases: ['System design', 'Complex debugging', 'Code review', 'Writing plans'],
-      sonnetName: 'Sonnet 4.5',
+      sonnetName: 'Sonnet',
       sonnetWhen: 'General coding, everyday tasks, good balance of speed and quality',
       sonnetSpeed: 'Fast with great quality • Moderate cost',
       sonnetUseCases: ['Feature implementation', 'Bug fixes', 'Tests', 'Documentation'],
-      haikuName: 'Haiku 4.5',
+      haikuName: 'Haiku',
       haikuWhen: 'Quick lookups, simple edits, bulk operations, subagent tasks',
       haikuSpeed: 'Fastest response • Most economical',
       haikuUseCases: ['File searches', 'Simple edits', 'Format conversion', 'Exploration'],
@@ -1018,15 +1129,15 @@ function ModelsSection({ lang, theme = 'dark' }) {
       whenToUse: 'ใช้เมื่อไหร่',
       speedCost: 'ความเร็ว & ค่าใช้จ่าย',
       useCases: 'ตัวอย่างการใช้งาน',
-      opusName: 'Opus 4.5',
+      opusName: 'Opus',
       opusWhen: 'งาน reasoning ซับซ้อน, ตัดสินใจ architecture, refactor หลายไฟล์',
       opusSpeed: 'ช้าสุดแต่คุณภาพสูงสุด • แพงสุด',
       opusUseCases: ['System design', 'Debug ซับซ้อน', 'Code review', 'เขียน plan'],
-      sonnetName: 'Sonnet 4.5',
+      sonnetName: 'Sonnet',
       sonnetWhen: 'Coding ทั่วไป, งานประจำวัน, สมดุลระหว่างความเร็วและคุณภาพ',
       sonnetSpeed: 'เร็วและคุณภาพดี • ค่าใช้จ่ายปานกลาง',
       sonnetUseCases: ['สร้าง feature', 'แก้ bug', 'เขียน test', 'Documentation'],
-      haikuName: 'Haiku 4.5',
+      haikuName: 'Haiku',
       haikuWhen: 'Lookup เร็วๆ, แก้ไขง่ายๆ, งาน bulk, subagent tasks',
       haikuSpeed: 'ตอบเร็วที่สุด • ประหยัดที่สุด',
       haikuUseCases: ['ค้นหาไฟล์', 'แก้ไขง่ายๆ', 'แปลง format', 'สำรวจ code'],
@@ -1184,13 +1295,25 @@ function AgentsSection({ lang, theme = 'dark' }) {
       statusRemoved: 'Removed',
       statusRemovedDesc: 'No activity for 60 min, deleted',
       autoCleanup: 'Agents automatically return to Active when new events arrive.',
+      smartStatusTitle: 'Smart Status Detection',
+      smartStatusDesc: 'When an agent is active, the dashboard derives a real-time granular status from the event stream — showing exactly what Claude is doing right now.',
+      smartThinking: 'After user prompt or tool completion — Claude is reasoning',
+      smartReading: 'Read / Glob / Grep in progress — scanning files',
+      smartWriting: 'Edit / Write in progress — modifying code',
+      smartExecuting: 'Bash command running — executing in terminal',
+      smartSpawning: 'Task tool called — creating a subagent',
+      smartSearching: 'WebSearch / WebFetch — browsing the web',
+      smartWaiting: 'Permission requested — waiting for user approval',
+      smartCompacting: 'Context compaction — freeing up context window',
+      smartProcessing: 'Other tool in progress',
       cardLayoutTitle: 'Card Layout (Full Mode)',
-      cardLayoutDesc: 'Each main agent displays 3 lines. Subagents show 2 lines indented below.',
-      cardLine1: 'Line 1: Status dot + label, Model badge, Duration, Tokens',
-      cardLine2: 'Line 2: Last activity (tool icon + name), Session ID (right-aligned)',
+      cardLayoutDesc: 'Each main agent displays up to 3 lines. Subagents show up to 3 lines indented below. Stopped sessions/subagents are dimmed (opacity 50%).',
+      cardLine1: 'Line 1: Model badge, Smart Status (icon + label, no bg) or Status badge (with colored bg), Duration, Tokens',
+      cardLine2: 'Line 2: Last activity (tool icon + name), Session ID — hidden if no activity',
       cardLine3: 'Line 3: Task count badge, Git diff chip (+adds -dels files)',
-      cardSubLine1: 'Subagent Line 1: Status + Model + Type, Duration, Tokens',
-      cardSubLine2: 'Subagent Line 2: Description, Agent ID (right-aligned)',
+      cardSubLine1: 'Subagent Line 1: └ Model + Type + Status badge (with colored bg), Duration, Tokens',
+      cardSubLine2: 'Subagent Line 2: Tools used (if any)',
+      cardSubLine3: 'Subagent Line 3: Description (truncated), Agent ID',
       gitDiffTitle: 'Git Diff Stats',
       gitDiffDesc: 'Shows uncommitted changes per agent working directory as a segmented chip with color-coded sections.',
       gitDiffAdd: 'Lines added (insertions) — green',
@@ -1201,7 +1324,7 @@ function AgentsSection({ lang, theme = 'dark' }) {
       subagentCountTitle: 'Subagent Count',
       subagentCountDesc: 'Shows active/total running subagents as a badge (e.g. "2/5 running").',
       expandedTitle: 'Expanded View',
-      expandedDesc: 'Expanded mode fills the full content area height. Each session card stretches vertically to share space, with subagents scrollable inside. Tools wrap to multiple lines and descriptions show in full (not truncated).'
+      expandedDesc: 'Expanded mode shows session cards with rounded borders and larger font/spacing. The whole panel scrolls vertically. Tools can wrap to multiple lines. Descriptions are single-line truncated.'
     },
     th: {
       whatTitle: 'Agents คืออะไร?',
@@ -1224,13 +1347,25 @@ function AgentsSection({ lang, theme = 'dark' }) {
       statusRemoved: 'Removed',
       statusRemovedDesc: 'ไม่มี activity 60 นาที, ลบออก',
       autoCleanup: 'Agent จะกลับเป็น Active อัตโนมัติเมื่อมี event ใหม่เข้ามา',
+      smartStatusTitle: 'Smart Status Detection',
+      smartStatusDesc: 'เมื่อ agent กำลังทำงาน dashboard จะวิเคราะห์ event stream แบบ real-time แสดงสถานะละเอียดว่า Claude กำลังทำอะไรอยู่ตอนนี้',
+      smartThinking: 'หลัง user prompt หรือ tool เสร็จ — Claude กำลังคิด',
+      smartReading: 'Read / Glob / Grep กำลังทำงาน — สแกนไฟล์',
+      smartWriting: 'Edit / Write กำลังทำงาน — แก้ไขโค้ด',
+      smartExecuting: 'Bash command กำลังรัน — ทำงานใน terminal',
+      smartSpawning: 'Task tool ถูกเรียก — สร้าง subagent',
+      smartSearching: 'WebSearch / WebFetch — ค้นหาเว็บ',
+      smartWaiting: 'Permission requested — รอ user อนุมัติ',
+      smartCompacting: 'Context compaction — เคลียร์ context window',
+      smartProcessing: 'Tool อื่นกำลังทำงาน',
       cardLayoutTitle: 'Card Layout (Full Mode)',
-      cardLayoutDesc: 'Main agent แสดง 3 บรรทัด, Subagent แสดง 2 บรรทัดย่อยด้านล่าง',
-      cardLine1: 'บรรทัด 1: จุดสถานะ + label, Model badge, Duration, Tokens',
-      cardLine2: 'บรรทัด 2: Activity ล่าสุด (ไอคอน + ชื่อ tool), Session ID (ชิดขวา)',
+      cardLayoutDesc: 'Main agent แสดงสูงสุด 3 บรรทัด, Subagent แสดงสูงสุด 3 บรรทัดย่อยด้านล่าง Session/subagent ที่ stopped จะจางลง (opacity 50%)',
+      cardLine1: 'บรรทัด 1: Model badge, Smart Status (icon + label ไม่มี bg) หรือ Status badge (มี bg สี), Duration, Tokens',
+      cardLine2: 'บรรทัด 2: Activity ล่าสุด (ไอคอน + ชื่อ tool), Session ID — ซ่อนถ้าไม่มี activity',
       cardLine3: 'บรรทัด 3: Task count badge, Git diff chip (+เพิ่ม -ลบ ไฟล์)',
-      cardSubLine1: 'Subagent บรรทัด 1: สถานะ + Model + Type, Duration, Tokens',
-      cardSubLine2: 'Subagent บรรทัด 2: Description, Agent ID (ชิดขวา)',
+      cardSubLine1: 'Subagent บรรทัด 1: └ Model + Type + Status badge (มี bg สี), Duration, Tokens',
+      cardSubLine2: 'Subagent บรรทัด 2: Tools ที่ใช้ (ถ้ามี)',
+      cardSubLine3: 'Subagent บรรทัด 3: Description (ตัดถ้ายาว), Agent ID',
       gitDiffTitle: 'Git Diff Stats',
       gitDiffDesc: 'แสดง uncommitted changes ต่อ working directory เป็น segmented chip แยกสีตามประเภท',
       gitDiffAdd: 'บรรทัดที่เพิ่ม (insertions) — เขียว',
@@ -1241,7 +1376,7 @@ function AgentsSection({ lang, theme = 'dark' }) {
       subagentCountTitle: 'Subagent Count',
       subagentCountDesc: 'แสดง active/total subagents เป็น badge (เช่น "2/5 running")',
       expandedTitle: 'Expanded View',
-      expandedDesc: 'Expanded mode แสดงเต็ม content area แต่ละ session card ยืดแนวตั้งแบ่งพื้นที่เท่าๆ กัน subagents scroll ได้ภายใน card, tools ขึ้นบรรทัดใหม่ได้ และ description แสดงเต็มไม่ตัด'
+      expandedDesc: 'Expanded mode แสดง session card มีขอบมน ตัวอักษรและ spacing ใหญ่ขึ้น panel ทั้งหมด scroll แนวตั้งได้ tools ขึ้นบรรทัดใหม่ได้ Description แสดง 1 บรรทัดตัดถ้ายาว'
     }
   };
   const txt = t[lang] || t.en;
@@ -1320,6 +1455,61 @@ function AgentsSection({ lang, theme = 'dark' }) {
         <p className={`text-[11px] ${colors.text.faint} mt-3`}>{txt.autoCleanup}</p>
       </div>
 
+      {/* Smart Status Detection */}
+      <div>
+        <h4 className={`text-[13px] font-semibold ${colors.text.tertiary} uppercase tracking-wider mb-3`}>
+          <span className="mr-1.5">✨</span>{txt.smartStatusTitle}
+        </h4>
+        <p className={`text-[12px] ${colors.text.dimmed} mb-3`}>{txt.smartStatusDesc}</p>
+        <div className="space-y-1.5">
+          <div className="flex items-center gap-2.5 p-2.5 rounded-lg bg-violet-500/10 border border-violet-500/20">
+            <span className="text-[14px] w-6 text-center animate-pulse">🧠</span>
+            <span className="text-[12px] font-semibold text-violet-400 w-20">Thinking</span>
+            <span className={`text-[11px] ${colors.text.dimmed} flex-1`}>{txt.smartThinking}</span>
+          </div>
+          <div className="flex items-center gap-2.5 p-2.5 rounded-lg bg-sky-500/10 border border-sky-500/20">
+            <span className="text-[14px] w-6 text-center animate-pulse">👁</span>
+            <span className="text-[12px] font-semibold text-sky-400 w-20">Reading</span>
+            <span className={`text-[11px] ${colors.text.dimmed} flex-1`}>{txt.smartReading}</span>
+          </div>
+          <div className="flex items-center gap-2.5 p-2.5 rounded-lg bg-orange-500/10 border border-orange-500/20">
+            <span className="text-[14px] w-6 text-center animate-pulse">✍️</span>
+            <span className="text-[12px] font-semibold text-orange-400 w-20">Writing</span>
+            <span className={`text-[11px] ${colors.text.dimmed} flex-1`}>{txt.smartWriting}</span>
+          </div>
+          <div className="flex items-center gap-2.5 p-2.5 rounded-lg bg-amber-500/10 border border-amber-500/20">
+            <span className="text-[14px] w-6 text-center animate-bounce">⚡</span>
+            <span className="text-[12px] font-semibold text-amber-400 w-20">Executing</span>
+            <span className={`text-[11px] ${colors.text.dimmed} flex-1`}>{txt.smartExecuting}</span>
+          </div>
+          <div className="flex items-center gap-2.5 p-2.5 rounded-lg bg-violet-500/10 border border-violet-500/20">
+            <span className="text-[14px] w-6 text-center animate-spin">🔀</span>
+            <span className="text-[12px] font-semibold text-violet-400 w-20">Spawning</span>
+            <span className={`text-[11px] ${colors.text.dimmed} flex-1`}>{txt.smartSpawning}</span>
+          </div>
+          <div className="flex items-center gap-2.5 p-2.5 rounded-lg bg-cyan-500/10 border border-cyan-500/20">
+            <span className="text-[14px] w-6 text-center animate-pulse">🌐</span>
+            <span className="text-[12px] font-semibold text-cyan-400 w-20">Searching</span>
+            <span className={`text-[11px] ${colors.text.dimmed} flex-1`}>{txt.smartSearching}</span>
+          </div>
+          <div className="flex items-center gap-2.5 p-2.5 rounded-lg bg-orange-500/10 border border-orange-500/20">
+            <span className="text-[14px] w-6 text-center animate-pulse">⏳</span>
+            <span className="text-[12px] font-semibold text-orange-400 w-20">Waiting</span>
+            <span className={`text-[11px] ${colors.text.dimmed} flex-1`}>{txt.smartWaiting}</span>
+          </div>
+          <div className="flex items-center gap-2.5 p-2.5 rounded-lg bg-slate-500/10 border border-slate-500/20">
+            <span className="text-[14px] w-6 text-center animate-pulse">📦</span>
+            <span className="text-[12px] font-semibold text-slate-400 w-20">Compacting</span>
+            <span className={`text-[11px] ${colors.text.dimmed} flex-1`}>{txt.smartCompacting}</span>
+          </div>
+          <div className="flex items-center gap-2.5 p-2.5 rounded-lg bg-blue-500/10 border border-blue-500/20">
+            <span className="text-[14px] w-6 text-center animate-pulse">⚙️</span>
+            <span className="text-[12px] font-semibold text-blue-400 w-20">Processing</span>
+            <span className={`text-[11px] ${colors.text.dimmed} flex-1`}>{txt.smartProcessing}</span>
+          </div>
+        </div>
+      </div>
+
       {/* Card Layout Example */}
       <div>
         <h4 className={`text-[13px] font-semibold ${colors.text.tertiary} uppercase tracking-wider mb-3`}>{txt.cardLayoutTitle}</h4>
@@ -1329,9 +1519,9 @@ function AgentsSection({ lang, theme = 'dark' }) {
           {/* Main agent - Line 1 */}
           <div className="px-3 pt-2.5 flex items-center justify-between">
             <div className="flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-              <span className="text-[10px] text-emerald-400">Active</span>
-              <span className="text-[10px] font-medium px-1 py-0.5 rounded bg-violet-500/15 text-violet-400 border border-violet-500/20">Opus 4.5</span>
+              <span className="text-[10px] font-medium px-1 py-0.5 rounded bg-violet-500/15 text-violet-400">Opus</span>
+              <span className="text-[10px] animate-pulse">🧠</span>
+              <span className="text-[9px] font-medium text-violet-400">Thinking</span>
             </div>
             <div className="flex items-center gap-2 font-mono text-[10px]">
               <span className={colors.text.dimmed}>2h 41m</span>
@@ -1362,44 +1552,48 @@ function AgentsSection({ lang, theme = 'dark' }) {
               <span className="px-1.5 py-0.5 text-gray-500 border-l border-gray-700/40">17 files</span>
             </div>
           </div>
-          {/* Subagent 1 */}
-          <div className={`border-t ${colors.card.border}`}>
+          {/* Subagent 1 - stopped (dimmed) */}
+          <div className={`border-t ${colors.card.border} opacity-50`}>
             <div className="px-3 pt-2 flex items-center justify-between">
               <div className="flex items-center gap-1 text-[10px]">
                 <span className={colors.text.faint}>└</span>
-                <span className="w-1.5 h-1.5 rounded-full bg-gray-500" />
-                <span className="text-gray-500">Stopped</span>
-                <span className="font-medium px-1 py-0.5 rounded bg-violet-500/15 text-violet-400 border border-violet-500/20">Opus 4.6</span>
-                <span className={`px-1 py-0.5 rounded ${colors.card.bgAlt} ${colors.text.faint}`}>Subagent</span>
+                <span className="font-medium px-1 py-0.5 rounded bg-violet-500/15 text-violet-400">Opus</span>
+                <span className={`px-1 py-0.5 rounded ${colors.card.bgAlt} text-pink-400`}>Subagent</span>
+                <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-gray-500/15">
+                  <span className="text-gray-500">○</span>
+                  <span className="text-[8px] text-gray-500">Stopped</span>
+                </span>
               </div>
               <div className="flex items-center gap-2 font-mono text-[10px]">
                 <span className={colors.text.dimmed}>3m 18s</span>
                 <span className="text-amber-500">166.8k</span>
               </div>
             </div>
-            <div className="px-3 pt-0.5 pb-2 flex items-center justify-between">
-              <span className={`text-[9px] ${colors.text.faint} truncate max-w-[180px]`}>เป็น 4.6 จริงเหรอ แล้ว agent ที่เป็น Opus 4.5 จริงๆ...</span>
-              <code className={`text-[8px] font-mono ${colors.text.faint}`}>aa96295</code>
+            <div className="px-3 pt-0.5 pb-1 flex items-center justify-between">
+              <span className={`text-[9px] ${colors.text.faint} truncate max-w-[220px]`}>💬 Research pre-existing errors</span>
+              <code className={`text-[8px] font-mono ${colors.text.faint}`}>ad37b4e</code>
             </div>
           </div>
-          {/* Subagent 2 */}
-          <div className={`border-t ${colors.card.border}`}>
+          {/* Subagent 2 - stopped (dimmed) */}
+          <div className={`border-t ${colors.card.border} opacity-50`}>
             <div className="px-3 pt-2 flex items-center justify-between">
               <div className="flex items-center gap-1 text-[10px]">
                 <span className={colors.text.faint}>└</span>
-                <span className="w-1.5 h-1.5 rounded-full bg-gray-500" />
-                <span className="text-gray-500">Stopped</span>
-                <span className="font-medium px-1 py-0.5 rounded bg-violet-500/15 text-violet-400 border border-violet-500/20">Opus 4.6</span>
-                <span className={`px-1 py-0.5 rounded ${colors.card.bgAlt} ${colors.text.faint}`}>Subagent</span>
+                <span className="font-medium px-1 py-0.5 rounded bg-sky-500/15 text-sky-400">Sonnet</span>
+                <span className={`px-1 py-0.5 rounded ${colors.card.bgAlt} text-pink-400`}>General-Purpose</span>
+                <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-gray-500/15">
+                  <span className="text-gray-500">○</span>
+                  <span className="text-[8px] text-gray-500">Stopped</span>
+                </span>
               </div>
               <div className="flex items-center gap-2 font-mono text-[10px]">
-                <span className={colors.text.dimmed}>3m 19s</span>
-                <span className="text-amber-500">166.4k</span>
+                <span className={colors.text.dimmed}>1m 6s</span>
+                <span className="text-amber-500">23.7k</span>
               </div>
             </div>
-            <div className="px-3 pt-0.5 pb-2 flex items-center justify-between">
-              <span className={`text-[9px] ${colors.text.faint} truncate max-w-[180px]`}>รูปแรกไม่ตรง ถ้าให้ Expanded ตรงกัน</span>
-              <code className={`text-[8px] font-mono ${colors.text.faint}`}>a5e7848</code>
+            <div className="px-3 pt-0.5 pb-1 flex items-center justify-between">
+              <span className={`text-[9px] ${colors.text.faint} truncate max-w-[220px]`}>💬 Design extended testing plan</span>
+              <code className={`text-[8px] font-mono ${colors.text.faint}`}>ae9647e</code>
             </div>
           </div>
         </div>
@@ -1410,6 +1604,7 @@ function AgentsSection({ lang, theme = 'dark' }) {
           <div className={`text-[11px] ${colors.text.dimmed}`}><span className="text-amber-400 font-mono">3</span> {txt.cardLine3}</div>
           <div className={`text-[11px] ${colors.text.faint} mt-1`}><span className="text-gray-500 font-mono">└</span> {txt.cardSubLine1}</div>
           <div className={`text-[11px] ${colors.text.faint}`}><span className="text-gray-500 font-mono">&nbsp;</span> {txt.cardSubLine2}</div>
+          <div className={`text-[11px] ${colors.text.faint}`}><span className="text-gray-500 font-mono">&nbsp;</span> {txt.cardSubLine3}</div>
         </div>
       </div>
 
@@ -1570,37 +1765,33 @@ function NotificationsSection({ lang, theme = 'dark' }) {
   const t = {
     en: {
       whatTitle: 'Notification System',
-      whatDesc: 'Audio notifications when agents complete their tasks. Three modes cycle with a single click.',
+      whatDesc: 'Audio notifications when agents complete their tasks. Two modes toggle with a single click.',
       modesTitle: 'Notification Modes',
       modeOff: 'Off',
-      modeOffDesc: 'No notifications (default)',
+      modeOffDesc: 'No notifications (default) — bell icon gray',
       modeBell: 'Bell',
-      modeBellDesc: 'Short beep sound via Web Audio API (880Hz sine wave)',
-      modeVoice: 'Voice',
-      modeVoiceDesc: 'Voice announcement reads agent name via SpeechSynthesis',
+      modeBellDesc: 'Short dual-tone beep via Web Audio API (880Hz→660Hz sine wave) — bell icon amber',
       howTitle: 'How to Use',
-      howDesc: 'Click the notification button in the header to cycle through modes: Off > Bell > Voice > Off',
+      howDesc: 'Click the bell icon in the header to toggle: Off ↔ Bell. A preview sound plays when enabled.',
       triggerTitle: 'What Triggers Notifications?',
-      triggerDesc: 'When an agent changes status from active/idle/stale to stopped (task completed), a notification fires based on your current mode.',
-      noteTitle: 'Note',
-      noteDesc: 'Notifications are audio-only. There is no visual popup - just the header button showing the current mode icon.',
+      triggerDesc: 'When an agent changes status from active/idle/stale to stopped (task completed), a bell sound plays.',
+      noteTitle: 'Browser Requirement',
+      noteDesc: 'Uses Web Audio API with shared AudioContext. First click unlocks audio (Chrome autoplay policy). Sound works even when tab is in background.',
     },
     th: {
       whatTitle: 'ระบบแจ้งเตือน',
-      whatDesc: 'แจ้งเตือนเสียงเมื่อ agent ทำงานเสร็จ สามโหมดสลับได้ด้วยการคลิกเดียว',
+      whatDesc: 'แจ้งเตือนเสียงเมื่อ agent ทำงานเสร็จ สองโหมดสลับได้ด้วยการคลิกเดียว',
       modesTitle: 'โหมดแจ้งเตือน',
       modeOff: 'Off',
-      modeOffDesc: 'ไม่แจ้งเตือน (ค่าเริ่มต้น)',
+      modeOffDesc: 'ไม่แจ้งเตือน (ค่าเริ่มต้น) — ไอคอนกระดิ่งสีเทา',
       modeBell: 'Bell',
-      modeBellDesc: 'เสียง beep สั้นๆ ผ่าน Web Audio API (sine wave 880Hz)',
-      modeVoice: 'Voice',
-      modeVoiceDesc: 'เสียงพูดอ่านชื่อ agent ผ่าน SpeechSynthesis',
+      modeBellDesc: 'เสียง beep สองเสียงผ่าน Web Audio API (880Hz→660Hz sine wave) — ไอคอนกระดิ่งสีเหลือง',
       howTitle: 'วิธีใช้',
-      howDesc: 'คลิกปุ่มแจ้งเตือนที่ header เพื่อสลับโหมด: Off > Bell > Voice > Off',
+      howDesc: 'คลิกไอคอนกระดิ่งที่ header เพื่อสลับ: Off ↔ Bell เสียงตัวอย่างจะเล่นเมื่อเปิด',
       triggerTitle: 'อะไรทำให้แจ้งเตือน?',
-      triggerDesc: 'เมื่อ agent เปลี่ยนสถานะจาก active/idle/stale เป็น stopped (งานเสร็จ) จะแจ้งเตือนตามโหมดที่เลือก',
-      noteTitle: 'หมายเหตุ',
-      noteDesc: 'การแจ้งเตือนเป็นเสียงเท่านั้น ไม่มี popup บนหน้าจอ มีแค่ปุ่มที่ header แสดง icon ของโหมดปัจจุบัน',
+      triggerDesc: 'เมื่อ agent เปลี่ยนสถานะจาก active/idle/stale เป็น stopped (งานเสร็จ) จะเล่นเสียงกระดิ่ง',
+      noteTitle: 'ข้อกำหนด Browser',
+      noteDesc: 'ใช้ Web Audio API กับ shared AudioContext คลิกครั้งแรกจะปลดล็อกเสียง (Chrome autoplay policy) เสียงทำงานได้แม้ tab อยู่ background',
     }
   };
   const txt = t[lang] || t.en;
@@ -1622,8 +1813,7 @@ function NotificationsSection({ lang, theme = 'dark' }) {
             <div className="flex items-center gap-2.5">
               <div className={`p-1.5 rounded-lg ${colors.card.bgAlt}`}>
                 <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
                 </svg>
               </div>
               <span className="text-[13px] font-semibold text-gray-400">{txt.modeOff}</span>
@@ -1641,19 +1831,6 @@ function NotificationsSection({ lang, theme = 'dark' }) {
               <span className="text-[13px] font-semibold text-amber-400">{txt.modeBell}</span>
             </div>
             <div className={`text-[11px] ${colors.text.dimmed} max-w-[55%] text-right`}>{txt.modeBellDesc}</div>
-          </div>
-          {/* Voice */}
-          <div className="flex items-center justify-between p-3 rounded-lg bg-blue-500/10 border border-blue-500/20">
-            <div className="flex items-center gap-2.5">
-              <div className="p-1.5 rounded-lg bg-blue-500/15">
-                <svg className="w-4 h-4 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072M17.95 6.05a8 8 0 010 11.9" />
-                </svg>
-              </div>
-              <span className="text-[13px] font-semibold text-blue-400">{txt.modeVoice}</span>
-            </div>
-            <div className={`text-[11px] ${colors.text.dimmed} max-w-[55%] text-right`}>{txt.modeVoiceDesc}</div>
           </div>
         </div>
       </div>
@@ -1757,9 +1934,17 @@ function EventsSection({ lang, theme = 'dark' }) {
       data: ['agentId', 'tokens', 'duration', 'toolsUsed']
     },
     {
-      icon: '⏹️',
+      icon: '📦',
+      name: 'PreCompact',
+      color: 'text-slate-400',
+      hook: 'PreCompact',
+      desc: lang === 'th' ? 'ก่อน context compaction - บันทึก conversation ก่อนถูกย่อ' : 'Before context compaction - saves conversation before trimming',
+      data: ['sessionId', 'trigger', 'timestamp']
+    },
+    {
+      icon: '🛑',
       name: 'Stop',
-      color: 'text-gray-400',
+      color: 'text-red-400',
       hook: 'Stop',
       desc: lang === 'th' ? 'เมื่อ Claude หยุดตอบ - จับ session ID' : 'When Claude stops responding - captures session ID',
       data: ['sessionId', 'timestamp']
@@ -1773,6 +1958,7 @@ function EventsSection({ lang, theme = 'dark' }) {
     { hook: 'SubagentStop', desc: lang === 'th' ? 'Subagent จบงาน' : 'Subagent finished' },
     { hook: 'UserPromptSubmit', desc: lang === 'th' ? 'User ส่งข้อความ' : 'User sends message' },
     { hook: 'Stop', desc: lang === 'th' ? 'Claude หยุดตอบ' : 'Claude stops' },
+    { hook: 'PreCompact', desc: lang === 'th' ? 'ก่อน compact context' : 'Before context compaction' },
   ];
 
   return (

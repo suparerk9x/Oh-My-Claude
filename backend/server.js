@@ -17,9 +17,9 @@ const CLAUDE_PROJECTS_DIR = path.join(process.env.USERPROFILE || process.env.HOM
 
 // Security configuration
 const ALLOWED_ORIGINS = process.env.ALLOWED_ORIGINS?.split(',') || [
-  'http://localhost:3001',
+  'http://localhost:4825',
   'http://localhost:5173',
-  'http://127.0.0.1:3001',
+  'http://127.0.0.1:4825',
   'http://127.0.0.1:5173'
 ];
 
@@ -92,7 +92,7 @@ const eventSchema = z.object({
 });
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const PORT = 4000;
+const PORT = 4824;
 
 // Initialize Express
 const app = express();
@@ -133,7 +133,8 @@ wss.on('connection', (ws) => {
       stats: await getStats(),
       agents: await getAgents(),
       sessions: getSessions(),
-      usage: claudeUsage
+      usage: claudeUsage,
+      smartStatus: smartStatusMap
     };
     ws.send(JSON.stringify(initData));
   })();
@@ -160,6 +161,7 @@ const AGENTS_FILE = path.join(__dirname, 'agents.json');
 let events = [];
 let agents = new Map();
 let sessions = new Map();
+let smartStatusMap = {}; // sessionId -> { status, label, icon, color }
 
 // Agent timeout settings (5-level status hierarchy)
 const AGENT_IDLE_MS = 5 * 60 * 1000;      // 5 minutes - mark as idle
@@ -176,6 +178,19 @@ let claudeUsage = {
   lastSync: null,
   source: null
 };
+
+// Normalize short model names (from Task tool enum) to full model IDs
+function normalizeModel(model) {
+  if (!model) return model;
+  const m = model.toLowerCase();
+  // Already has version digits like "claude-haiku-4-5-20251001"
+  if (/(?:opus|sonnet|haiku)-\d/.test(m)) return model;
+  // Map short/partial names to full IDs
+  if (m.includes('opus')) return 'claude-opus-4-6';
+  if (m.includes('sonnet')) return 'claude-sonnet-4-5-20250929';
+  if (m.includes('haiku')) return 'claude-haiku-4-5-20251001';
+  return model;
+}
 
 // Try to find the actual transcript file (Claude Code sometimes reports wrong path)
 function findAgentTranscript(reportedPath, agentId, startTime) {
@@ -396,6 +411,7 @@ function loadAgents() {
       if (data.agents && Array.isArray(data.agents)) {
         agents.clear();
         data.agents.forEach(agent => {
+          agent.model = normalizeModel(agent.model) || agent.model;
           agents.set(agent.id, agent);
         });
         console.log(`[LOAD] Loaded ${agents.size} agents from disk`);
@@ -475,15 +491,6 @@ function processEvent(event) {
       }
     }
 
-    // Get model: event > pending task > default based on type
-    let model = event.model || pendingTask?.model;
-    if (!model) {
-      // Default model based on agent type
-      const agentType = event.agentType || pendingTask?.subagentType || '';
-      if (agentType.toLowerCase() === 'explore') model = 'haiku';
-      else if (agentType.toLowerCase() === 'plan') model = 'sonnet';
-    }
-
     // Determine parentId - prefer event.parentAgentId, then construct from pending task's sessionId
     let parentId = event.parentAgentId;
     if (!parentId && pendingTask?.sessionId) {
@@ -492,6 +499,19 @@ function processEvent(event) {
     }
     if (!parentId) {
       parentId = 'main';
+    }
+
+    // Get model: event > pending task > default based on type > inherit from parent
+    let model = normalizeModel(event.model) || normalizeModel(pendingTask?.model);
+    if (!model) {
+      const agentType = event.agentType || pendingTask?.subagentType || '';
+      if (agentType.toLowerCase() === 'explore') model = 'claude-haiku-4-5-20251001';
+      else if (agentType.toLowerCase() === 'plan') model = 'claude-sonnet-4-5-20250929';
+    }
+    if (!model) {
+      // Inherit model from parent agent (Task tool spec: "inherits from parent")
+      const parent = agents.get(parentId);
+      if (parent?.model) model = parent.model;
     }
 
     // Use parent's sessionId for grouping (subagent should be grouped with parent)
@@ -556,7 +576,7 @@ function processEvent(event) {
       ...existing,
       id: agentId,
       type: event.agentType || existing.type || 'subagent',
-      model: transcriptData?.model || existing.model,
+      model: normalizeModel(transcriptData?.model) || existing.model,
       // Preserve the sessionId from SubagentStart (which has correct parent grouping)
       sessionId: existing.sessionId || event.sessionId,
       parentId: event.parentAgentId || existing.parentId || 'main',
@@ -600,7 +620,7 @@ function processEvent(event) {
     // But store the task description for later correlation
     const description = taskInput.description || taskInput.prompt?.slice(0, 100) || 'Task';
     const subagentType = taskInput.subagent_type || 'subagent';
-    const model = taskInput.model || null;
+    const model = normalizeModel(taskInput.model) || null;
 
     // Store pending task info for correlation with SubagentStart
     if (!processEvent.pendingTasks) processEvent.pendingTasks = [];
@@ -626,7 +646,7 @@ function processEvent(event) {
 
     if (!agents.has(mainAgentId)) {
       // Default to sonnet since most sessions use sonnet
-      const defaultModel = event.model || 'claude-sonnet-4-5-20250929';
+      const defaultModel = normalizeModel(event.model) || 'claude-sonnet-4-5-20250929';
       agents.set(mainAgentId, {
         id: mainAgentId,
         type: 'main',
@@ -736,6 +756,36 @@ function processEvent(event) {
       model: event.model || existing.model,
       cwd: event.cwd || existing.cwd
     });
+  }
+
+  // Update smart status for this session
+  if (event.sessionId) {
+    const sid = event.sessionId;
+    const type = event.type;
+    const tool = event.toolName;
+    if (type === 'UserPromptSubmit' || type === 'PostToolUse') {
+      smartStatusMap[sid] = { status: 'thinking', label: 'Thinking', icon: '🧠', color: 'text-violet-400' };
+    } else if (type === 'PreToolUse') {
+      if (tool === 'Read' || tool === 'Glob' || tool === 'Grep') {
+        smartStatusMap[sid] = { status: 'reading', label: 'Reading', icon: '👁', color: 'text-sky-400' };
+      } else if (tool === 'Edit' || tool === 'Write') {
+        smartStatusMap[sid] = { status: 'writing', label: 'Writing', icon: '✍️', color: 'text-orange-400' };
+      } else if (tool === 'Bash') {
+        smartStatusMap[sid] = { status: 'executing', label: 'Executing', icon: '⚡', color: 'text-amber-400' };
+      } else if (tool === 'Task') {
+        smartStatusMap[sid] = { status: 'spawning', label: 'Spawning', icon: '🔀', color: 'text-violet-400' };
+      } else if (tool === 'WebSearch' || tool === 'WebFetch') {
+        smartStatusMap[sid] = { status: 'searching', label: 'Searching', icon: '🌐', color: 'text-cyan-400' };
+      } else {
+        smartStatusMap[sid] = { status: 'processing', label: 'Processing', icon: '⚙️', color: 'text-blue-400' };
+      }
+    } else if (type === 'PermissionRequest') {
+      smartStatusMap[sid] = { status: 'waiting', label: 'Waiting', icon: '⏳', color: 'text-orange-400' };
+    } else if (type === 'PreCompact') {
+      smartStatusMap[sid] = { status: 'compacting', label: 'Compacting', icon: '📦', color: 'text-slate-400' };
+    } else if (type === 'Stop' || type === 'SessionEnd') {
+      smartStatusMap[sid] = { status: 'stopped', label: 'Stopped', icon: '○', color: 'text-gray-500' };
+    }
   }
 
   // Save to disk (cleanup handled by checkAgentTimeouts interval)
@@ -887,7 +937,7 @@ async function getAgents() {
 
   // Update main agents' model based on actual usage
   if (primaryModel) {
-    const modelName = primaryModel === 'opus' ? 'claude-opus-4-5-20251101' :
+    const modelName = primaryModel === 'opus' ? 'claude-opus-4-6' :
                       primaryModel === 'sonnet' ? 'claude-sonnet-4-5-20250929' :
                       primaryModel === 'haiku' ? 'claude-haiku-4-5-20251001' : null;
     if (modelName) {
@@ -917,7 +967,7 @@ async function getAgents() {
   return agentList
     .map(agent => {
       // Calculate elapsed time for active agents
-      const result = { ...agent };
+      const result = { ...agent, model: normalizeModel(agent.model) || agent.model };
 
       if (agent.status === 'active' && agent.startedAt) {
         const startTime = new Date(agent.startedAt).getTime();
@@ -1150,7 +1200,8 @@ setInterval(async () => {
     stats: await getStats(),
     agents: await getAgents(),
     sessions: getSessions(),
-    usage: claudeUsage
+    usage: claudeUsage,
+    smartStatus: smartStatusMap
   });
 }, 5000);
 

@@ -1,67 +1,49 @@
 // Oh My Claude - Usage Sync Extension
-// Background service worker - syncs Claude.ai usage to dashboard
+// Background service worker - receives usage data from content script and sends to backend
 
-const BACKEND_URL = 'http://localhost:4000';
+const BACKEND_URL = 'http://localhost:4824';
 const SYNC_INTERVAL_MINUTES = 1;
-
-let orgId = null;
 
 // Initialize alarm for periodic sync
 chrome.alarms.create('syncUsage', { periodInMinutes: SYNC_INTERVAL_MINUTES });
 
 chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === 'syncUsage') {
-    syncUsage();
+    triggerContentScriptSync();
   }
 });
 
-// Listen for org ID from content script
+// Listen for messages from content script
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.type === 'USAGE_DATA') {
+    // Content script fetched usage data, send to backend
+    sendToBackend(message.usage).then(result => {
+      if (result?.success) {
+        console.log(`[Oh My Claude] Synced: Session ${message.usage.five_hour?.utilization || 0}%, Weekly ${message.usage.seven_day?.utilization || 0}%`);
+      }
+      sendResponse({ ok: true });
+    });
+    return true; // async sendResponse
+  }
+
   if (message.type === 'ORG_ID_FOUND') {
-    orgId = message.orgId;
     chrome.storage.local.set({ orgId: message.orgId });
-    console.log('[Oh My Claude] Org ID found:', orgId);
-    syncUsage();
+    console.log('[Oh My Claude] Org ID found:', message.orgId);
     sendResponse({ ok: true });
   }
+
   return false;
 });
 
-// Get org ID from storage on startup
-chrome.storage.local.get(['orgId'], (result) => {
-  if (result.orgId) {
-    orgId = result.orgId;
-    console.log('[Oh My Claude] Loaded org ID:', orgId);
-    syncUsage();
-  }
-});
-
-// Fetch usage data from Claude.ai
-async function fetchUsage() {
-  if (!orgId) {
-    console.log('[Oh My Claude] No org ID yet, waiting...');
-    return null;
-  }
-
-  try {
-    const response = await fetch(
-      `https://claude.ai/api/organizations/${orgId}/usage`,
-      { credentials: 'include' }
-    );
-
-    if (!response.ok) {
-      if (response.status === 401 || response.status === 403) {
-        console.log('[Oh My Claude] Not logged in to Claude.ai');
-        return null;
-      }
-      throw new Error(`HTTP ${response.status}`);
+// Tell the content script on claude.ai to fetch usage
+function triggerContentScriptSync() {
+  chrome.tabs.query({ url: 'https://claude.ai/*' }, (tabs) => {
+    for (const tab of tabs) {
+      chrome.tabs.sendMessage(tab.id, { type: 'FETCH_USAGE' }).catch(() => {
+        // Content script not ready, ignore
+      });
     }
-
-    return await response.json();
-  } catch (err) {
-    console.error('[Oh My Claude] Fetch error:', err);
-    return null;
-  }
+  });
 }
 
 // Send usage data to backend
@@ -85,21 +67,6 @@ async function sendToBackend(usageData) {
   } catch (err) {
     console.error('[Oh My Claude] Backend error:', err);
     return null;
-  }
-}
-
-// Main sync function
-async function syncUsage() {
-  const usageData = await fetchUsage();
-
-  if (!usageData) {
-    return;
-  }
-
-  const result = await sendToBackend(usageData);
-
-  if (result?.success) {
-    console.log(`[Oh My Claude] Synced: Session ${usageData.five_hour?.utilization || 0}%, Weekly ${usageData.seven_day?.utilization || 0}%`);
   }
 }
 

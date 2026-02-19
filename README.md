@@ -174,7 +174,7 @@ start.bat
 npm run dev
 ```
 
-This starts both backend (port 4000) and frontend (port 3001).
+This starts both backend (port 4824) and frontend (port 4825).
 
 **Manual start:**
 
@@ -188,7 +188,7 @@ cd frontend && npm run dev
 
 ### Step 5: Open Dashboard
 
-Open browser: **http://localhost:3001**
+Open browser: **http://localhost:4825**
 
 You should see:
 
@@ -202,7 +202,7 @@ You should see:
 ### Test 1: Backend Health
 
 ```bash
-curl http://localhost:4000/health
+curl http://localhost:4824/health
 # Response: {"status":"ok"}
 ```
 
@@ -250,13 +250,13 @@ flowchart TD
     CC -->|"Hooks send events"| BS
     CE -->|"Sync usage %"| BS
 
-    BS["🖥️ **Backend Server**\nExpress + WebSocket · port 4000"]
+    BS["🖥️ **Backend Server**\nExpress + WebSocket · port 4824"]
 
     BS --- Data["Events · Agents · Sessions · Usage %"]
 
     Data -->|"WebSocket live updates"| DB
 
-    DB["📊 **Dashboard**\nReact UI · port 3001"]
+    DB["📊 **Dashboard**\nReact UI · port 4825"]
 
     style CC fill:#1a1a2e,stroke:#7c3aed,color:#e2e8f0
     style CE fill:#1a1a2e,stroke:#0ea5e9,color:#e2e8f0
@@ -284,7 +284,7 @@ oh-my-claude/
 ├── CODE_REVIEW.md         # Code review report
 │
 ├── backend/
-│   ├── server.js          # Express + WebSocket server (port 4000)
+│   ├── server.js          # Express + WebSocket server (port 4824)
 │   ├── statsReader.js     # Read transcript files for token stats
 │   ├── events.json        # Event history (auto-created)
 │   ├── agents.json        # Agent state (auto-created)
@@ -338,8 +338,8 @@ oh-my-claude/
 
 | Service  | Port | Configure In              |
 | -------- | ---- | ------------------------- |
-| Backend  | 4000 | `backend/server.js`       |
-| Frontend | 3001 | `frontend/vite.config.js` |
+| Backend  | 4824 | `backend/server.js`       |
+| Frontend | 4825 | `frontend/vite.config.js` |
 
 ### Agent Timeout
 
@@ -439,7 +439,7 @@ const AGENT_CLEANUP_MS = 60 * 60 * 1000;
 
 ### Dashboard shows "OFF"
 
-1. Check backend: `curl http://localhost:4000/health`
+1. Check backend: `curl http://localhost:4824/health`
 2. Check browser console for WebSocket errors
 3. Hard refresh: `Ctrl+Shift+R`
 
@@ -473,7 +473,7 @@ const AGENT_CLEANUP_MS = 60 * 60 * 1000;
 
 ### WebSocket
 
-Connect: `ws://localhost:4000`
+Connect: `ws://localhost:4824`
 
 | Message  | Direction       | Description    |
 | -------- | --------------- | -------------- |

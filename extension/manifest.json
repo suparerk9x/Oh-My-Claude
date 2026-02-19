@@ -18,11 +18,12 @@
   },
   "permissions": [
     "storage",
-    "alarms"
+    "alarms",
+    "tabs"
   ],
   "host_permissions": [
     "https://claude.ai/*",
-    "http://localhost:4000/*"
+    "http://localhost:4824/*"
   ],
   "background": {
     "service_worker": "background.js"

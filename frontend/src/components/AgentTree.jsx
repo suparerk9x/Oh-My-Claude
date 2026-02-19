@@ -1,4 +1,3 @@
-import { useRef } from 'react';
 import PropTypes from 'prop-types';
 import { formatTokens } from '../utils/format';
 
@@ -6,7 +5,7 @@ import { formatTokens } from '../utils/format';
  * AgentTree - Compact but COMPLETE information
  * No truncation - show all data
  */
-export function AgentTree({ agents = [], colors = {}, compact = false, expanded = false }) {
+export function AgentTree({ agents = [], colors = {}, compact = false, expanded = false, smartStatus = {} }) {
   // Group by session - handle subagents with different sessionIds
   // First, build a map of main agents by their ID (main_<sessionId>)
   const mainAgentMap = {};
@@ -45,74 +44,55 @@ export function AgentTree({ agents = [], colors = {}, compact = false, expanded 
     return acc;
   }, {});
 
-  // Stable ordering - only re-sort when sessions are added/removed or active status changes
-  const prevOrderRef = useRef([]);
-  const prevActiveSetRef = useRef(new Set());
-
   const rawSessions = Object.entries(sessionMap)
     .map(([id, data]) => ({ id, ...data }));
 
-  // Build active set for comparison
+  // Sort by creation time (like mini view)
   const activeStatuses = ['active', 'idle', 'stale'];
-  const currentActiveSet = new Set(
-    rawSessions.filter(s => activeStatuses.includes(s.main?.status) || s.tasks.some(t => activeStatuses.includes(t.status)))
-      .map(s => s.id)
-  );
-  const currentIdSet = new Set(rawSessions.map(s => s.id));
-  const prevIdSet = new Set(prevOrderRef.current);
+  const sessionsByCreationOrder = [...rawSessions].sort((a, b) => {
+    const aTime = a.main?.startedAt ? new Date(a.main.startedAt).getTime() : 0;
+    const bTime = b.main?.startedAt ? new Date(b.main.startedAt).getTime() : 0;
+    return aTime - bTime;
+  });
 
-  // Re-sort only when: session added/removed or active status changed
-  const needsResort =
-    currentIdSet.size !== prevIdSet.size ||
-    [...currentIdSet].some(id => !prevIdSet.has(id)) ||
-    [...currentActiveSet].some(id => !prevActiveSetRef.current.has(id)) ||
-    [...prevActiveSetRef.current].some(id => !currentActiveSet.has(id));
-
-  let sessions;
-  if (needsResort) {
-    sessions = rawSessions.sort((a, b) => {
-      const aActive = currentActiveSet.has(a.id);
-      const bActive = currentActiveSet.has(b.id);
-      if (aActive !== bActive) return bActive - aActive;
-      const aTime = a.main?.lastSeen || a.tasks[0]?.lastSeen || 0;
-      const bTime = b.main?.lastSeen || b.tasks[0]?.lastSeen || 0;
-      return new Date(bTime) - new Date(aTime);
-    });
-    prevOrderRef.current = sessions.map(s => s.id);
-    prevActiveSetRef.current = currentActiveSet;
-  } else {
-    // Keep previous order, update data
-    const sessionById = new Map(rawSessions.map(s => [s.id, s]));
-    sessions = prevOrderRef.current
-      .filter(id => sessionById.has(id))
-      .map(id => sessionById.get(id));
-    // Append any new sessions not in previous order
-    rawSessions.forEach(s => {
-      if (!prevOrderRef.current.includes(s.id)) sessions.push(s);
-    });
-  }
+  // Display sort: active first, then by creation order
+  const sessions = sessionsByCreationOrder.slice().sort((a, b) => {
+    const aActive = activeStatuses.includes(a.main?.status) || a.tasks.some(t => activeStatuses.includes(t.status));
+    const bActive = activeStatuses.includes(b.main?.status) || b.tasks.some(t => activeStatuses.includes(t.status));
+    if (aActive !== bActive) return bActive - aActive;
+    return 0;
+  });
 
   const activeMainCount = agents.filter(a => a.type === 'main' && a.status === 'active').length;
   const activeTaskCount = agents.filter(a => a.type !== 'main' && a.status === 'active').length;
   const stoppedTaskCount = agents.filter(a => a.type !== 'main' && a.status !== 'active').length;
   const totalTokens = agents.reduce((sum, a) => sum + (a.tokens || (a.inputTokens || 0) + (a.outputTokens || 0) || 0), 0);
 
+  // Fixed session numbers (stable, sorted by creation time like mini view)
+  const sessionsByCreation = [...rawSessions].sort((a, b) => {
+    const aTime = a.main?.startedAt || a.tasks[0]?.startedAt || '';
+    const bTime = b.main?.startedAt || b.tasks[0]?.startedAt || '';
+    return aTime.localeCompare(bTime);
+  });
+  const sessionNumber = {};
+  sessionsByCreation.forEach((s, idx) => { sessionNumber[s.id] = idx + 1; });
+
   // Status config (5-level: active → idle → stale → timeout → stopped)
   const getStatus = (status) => {
     switch (status) {
       case 'active':
       case 'running':
-        return { icon: '●', color: 'text-emerald-400', pulse: true, label: 'Active' };
+        return { icon: '●', color: 'text-emerald-400', bg: 'bg-emerald-500/15', pulse: true, label: 'Active' };
       case 'idle':
-        return { icon: '●', color: 'text-yellow-400', pulse: false, label: 'Idle' };
+        return { icon: '●', color: 'text-yellow-400', bg: 'bg-yellow-500/15', pulse: false, label: 'Idle' };
       case 'stale':
-        return { icon: '●', color: 'text-orange-400', pulse: false, label: 'Stale' };
+        return { icon: '●', color: 'text-orange-400', bg: 'bg-orange-500/15', pulse: false, label: 'Stale' };
       case 'timeout':
-        return { icon: '●', color: 'text-amber-400', pulse: true, label: 'Timeout' };
+        return { icon: '●', color: 'text-amber-400', bg: 'bg-amber-500/15', pulse: true, label: 'Timeout' };
       case 'stopped':
-        return { icon: '○', color: 'text-gray-500', pulse: false, label: 'Stopped' };
+        return { icon: '○', color: 'text-gray-500', bg: 'bg-gray-500/15', pulse: false, label: 'Stopped' };
       default:
-        return { icon: '○', color: 'text-gray-600', pulse: false, label: 'Unknown' };
+        return { icon: '○', color: 'text-gray-600', bg: 'bg-gray-500/15', pulse: false, label: 'Unknown' };
     }
   };
 
@@ -122,9 +102,9 @@ export function AgentTree({ agents = [], colors = {}, compact = false, expanded 
     const versionMatch = model?.match(/(?:opus|sonnet|haiku)-(\d+)-(\d+)/i);
     const version = versionMatch ? ` ${versionMatch[1]}.${versionMatch[2]}` : '';
 
-    if (model?.includes('opus')) return { name: `Opus${version}`, color: 'text-violet-400' };
-    if (model?.includes('sonnet')) return { name: `Sonnet${version}`, color: 'text-sky-400' };
-    if (model?.includes('haiku')) return { name: `Haiku${version}`, color: 'text-teal-400' };
+    if (model?.includes('opus')) return { name: `Opus${version}`, color: 'text-violet-400', bg: 'bg-violet-500/15' };
+    if (model?.includes('sonnet')) return { name: `Sonnet${version}`, color: 'text-sky-400', bg: 'bg-sky-500/15' };
+    if (model?.includes('haiku')) return { name: `Haiku${version}`, color: 'text-teal-400', bg: 'bg-teal-500/15' };
     return null; // Don't show if unknown
   };
 
@@ -212,26 +192,33 @@ export function AgentTree({ agents = [], colors = {}, compact = false, expanded 
         {sessions.map(({ id: sessionId, main, tasks }) => {
           const isActive = ['active', 'idle', 'stale'].includes(main?.status) || tasks.some(t => ['active', 'idle', 'stale'].includes(t.status));
           const mainStatus = main ? getStatus(main.status) : getStatus('unknown');
+          const smart = smartStatus[sessionId];
           const mainModel = main ? getModel(main.model) : null;
           const sessionTokens = (main?.tokens || 0) + tasks.reduce((sum, t) => sum + (t.tokens || 0), 0);
           const activeTaskCount = tasks.filter(t => t.status === 'active').length;
 
           return (
-            <div key={sessionId} className={`${expanded ? `flex-1 min-h-0 flex flex-col rounded-lg border ${borderColor}` : `border-b ${borderColor}`} ${isActive ? 'bg-emerald-500/[0.03]' : ''}`}>
+            <div key={sessionId} className={`${expanded ? `flex flex-col rounded-lg border ${borderColor}` : `border-b ${borderColor}`} ${isActive ? 'bg-emerald-500/[0.03]' : 'opacity-50'}`}>
               {/* Session Header */}
               <div className={`${expanded ? 'px-3 py-2' : 'px-2 py-1.5'} shrink-0`}>
-                {/* Line 1: Status + Model + Duration + Tokens */}
+                {/* Line 1: Number + Model + Status + Duration + Tokens */}
                 <div className="flex items-center flex-nowrap">
                   <div className="flex-1 min-w-0 flex items-center gap-1 overflow-hidden">
-                    <span className={`text-[10px] shrink-0 ${mainStatus.color} ${mainStatus.pulse ? 'animate-pulse' : ''}`}>
-                      {mainStatus.icon}
-                    </span>
-                    <span className={`text-[9px] shrink-0 whitespace-nowrap ${mainStatus.color}`}>
-                      {mainStatus.label}
-                    </span>
+                    <span className="text-[11px] font-mono font-bold text-white shrink-0 w-[16px] text-right">{sessionNumber[sessionId]}.</span>
                     {mainModel && (
-                      <span className={`text-[10px] font-medium px-1 py-0.5 rounded shrink-0 whitespace-nowrap ${mainModel.color} ${mainModel.color.replace('text-', 'bg-').replace('400', '500')}/15`}>
+                      <span className={`text-[10px] font-medium px-1 py-0.5 rounded shrink-0 whitespace-nowrap ${mainModel.color} ${mainModel.bg}`}>
                         {mainModel.name}
+                      </span>
+                    )}
+                    {smart && isActive ? (
+                      <>
+                        <span className={`text-[10px] shrink-0 ${smart.animation}`}>{smart.icon}</span>
+                        <span className={`text-[9px] whitespace-nowrap font-medium ${smart.color}`}>{smart.label}</span>
+                      </>
+                    ) : (
+                      <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded shrink-0 ${mainStatus.bg}`}>
+                        <span className={`text-[10px] shrink-0 ${mainStatus.color} ${mainStatus.pulse ? 'animate-pulse' : ''}`}>{mainStatus.icon}</span>
+                        <span className={`text-[9px] whitespace-nowrap ${mainStatus.color}`}>{mainStatus.label}</span>
                       </span>
                     )}
                   </div>
@@ -245,25 +232,30 @@ export function AgentTree({ agents = [], colors = {}, compact = false, expanded 
                   </div>
                 </div>
 
-                {/* Line 2: Activity + Session ID - hidden in compact */}
+                {/* Project name */}
+                {main?.cwd && (
+                  <div className="mt-0.5 pl-[22px]">
+                    <span className="text-[10px] font-mono tracking-widest uppercase text-cyan-400/70" style={{ fontFamily: "'Share Tech Mono', 'Fira Code', 'JetBrains Mono', monospace", letterSpacing: '0.15em' }} title={main.cwd}>
+                      {main.cwd.split(/[\\/]/).pop()}
+                    </span>
+                  </div>
+                )}
+
+                {/* Line 2: Activity + Session ID - hidden in compact, hidden if no activity */}
                 {!compact && (() => {
                   const parsed = main?.lastTask && main.lastTask !== 'Main Session' ? parseLastTask(main.lastTask) : null;
+                  if (!parsed) return null;
                   return (
                     <div className="mt-0.5 pl-4 flex items-center gap-1.5 min-w-0">
-                      {parsed && (
-                        <>
-                          <span className="text-[9px] shrink-0">{parsed.icon}</span>
-                          {parsed.tool && (
-                            <span className={`text-[10px] font-medium shrink-0 ${parsed.color}`}>
-                              {parsed.tool}
-                            </span>
-                          )}
-                          <span className={`text-[10px] text-gray-400 ${expanded ? '' : 'truncate'} flex-1 min-w-0`}>
-                            {parsed.detail}
-                          </span>
-                        </>
+                      <span className="text-[9px] shrink-0">{parsed.icon}</span>
+                      {parsed.tool && (
+                        <span className={`text-[10px] font-medium shrink-0 ${parsed.color}`}>
+                          {parsed.tool}
+                        </span>
                       )}
-                      {!parsed && <div className="flex-1" />}
+                      <span className={`text-[10px] text-gray-400 ${expanded ? '' : 'truncate'} flex-1 min-w-0`}>
+                        {parsed.detail}
+                      </span>
                       <code className="text-gray-600 font-mono text-[8px] shrink-0">{sessionId.slice(0, 7)}</code>
                     </div>
                   );
@@ -304,7 +296,7 @@ export function AgentTree({ agents = [], colors = {}, compact = false, expanded 
 
               {/* Tasks - in expanded mode, fills remaining space */}
               {tasks.length > 0 && (
-                <div className={`border-t ${borderColor} ${tasksBg} ${expanded ? 'flex-1 min-h-0 overflow-y-auto' : ''}`}>
+                <div className={`border-t ${borderColor} ${tasksBg}`}>
                   {tasks.map((task, i) => {
                     const status = getStatus(task.status);
                     const model = getModel(task.model);
@@ -332,22 +324,16 @@ export function AgentTree({ agents = [], colors = {}, compact = false, expanded 
                     return (
                       <div
                         key={task.id || i}
-                        className={`${expanded ? 'px-3 py-3' : 'px-2 py-2'} ${i < tasks.length - 1 ? 'border-b border-gray-800/20' : ''}`}
+                        className={`${expanded ? 'px-3 pt-3 pb-0' : 'px-2 pt-2 pb-0'} ${i < tasks.length - 1 ? 'border-b border-gray-800/20' : ''} ${task.status === 'stopped' ? 'opacity-50' : ''}`}
                       >
                         <div className={`${expanded ? 'pl-4 space-y-1.5' : 'pl-3 space-y-1'}`}>
-                          {/* Line 1: Status + Model + Type + Duration + Tokens */}
+                          {/* Line 1: Status (fixed) + Model + Type + Duration + Tokens */}
                           <div className="flex items-center flex-nowrap">
                             {/* Left: flexible content */}
                             <div className="flex-1 min-w-0 flex items-center gap-1 overflow-hidden">
                               <span className={`${textMuted} text-[9px] shrink-0`}>└</span>
-                              <span className={`${expanded ? 'text-[10px]' : 'text-[9px]'} shrink-0 ${status.color} ${status.pulse ? 'animate-pulse' : ''}`}>
-                                {status.icon}
-                              </span>
-                              <span className={`${expanded ? 'text-[9px]' : 'text-[8px]'} shrink-0 whitespace-nowrap ${status.color}`}>
-                                {status.label}
-                              </span>
                               {model && (
-                                <span className={`${expanded ? 'text-[10px]' : 'text-[9px]'} font-medium px-1.5 py-0.5 rounded shrink-0 whitespace-nowrap ${model.color} ${model.color.replace('text-', 'bg-').replace('400', '500')}/15`}>
+                                <span className={`${expanded ? 'text-[10px]' : 'text-[9px]'} font-medium px-1.5 py-0.5 rounded shrink-0 whitespace-nowrap ${model.color} ${model.bg}`}>
                                   {model.name}
                                 </span>
                               )}
@@ -356,6 +342,14 @@ export function AgentTree({ agents = [], colors = {}, compact = false, expanded 
                                   {typeInfo.name}
                                 </span>
                               )}
+                              <span className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded shrink-0 ${status.bg}`}>
+                                <span className={`${expanded ? 'text-[10px]' : 'text-[9px]'} shrink-0 ${status.color} ${status.pulse ? 'animate-pulse' : ''}`}>
+                                  {status.icon}
+                                </span>
+                                <span className={`${expanded ? 'text-[9px]' : 'text-[8px]'} whitespace-nowrap ${status.color}`}>
+                                  {status.label}
+                                </span>
+                              </span>
                             </div>
                             {/* Right: fixed columns - same width as main row */}
                             <div className="shrink-0 flex items-center gap-1 pl-1">
@@ -382,8 +376,8 @@ export function AgentTree({ agents = [], colors = {}, compact = false, expanded 
 
                           {/* Line 3: Description - full text in expanded mode */}
                           {!compact && desc && (
-                            <div className="flex items-start gap-1.5 pl-4">
-                              <span className={`${expanded ? 'text-[10px] text-gray-400 leading-relaxed' : 'text-[9px] text-gray-400 truncate'} flex-1 min-w-0`}>
+                            <div className="flex items-center gap-1.5 pl-4">
+                              <span className={`${expanded ? 'text-[10px]' : 'text-[9px]'} text-gray-400 truncate flex-1 min-w-0`}>
                                 💬 {desc}
                               </span>
                               {task.id && (
@@ -462,7 +456,8 @@ AgentTree.propTypes = {
     border: PropTypes.string
   }),
   compact: PropTypes.bool,
-  expanded: PropTypes.bool
+  expanded: PropTypes.bool,
+  smartStatus: PropTypes.object
 };
 
 export default AgentTree;

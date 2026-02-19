@@ -4,10 +4,29 @@ import { getThemeColors } from './config/theme';
 import { formatTokens, formatRelativeTime, formatTimeWithSeconds as formatTime } from './utils/format';
 import { TokenGauge, AgentCard, AgentTree, HelpGuide, ActivityItem, HourlyBreakdown, TokenStats, getEventTarget } from './components';
 import { useNotifications } from './hooks/useNotifications';
+import MiniApp from './MiniApp.jsx';
 
-const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:4000';
+const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:4824';
+
+// Detect if running as installed PWA (standalone = no address bar)
+function detectPWA() {
+  return window.matchMedia('(display-mode: standalone)').matches
+    || window.navigator.standalone === true
+    || document.referrer.includes('android-app://')
+    || !window.menubar?.visible;
+}
 
 export default function App() {
+  const [isPWA, setIsPWA] = useState(detectPWA);
+  const [miniMode, setMiniMode] = useState(false);
+
+  // Re-check PWA mode when display-mode changes (e.g. after install)
+  useEffect(() => {
+    const mql = window.matchMedia('(display-mode: standalone)');
+    const handler = (e) => setIsPWA(e.matches || detectPWA());
+    mql.addEventListener('change', handler);
+    return () => mql.removeEventListener('change', handler);
+  }, []);
   const [connected, setConnected] = useState(false);
   const [events, setEvents] = useState([]);
   const [stats, setStats] = useState(null);
@@ -22,6 +41,7 @@ export default function App() {
   const [agentViewMode, setAgentViewMode] = useState(() => localStorage.getItem('agentViewMode') || 'full');
   const [isAgentsCollapsed, setIsAgentsCollapsed] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
+  const [demoMode, setDemoMode] = useState(false);
   const wsRef = useRef(null);
   const reconnectRef = useRef(null);
   const seenEventIds = useRef(new Set()); // Deduplicate events
@@ -156,6 +176,80 @@ export default function App() {
     return () => clearInterval(interval);
   }, []);
 
+  // Demo mode - mock data for testing layout
+  const demoAgents = demoMode ? [
+    { id: 'main_sess-001', sessionId: 'sess-001', type: 'main', status: 'active', model: 'claude-opus-4-6', tokens: 45200, inputTokens: 38000, outputTokens: 7200, lastSeen: new Date().toISOString(), lastTask: 'Edit frontend/src/App.jsx', elapsedFormatted: '12m 34s', gitDiff: { additions: 142, deletions: 38, files: 5 } },
+    { id: 'task_001', sessionId: 'sess-001', type: 'general-purpose', parentId: 'main_sess-001', status: 'active', model: 'claude-sonnet-4-5-20250929', tokens: 12800, lastSeen: new Date().toISOString(), lastTask: 'Grep searching for patterns', description: 'Search for component references across the codebase', toolsUsed: ['Grep', 'Glob', 'Read'], startedAt: new Date(Date.now() - 180000).toISOString() },
+    { id: 'task_002', sessionId: 'sess-001', type: 'code-reviewer', parentId: 'main_sess-001', status: 'active', model: 'claude-opus-4-6', tokens: 8400, lastSeen: new Date().toISOString(), lastTask: 'Read src/components/AgentTree.jsx', description: 'Review code changes for quality and security', toolsUsed: ['Read', 'Grep'], startedAt: new Date(Date.now() - 120000).toISOString() },
+    { id: 'task_003', sessionId: 'sess-001', type: 'bash', parentId: 'main_sess-001', status: 'stopped', model: 'claude-haiku-4-5-20251001', tokens: 3200, lastSeen: new Date(Date.now() - 300000).toISOString(), lastTask: 'Bash npm test', description: 'Run test suite', toolsUsed: ['Bash'], startedAt: new Date(Date.now() - 360000).toISOString(), stoppedAt: new Date(Date.now() - 300000).toISOString() },
+    { id: 'main_sess-002', sessionId: 'sess-002', type: 'main', status: 'active', model: 'claude-sonnet-4-5-20250929', tokens: 28600, inputTokens: 24000, outputTokens: 4600, lastSeen: new Date().toISOString(), lastTask: 'Write backend/routes/api.js', elapsedFormatted: '8m 15s', gitDiff: { additions: 89, deletions: 12, files: 3 } },
+    { id: 'task_004', sessionId: 'sess-002', type: 'explore', parentId: 'main_sess-002', status: 'idle', model: 'claude-haiku-4-5-20251001', tokens: 5100, lastSeen: new Date(Date.now() - 30000).toISOString(), lastTask: 'Glob **/*.test.js', description: 'Explore test file structure', toolsUsed: ['Glob', 'Read'], startedAt: new Date(Date.now() - 90000).toISOString() },
+    { id: 'task_005', sessionId: 'sess-002', type: 'plan', parentId: 'main_sess-002', status: 'stopped', model: 'claude-sonnet-4-5-20250929', tokens: 6800, lastSeen: new Date(Date.now() - 600000).toISOString(), lastTask: 'Read docs/architecture.md', description: 'Plan implementation strategy for new API endpoints', toolsUsed: ['Read', 'Grep', 'Glob'], startedAt: new Date(Date.now() - 900000).toISOString(), stoppedAt: new Date(Date.now() - 600000).toISOString() },
+    { id: 'main_sess-003', sessionId: 'sess-003', type: 'main', status: 'stopped', model: 'claude-opus-4-6', tokens: 67500, inputTokens: 58000, outputTokens: 9500, lastSeen: new Date(Date.now() - 1800000).toISOString(), lastTask: 'Main Session', elapsedFormatted: '25m 10s' },
+    { id: 'task_006', sessionId: 'sess-003', type: 'general-purpose', parentId: 'main_sess-003', status: 'stopped', model: 'claude-sonnet-4-5-20250929', tokens: 15200, lastSeen: new Date(Date.now() - 1800000).toISOString(), lastTask: 'Edit backend/server.js', description: 'Refactor WebSocket connection handler with retry logic', toolsUsed: ['Read', 'Edit', 'Write', 'Bash'], startedAt: new Date(Date.now() - 2400000).toISOString(), stoppedAt: new Date(Date.now() - 1800000).toISOString() },
+  ] : [];
+
+  const demoEvents = demoMode ? [
+    { id: 'evt-1', type: 'PreToolUse', toolName: 'Edit', timestamp: new Date(Date.now() - 5000).toISOString(), sessionId: 'sess-001', data: { tool_name: 'Edit', input: { file_path: 'frontend/src/App.jsx' } } },
+    { id: 'evt-2', type: 'PostToolUse', toolName: 'Edit', timestamp: new Date(Date.now() - 8000).toISOString(), sessionId: 'sess-001', data: { tool_name: 'Edit', input: { file_path: 'frontend/src/App.jsx' } } },
+    { id: 'evt-3', type: 'PreToolUse', toolName: 'Grep', timestamp: new Date(Date.now() - 12000).toISOString(), sessionId: 'sess-001', data: { tool_name: 'Grep', input: { pattern: 'ActivityFeed' } } },
+    { id: 'evt-4', type: 'UserPromptSubmit', timestamp: new Date(Date.now() - 20000).toISOString(), sessionId: 'sess-001', data: { prompt: 'Fix the expanded layout for AgentTree cards' } },
+    { id: 'evt-5', type: 'PostToolUse', toolName: 'Read', timestamp: new Date(Date.now() - 25000).toISOString(), sessionId: 'sess-002', data: { tool_name: 'Read', input: { file_path: 'backend/routes/api.js' } } },
+    { id: 'evt-6', type: 'PreToolUse', toolName: 'Write', timestamp: new Date(Date.now() - 30000).toISOString(), sessionId: 'sess-002', data: { tool_name: 'Write', input: { file_path: 'backend/routes/api.js' } } },
+    { id: 'evt-7', type: 'PreToolUse', toolName: 'Bash', timestamp: new Date(Date.now() - 45000).toISOString(), sessionId: 'sess-001', data: { tool_name: 'Bash', input: { command: 'npm test' } } },
+    { id: 'evt-8', type: 'PostToolUseFailure', toolName: 'Bash', timestamp: new Date(Date.now() - 50000).toISOString(), sessionId: 'sess-001', data: { tool_name: 'Bash', input: { command: 'npm test' }, error: '2 tests failed' } },
+    { id: 'evt-9', type: 'PreToolUse', toolName: 'Task', timestamp: new Date(Date.now() - 60000).toISOString(), sessionId: 'sess-001', data: { tool_name: 'Task', input: { description: 'Review code changes' } } },
+    { id: 'evt-10', type: 'PostToolUse', toolName: 'Glob', timestamp: new Date(Date.now() - 75000).toISOString(), sessionId: 'sess-002', data: { tool_name: 'Glob', input: { pattern: '**/*.test.js' } } },
+    { id: 'evt-11', type: 'UserPromptSubmit', timestamp: new Date(Date.now() - 90000).toISOString(), sessionId: 'sess-002', data: { prompt: 'Add new API endpoints for user management' } },
+    { id: 'evt-12', type: 'PreCompact', timestamp: new Date(Date.now() - 100000).toISOString(), sessionId: 'sess-001', data: {} },
+    { id: 'evt-13', type: 'Stop', timestamp: new Date(Date.now() - 1800000).toISOString(), sessionId: 'sess-003', data: { reason: 'completed' } },
+  ] : [];
+
+  const displayAgents = demoMode ? demoAgents : agents;
+  const displayEvents = demoMode ? demoEvents : events;
+
+  // Smart status: derive granular status per session from last event
+  const smartStatus = (() => {
+    const map = {}; // sessionId -> { status, label, icon, color, animation, since }
+    // Find the most recent event per session
+    const lastEventBySession = {};
+    for (const evt of displayEvents) {
+      const sid = evt.sessionId;
+      if (!sid) continue;
+      if (!lastEventBySession[sid] || new Date(evt.timestamp) > new Date(lastEventBySession[sid].timestamp)) {
+        lastEventBySession[sid] = evt;
+      }
+    }
+    for (const [sid, evt] of Object.entries(lastEventBySession)) {
+      const type = evt.type;
+      const tool = evt.toolName;
+      if (type === 'UserPromptSubmit' || type === 'PostToolUse') {
+        map[sid] = { status: 'thinking', label: 'Thinking', icon: '🧠', color: 'text-violet-400', bg: 'bg-violet-500/15', animation: 'animate-pulse', since: evt.timestamp };
+      } else if (type === 'PreToolUse') {
+        if (tool === 'Read' || tool === 'Glob' || tool === 'Grep') {
+          map[sid] = { status: 'reading', label: 'Reading', icon: '👁', color: 'text-sky-400', bg: 'bg-sky-500/15', animation: 'animate-pulse', since: evt.timestamp };
+        } else if (tool === 'Edit' || tool === 'Write') {
+          map[sid] = { status: 'writing', label: 'Writing', icon: '✍️', color: 'text-orange-400', bg: 'bg-orange-500/15', animation: 'animate-pulse', since: evt.timestamp };
+        } else if (tool === 'Bash') {
+          map[sid] = { status: 'executing', label: 'Executing', icon: '⚡', color: 'text-amber-400', bg: 'bg-amber-500/15', animation: 'animate-bounce', since: evt.timestamp };
+        } else if (tool === 'Task') {
+          map[sid] = { status: 'spawning', label: 'Spawning', icon: '🔀', color: 'text-violet-400', bg: 'bg-violet-500/15', animation: 'animate-spin', since: evt.timestamp };
+        } else if (tool === 'WebSearch' || tool === 'WebFetch') {
+          map[sid] = { status: 'searching', label: 'Searching', icon: '🌐', color: 'text-cyan-400', bg: 'bg-cyan-500/15', animation: 'animate-pulse', since: evt.timestamp };
+        } else {
+          map[sid] = { status: 'processing', label: 'Processing', icon: '⚙️', color: 'text-blue-400', bg: 'bg-blue-500/15', animation: 'animate-pulse', since: evt.timestamp };
+        }
+      } else if (type === 'PermissionRequest') {
+        map[sid] = { status: 'waiting', label: 'Waiting', icon: '⏳', color: 'text-orange-400', bg: 'bg-orange-500/15', animation: 'animate-pulse', since: evt.timestamp };
+      } else if (type === 'PreCompact') {
+        map[sid] = { status: 'compacting', label: 'Compacting', icon: '📦', color: 'text-slate-400', bg: 'bg-slate-500/15', animation: 'animate-pulse', since: evt.timestamp };
+      } else if (type === 'Stop' || type === 'SessionEnd') {
+        map[sid] = { status: 'stopped', label: 'Stopped', icon: '○', color: 'text-gray-500', bg: 'bg-gray-500/15', animation: '', since: evt.timestamp };
+      }
+    }
+    return map;
+  })();
+
   // Token percentages - ONLY from Chrome extension (claudeUsage)
   // If no extension data, show N/A (null = N/A)
   const tokens = stats?.tokens || {};
@@ -168,6 +262,39 @@ export default function App() {
   const sessionPct = hasRealUsage ? claudeUsage.five_hour.utilization : null;
   const weeklyPct = claudeUsage?.seven_day?.utilization ?? null;
   const sonnetWeeklyPct = claudeUsage?.seven_day_sonnet?.utilization ?? null;
+
+  // Dynamic page title: smart status (priority) + count + usage% + OMC!
+  const STATUS_PRIORITY = { waiting: 8, thinking: 7, writing: 6, executing: 5, spawning: 4, searching: 3, reading: 2, processing: 1, compacting: 0, stopped: -1 };
+  useEffect(() => {
+    const mainAgents = displayAgents.filter(a => a.type === 'main');
+    const activeAgents = mainAgents.filter(a => ['active', 'idle', 'stale'].includes(a.status));
+
+    let statusIcon = '';
+    let statusLabel = '';
+    let bestPriority = -2;
+    const agentsToCheck = activeAgents.length > 0 ? activeAgents : mainAgents;
+    for (const agent of agentsToCheck) {
+      const smart = smartStatus[agent.sessionId];
+      if (smart) {
+        const p = STATUS_PRIORITY[smart.status] ?? 0;
+        if (p > bestPriority) {
+          bestPriority = p;
+          statusIcon = smart.icon;
+          statusLabel = smart.label;
+        }
+      }
+    }
+    if (!statusLabel) statusLabel = mainAgents.length > 0 ? 'Stopped' : 'Idle';
+
+    const activeCount = activeAgents.length > 0 ? activeAgents.length : mainAgents.length;
+    const countPrefix = activeCount > 1 ? `${activeCount}x ` : '';
+    const pctStr = sessionPct !== null
+      ? (sessionPct >= 100 ? `🫗 Full` : sessionPct >= 85 ? `🚨${Math.round(sessionPct)}%` : sessionPct >= 60 ? `⚡${Math.round(sessionPct)}%` : `🪴${Math.round(sessionPct)}%`)
+      : '';
+
+    const parts = [countPrefix + (statusIcon ? `${statusIcon} ${statusLabel}` : statusLabel), pctStr, 'OMC!'].filter(Boolean);
+    document.title = parts.join(' \u00b7 ');
+  }, [displayAgents, smartStatus, sessionPct]);
 
   // Session reset time - only from Chrome extension
   const getSessionResetTime = () => {
@@ -210,7 +337,7 @@ export default function App() {
   const totalEvents = Object.values(eventCounts).reduce((a, b) => a + b, 0);
 
   // Filter events by selected session and event type
-  const filteredEvents = events.filter(e => {
+  const filteredEvents = displayEvents.filter(e => {
     if (selectedSession && e.sessionId !== selectedSession) return false;
     if (selectedEventType) {
       if (selectedEventType === 'tools' && e.type !== 'PreToolUse') return false;
@@ -220,6 +347,16 @@ export default function App() {
     }
     return true;
   });
+
+  // PWA mini mode: render MiniApp inline with switch-back button
+  if (isPWA && miniMode) {
+    return (
+      <MiniApp onSwitchToFull={() => {
+        setMiniMode(false);
+        try { window.resizeTo(765, 870); } catch {}
+      }} />
+    );
+  }
 
   return (
     <div className={`h-screen w-[750px] mx-auto ${colors.bg.primary} ${colors.text.primary} flex flex-col overflow-hidden font-['Inter',system-ui,sans-serif]`}>
@@ -241,8 +378,8 @@ export default function App() {
             <span className={colors.text.title}>Oh My Claude<span className="text-[#d97757]">!</span></span>
           </h1>
           <div className="flex items-center gap-1.5 ml-3">
-            <div className={`w-2 h-2 rounded-full ${connected ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.5)] animate-pulse' : 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.5)]'}`} />
-            <span className={`text-xs font-semibold ${connected ? 'text-green-500' : 'text-red-500'} uppercase tracking-wider`}>{connected ? 'LIVE' : 'OFF'}</span>
+            <div className={`w-2 h-2 rounded-full ${demoMode ? 'bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.5)] animate-pulse' : connected ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.5)] animate-pulse' : 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.5)]'}`} />
+            <span className={`text-xs font-semibold ${demoMode ? 'text-amber-400' : connected ? 'text-green-500' : 'text-red-500'} uppercase tracking-wider`}>{demoMode ? 'DEMO' : connected ? 'LIVE' : 'OFF'}</span>
           </div>
           {isSyncActive ? (
             <div className={`flex items-center gap-1.5 text-xs ${colors.status.info}`} title="Synced from Claude.ai via extension">
@@ -303,17 +440,18 @@ export default function App() {
               </svg>
             )}
           </button>
-          {/* Mini Pop-out */}
+          {/* Mini toggle (PWA) / Pop-out (browser) */}
           <button
             onClick={() => {
-              window.open(
-                '/mini.html',
-                'omc-mini',
-                'width=220,height=450,resizable=yes,scrollbars=no,toolbar=no,menubar=no,location=no,status=no'
-              );
+              if (isPWA) {
+                setMiniMode(true);
+                try { window.resizeTo(280, 400); } catch {}
+              } else {
+                window.open('/mini.html', '_blank', 'popup,width=280,height=400');
+              }
             }}
             className={`p-1 rounded-lg ${colors.button.base} border transition-all ${colors.button.text} h-7 w-7 flex items-center justify-center`}
-            title="Open Mini Floating View"
+            title={isPWA ? "Switch to Mini View" : "Open Mini View (popup)"}
           >
             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
@@ -325,21 +463,9 @@ export default function App() {
             className={`p-1 rounded-lg ${colors.button.base} border transition-all ${colors.button.text} h-7 w-7 flex items-center justify-center`}
             title={`Notifications: ${notifInfo.label} (click to cycle)`}
           >
-            {mode === 'off' ? (
-              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2" />
-              </svg>
-            ) : mode === 'bell' ? (
-              <svg className="w-3.5 h-3.5 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
-              </svg>
-            ) : (
-              <svg className="w-3.5 h-3.5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072M17.95 6.05a8 8 0 010 11.9" />
-              </svg>
-            )}
+            <svg className={`w-3.5 h-3.5 ${mode === 'bell' ? 'text-amber-400' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+            </svg>
           </button>
           {/* Guide */}
           <button
@@ -354,20 +480,22 @@ export default function App() {
           {/* Status Badge */}
           <div className={`px-1.5 h-7 flex items-center rounded-lg text-[10px] font-semibold ${
             sessionPct === null ? colors.badge.neutral :
+            sessionPct >= 100 ? colors.badge.danger :
             sessionPct >= 85 ? colors.badge.danger :
             sessionPct >= 60 ? colors.badge.warning :
             colors.badge.normal
           }`}>
             {sessionPct === null ? '📊 No data' :
-             sessionPct >= 85 ? '⚠️ Near limit' :
-             sessionPct >= 60 ? '⚠️ High usage' :
-             '✅ Normal'}
+             sessionPct >= 100 ? '🫗 Full' :
+             sessionPct >= 85 ? '🚨 Near limit' :
+             sessionPct >= 60 ? '⚡ High usage' :
+             '🪴 Normal'}
           </div>
         </div>
       </header>
 
       {/* Help Guide Modal */}
-      {showHelp && <HelpGuide onClose={() => setShowHelp(false)} theme={theme} />}
+      {showHelp && <HelpGuide onClose={() => setShowHelp(false)} theme={theme} demoMode={demoMode} onDemoToggle={() => setDemoMode(d => !d)} />}
 
       {/* Main Content */}
       <main className="flex-1 flex overflow-hidden">
@@ -414,39 +542,39 @@ export default function App() {
 
         {/* Center: Agents */}
         {!isAgentsCollapsed && (
-          <aside className={`${agentViewMode === 'expanded' ? 'flex-1' : 'w-[300px] flex-shrink-0'} ${colors.bg.secondary} border-r ${colors.border} flex flex-col overflow-hidden`}>
+          <aside className={`${agentViewMode === 'expanded' ? 'flex-1' : 'w-[340px] flex-shrink-0'} ${colors.bg.secondary} border-r ${colors.border} flex flex-col overflow-hidden`}>
             <div className={`h-8 min-h-[32px] px-3 flex items-center border-b ${colors.border} ${colors.sectionHeader.agents} flex-shrink-0`}>
               <h2 className={`text-[11px] font-medium ${colors.accent.agents} uppercase tracking-wider leading-none`}>
-                Agents <span className={`font-mono ${colors.accent.agentsCount} normal-case`}>({agents.length})</span>
+                Agents <span className={`font-mono ${colors.accent.agentsCount} normal-case`}>({displayAgents.length})</span>
               </h2>
             </div>
-            <AgentTree agents={agents} colors={colors} compact={agentViewMode === 'compact'} expanded={agentViewMode === 'expanded'} />
+            <AgentTree agents={displayAgents} colors={colors} compact={agentViewMode === 'compact'} expanded={agentViewMode === 'expanded'} smartStatus={smartStatus} />
           </aside>
         )}
 
         {/* Right: Live Events */}
-        <section className={`flex-1 flex flex-col overflow-hidden ${agentViewMode === 'expanded' && !isAgentsCollapsed ? 'hidden' : ''}`}>
+        <section className={`${isAgentsCollapsed ? 'flex-1' : 'w-[210px] flex-shrink-0'} flex flex-col overflow-hidden ${agentViewMode === 'expanded' && !isAgentsCollapsed ? 'hidden' : ''}`}>
           {/* Header - Same height as other panels */}
           <div className={`h-8 min-h-[32px] px-3 flex items-center justify-between border-b ${colors.border} ${colors.sectionHeader.activity} flex-shrink-0`}>
             <h2 className={`text-[11px] font-medium ${colors.accent.activity} uppercase tracking-wider leading-none`}>
-              Activity Feed
+              Activity
             </h2>
             {/* Quick Stats - Clickable Filters */}
             <div className="flex items-center flex-nowrap shrink-0 gap-px text-[8px] leading-none">
               <button onClick={() => setSelectedEventType(null)} className={`px-0.5 py-0.5 rounded transition-all whitespace-nowrap ${!selectedEventType ? 'bg-gray-500/20 ring-1 ring-gray-500/50' : 'hover:bg-gray-500/10'}`} title="Show all">
-                <span className="font-mono text-gray-400">{events.length}</span>
+                <span className="font-mono text-gray-400">{displayEvents.length}</span>
               </button>
               <button onClick={() => setSelectedEventType(selectedEventType === 'tools' ? null : 'tools')} className={`px-0.5 py-0.5 rounded transition-all whitespace-nowrap ${selectedEventType === 'tools' ? 'bg-cyan-500/20 ring-1 ring-cyan-500/50' : 'hover:bg-cyan-500/10'}`} title="Tools">
-                <span className="text-[7px]">🔧</span><span className="font-mono text-cyan-400">{events.filter(e => e.type === 'PreToolUse').length}</span>
+                <span className="text-[7px]">🔧</span><span className="font-mono text-cyan-400">{displayEvents.filter(e => e.type === 'PreToolUse').length}</span>
               </button>
               <button onClick={() => setSelectedEventType(selectedEventType === 'success' ? null : 'success')} className={`px-0.5 py-0.5 rounded transition-all whitespace-nowrap ${selectedEventType === 'success' ? 'bg-emerald-500/20 ring-1 ring-emerald-500/50' : 'hover:bg-emerald-500/10'}`} title="Success">
-                <span className="text-[7px]">✅</span><span className="font-mono text-emerald-400">{events.filter(e => e.type === 'PostToolUse').length}</span>
+                <span className="text-[7px]">✅</span><span className="font-mono text-emerald-400">{displayEvents.filter(e => e.type === 'PostToolUse').length}</span>
               </button>
               <button onClick={() => setSelectedEventType(selectedEventType === 'errors' ? null : 'errors')} className={`px-0.5 py-0.5 rounded transition-all whitespace-nowrap ${selectedEventType === 'errors' ? 'bg-red-500/20 ring-1 ring-red-500/50' : 'hover:bg-red-500/10'}`} title="Errors">
-                <span className="text-[7px]">❌</span><span className="font-mono text-red-400">{events.filter(e => e.type === 'PostToolUseFailure').length}</span>
+                <span className="text-[7px]">❌</span><span className="font-mono text-red-400">{displayEvents.filter(e => e.type === 'PostToolUseFailure').length}</span>
               </button>
               <button onClick={() => setSelectedEventType(selectedEventType === 'prompts' ? null : 'prompts')} className={`px-0.5 py-0.5 rounded transition-all whitespace-nowrap ${selectedEventType === 'prompts' ? 'bg-amber-500/20 ring-1 ring-amber-500/50' : 'hover:bg-amber-500/10'}`} title="Prompts">
-                <span className="text-[7px]">💬</span><span className="font-mono text-amber-400">{events.filter(e => e.type === 'UserPromptSubmit').length}</span>
+                <span className="text-[7px]">💬</span><span className="font-mono text-amber-400">{displayEvents.filter(e => e.type === 'UserPromptSubmit').length}</span>
               </button>
             </div>
           </div>

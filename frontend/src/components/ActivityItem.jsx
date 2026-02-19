@@ -99,13 +99,15 @@ export function ActivityItem({ event, isFirst, colors, isSelected, onSelect }) {
       <div className={`w-5 h-5 rounded flex items-center justify-center text-[10px] ${config.bg}`}>
         {config.icon}
       </div>
-      <span className={`text-[10px] font-medium ${config.color}`}>
+      <span className={`text-[10px] font-medium shrink-0 ${config.color}`}>
         {formatEventType(event.type)}
       </span>
-      {target && target !== '-' && (
+      {target && target !== '-' ? (
         <span className={`text-[10px] ${textMuted} truncate flex-1`}>{target}</span>
+      ) : (
+        <span className="flex-1" />
       )}
-      <span className={`text-[9px] ${textMuted} font-mono`}>{formatRelativeTime(event.timestamp)}</span>
+      <span className={`text-[9px] ${textMuted} font-mono tabular-nums shrink-0`}>{formatRelativeTime(event.timestamp)}</span>
     </div>
   );
 }

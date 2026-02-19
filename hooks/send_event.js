@@ -6,7 +6,7 @@
 
 const http = require('http');
 
-const SERVER_URL = process.env.MONITOR_SERVER || 'http://localhost:4000';
+const SERVER_URL = process.env.MONITOR_SERVER || 'http://localhost:4824';
 const SOURCE_APP = process.env.MONITOR_SOURCE || 'claude-monitor';
 
 // Read event type from command line
@@ -82,7 +82,7 @@ function sendEvent(event) {
 
   const options = {
     hostname: url.hostname,
-    port: url.port || 4000,
+    port: url.port || 4824,
     path: url.pathname,
     method: 'POST',
     headers: {

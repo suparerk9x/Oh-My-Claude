@@ -1,12 +1,14 @@
 // Oh My Claude - Content Script
-// Runs on claude.ai to extract org ID and trigger sync
+// Runs on claude.ai - fetches usage data (has cookie access) and sends to background
 
 (function() {
   'use strict';
 
   console.log('[Oh My Claude] Content script loaded');
 
-  // Method 1: Fetch account profile to get org ID directly
+  let orgId = null;
+
+  // Extract org ID from API
   async function fetchOrgId() {
     try {
       const response = await fetch('https://claude.ai/api/organizations', {
@@ -16,12 +18,9 @@
       if (response.ok) {
         const orgs = await response.json();
         if (orgs && orgs.length > 0) {
-          const orgId = orgs[0].uuid;
-          console.log('[Oh My Claude] Found org ID from API:', orgId);
-          chrome.runtime.sendMessage({
-            type: 'ORG_ID_FOUND',
-            orgId: orgId
-          });
+          orgId = orgs[0].uuid;
+          console.log('[Oh My Claude] Found org ID:', orgId);
+          chrome.runtime.sendMessage({ type: 'ORG_ID_FOUND', orgId });
           return orgId;
         }
       }
@@ -31,67 +30,73 @@
     return null;
   }
 
-  // Method 2: Look in URL for org ID pattern
+  // Extract org ID from URL
   function findOrgIdInUrl() {
-    const urlMatch = window.location.href.match(/organizations\/([a-f0-9-]{36})/);
-    if (urlMatch) {
-      return urlMatch[1];
-    }
-    return null;
+    const match = window.location.href.match(/organizations\/([a-f0-9-]{36})/);
+    return match ? match[1] : null;
   }
 
-  // Method 3: Intercept fetch requests to find org ID
-  function interceptRequests() {
-    const originalFetch = window.fetch;
-
-    window.fetch = async function(...args) {
-      const response = await originalFetch.apply(this, args);
-
-      try {
-        const url = typeof args[0] === 'string' ? args[0] : args[0]?.url;
-        if (url && url.includes('/api/organizations/')) {
-          const match = url.match(/organizations\/([a-f0-9-]{36})/);
-          if (match) {
-            console.log('[Oh My Claude] Found org ID from fetch:', match[1]);
-            chrome.runtime.sendMessage({
-              type: 'ORG_ID_FOUND',
-              orgId: match[1]
-            });
-          }
-        }
-      } catch (e) {
-        // Ignore errors
+  // Fetch usage data and send to background script
+  async function fetchAndSendUsage() {
+    if (!orgId) {
+      // Try to get org ID first
+      const urlId = findOrgIdInUrl();
+      if (urlId) {
+        orgId = urlId;
+      } else {
+        await fetchOrgId();
       }
+    }
 
-      return response;
-    };
-  }
-
-  // Initialize
-  async function init() {
-    // Try URL first
-    let orgId = findOrgIdInUrl();
-    if (orgId) {
-      console.log('[Oh My Claude] Found org ID in URL:', orgId);
-      chrome.runtime.sendMessage({ type: 'ORG_ID_FOUND', orgId });
+    if (!orgId) {
+      console.log('[Oh My Claude] No org ID, cannot fetch usage');
       return;
     }
 
-    // Try API
-    orgId = await fetchOrgId();
-    if (orgId) return;
+    try {
+      const response = await fetch(
+        `https://claude.ai/api/organizations/${orgId}/usage`,
+        { credentials: 'include' }
+      );
 
-    // Set up interceptor for future requests
-    interceptRequests();
+      if (!response.ok) {
+        if (response.status === 401 || response.status === 403) {
+          console.log('[Oh My Claude] Not logged in to Claude.ai');
+          return;
+        }
+        throw new Error(`HTTP ${response.status}`);
+      }
 
-    // Retry API after page fully loads
-    if (document.readyState !== 'complete') {
-      window.addEventListener('load', async () => {
-        await fetchOrgId();
-      });
+      const usageData = await response.json();
+      chrome.runtime.sendMessage({ type: 'USAGE_DATA', usage: usageData });
+      console.log(`[Oh My Claude] Usage fetched: Session ${usageData.five_hour?.utilization || 0}%`);
+    } catch (err) {
+      console.error('[Oh My Claude] Fetch usage error:', err);
     }
   }
 
-  // Run after a short delay to ensure page is ready
+  // Listen for sync requests from background script (alarm-triggered)
+  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (message.type === 'FETCH_USAGE') {
+      fetchAndSendUsage();
+      sendResponse({ ok: true });
+    }
+    return false;
+  });
+
+  // Initialize: get org ID then do first sync
+  async function init() {
+    const urlId = findOrgIdInUrl();
+    if (urlId) {
+      orgId = urlId;
+      chrome.runtime.sendMessage({ type: 'ORG_ID_FOUND', orgId });
+    } else {
+      await fetchOrgId();
+    }
+
+    // First sync
+    fetchAndSendUsage();
+  }
+
   setTimeout(init, 1000);
 })();

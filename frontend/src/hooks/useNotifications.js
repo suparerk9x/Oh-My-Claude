@@ -1,16 +1,29 @@
 import { useState, useRef, useCallback } from 'react';
 
-// Notification modes: off → bell → voice → off
-const MODES = ['off', 'bell', 'voice'];
+// Notification modes: off → bell → off
+const MODES = ['off', 'bell'];
+
+// Shared AudioContext - reused across calls, resumed on user gesture
+let sharedAudioCtx = null;
+function getAudioContext() {
+  if (!sharedAudioCtx) {
+    sharedAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  }
+  if (sharedAudioCtx.state === 'suspended') {
+    sharedAudioCtx.resume();
+  }
+  return sharedAudioCtx;
+}
 
 export function useNotifications() {
   const [mode, setMode] = useState(() => localStorage.getItem('notifMode') || 'off');
-  const prevAgentsRef = useRef(new Map()); // id -> status
+  const prevAgentsRef = useRef(new Map());
+  const userInteractedRef = useRef(false);
 
-  // Play bell sound using Web Audio API (no sound file needed)
+  // Play bell sound using Web Audio API
   const playBell = useCallback(() => {
     try {
-      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const ctx = getAudioContext();
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
 
@@ -31,39 +44,23 @@ export function useNotifications() {
     }
   }, []);
 
-  // Speak agent name using SpeechSynthesis
-  const speak = useCallback((text) => {
-    try {
-      if ('speechSynthesis' in window) {
-        const utterance = new SpeechSynthesisUtterance(text);
-        utterance.rate = 1.1;
-        utterance.pitch = 1;
-        utterance.volume = 0.7;
-        window.speechSynthesis.speak(utterance);
-      }
-    } catch {
-      // Speech not available
-    }
-  }, []);
-
-  // Cycle through modes (with preview sound)
+  // Cycle through modes (user click unlocks AudioContext)
   const cycleMode = useCallback(() => {
+    userInteractedRef.current = true;
+    try { getAudioContext(); } catch {}
+
     const idx = MODES.indexOf(mode);
     const next = MODES[(idx + 1) % MODES.length];
     setMode(next);
     localStorage.setItem('notifMode', next);
-    // Preview sound on mode switch
     if (next === 'bell') {
       setTimeout(() => playBell(), 50);
-    } else if (next === 'voice') {
-      setTimeout(() => speak('Voice notifications on'), 50);
     }
-  }, [mode, playBell, speak]);
+  }, [mode, playBell]);
 
-  // Check for agent status changes - call this with current agents array
+  // Check for agent status changes
   const checkAgentChanges = useCallback((agents) => {
-    if (mode === 'off') {
-      // Still update refs for tracking
+    if (mode === 'off' || !userInteractedRef.current) {
       const newMap = new Map();
       agents.forEach(a => newMap.set(a.id, a.status));
       prevAgentsRef.current = newMap;
@@ -75,35 +72,23 @@ export function useNotifications() {
 
     agents.forEach(agent => {
       const prevStatus = prev.get(agent.id);
-      // Detect: was active/idle/stale → now stopped (task completed)
       if (prevStatus && ['active', 'idle', 'stale'].includes(prevStatus) && agent.status === 'stopped') {
         completedAgents.push(agent);
       }
     });
 
-    // Update tracking map
     const newMap = new Map();
     agents.forEach(a => newMap.set(a.id, a.status));
     prevAgentsRef.current = newMap;
 
-    // Notify for completed agents
-    if (completedAgents.length > 0) {
-      if (mode === 'bell') {
-        playBell();
-      } else if (mode === 'voice') {
-        const names = completedAgents
-          .map(a => a.type === 'main' ? 'main session' : (a.type || 'agent'))
-          .join(' and ');
-        speak(`${names} completed`);
-      }
+    if (completedAgents.length > 0 && mode === 'bell') {
+      playBell();
     }
-  }, [mode, playBell, speak]);
+  }, [mode, playBell]);
 
-  // Mode display info
   const getModeInfo = () => {
     switch (mode) {
       case 'bell': return { icon: '🔔', label: 'Bell' };
-      case 'voice': return { icon: '🔊', label: 'Voice' };
       default: return { icon: '🔕', label: 'Off' };
     }
   };

@@ -13,17 +13,17 @@ export default defineConfig({
     }
   },
   server: {
-    port: 3001,
+    port: 4825,
     strictPort: true, // Fail if port is already in use
     open: false, // Disabled - start.bat handles browser opening
     proxy: {
       '/api': {
-        target: 'http://localhost:4000',
+        target: 'http://localhost:4824',
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api/, '')
       },
       '/ws': {
-        target: 'ws://localhost:4000',
+        target: 'ws://localhost:4824',
         ws: true
       }
     }

@@ -105,14 +105,14 @@ app.post('/events', (req, res) => {
 
 #### 5. Hardcoded WebSocket URL
 - **File:** `frontend/src/App.jsx:3`
-- **Problem:** `const WS_URL = 'ws://localhost:4000'` ไม่สามารถ deploy ได้
+- **Problem:** `const WS_URL = 'ws://localhost:4824'` ไม่สามารถ deploy ได้
 - **Solution:**
 ```javascript
 // frontend/src/App.jsx
-const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:4000';
+const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:4824';
 
 // frontend/.env
-VITE_WS_URL=ws://localhost:4000
+VITE_WS_URL=ws://localhost:4824
 
 // frontend/.env.production
 VITE_WS_URL=wss://your-domain.com
@@ -218,11 +218,11 @@ export default defineConfig({
   server: {
     proxy: {
       '/api': {
-        target: 'http://localhost:4000',
+        target: 'http://localhost:4824',
         changeOrigin: true,
       },
       '/ws': {
-        target: 'ws://localhost:4000',
+        target: 'ws://localhost:4824',
         ws: true,
       },
     },
@@ -560,7 +560,7 @@ describe('POST /events', () => {
 ### Backend (.env)
 ```env
 # Server
-PORT=4000
+PORT=4824
 NODE_ENV=development
 
 # Limits
@@ -579,8 +579,8 @@ RATE_LIMIT_MAX=100
 
 ### Frontend (.env)
 ```env
-VITE_WS_URL=ws://localhost:4000
-VITE_API_BASE=http://localhost:4000
+VITE_WS_URL=ws://localhost:4824
+VITE_API_BASE=http://localhost:4824
 ```
 
 ### Frontend (.env.production)
