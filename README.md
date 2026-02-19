@@ -2,7 +2,7 @@
 
 > Real-time monitoring dashboard for Claude Code — track tokens, agents, costs, and activity live.
 
-![Version](https://img.shields.io/badge/version-2.0-blue)
+![Version](https://img.shields.io/badge/version-2.2-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Node](https://img.shields.io/badge/node-18%2B-brightgreen)
 ![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey)
@@ -20,7 +20,7 @@
 | **Agent Monitoring** | Live main agents + subagents tree with status |
 | **Activity Feed** | Tool calls, prompts, errors streamed in real-time |
 | **Cost Estimation** | Monthly cost by model (Opus / Sonnet / Haiku) |
-| **Mini Pop-out** | Floating mini window (220x450px) for compact monitoring |
+| **Mini Pop-out** | Floating mini window (280x400px) for compact monitoring |
 | **Install as App** | PWA support — install to desktop, runs without browser UI |
 | **Dark / Light Theme** | Toggle between dark and light mode |
 | **Notifications** | Desktop notifications for events (bell toggle) |
@@ -134,6 +134,56 @@ Add the `hooks` section — replace `<PATH>` with your Oh-My-Claude folder path:
           }
         ]
       }
+    ],
+    "PreCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"<PATH>/Oh-My-Claude/hooks/send_event.js\" --event-type PreCompact"
+          }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"<PATH>/Oh-My-Claude/hooks/send_event.js\" --event-type Notification"
+          }
+        ]
+      }
+    ],
+    "PermissionRequest": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"<PATH>/Oh-My-Claude/hooks/send_event.js\" --event-type PermissionRequest"
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"<PATH>/Oh-My-Claude/hooks/send_event.js\" --event-type SessionStart"
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"<PATH>/Oh-My-Claude/hooks/send_event.js\" --event-type SessionEnd"
+          }
+        ]
+      }
     ]
   }
 }
@@ -194,7 +244,7 @@ Oh My Claude supports **Progressive Web App** — you can install it as a standa
 A compact floating window for monitoring while you work:
 
 - Click the **Mini Pop-out** button (↗) in the header toolbar
-- Opens a **220x450px** floating window
+- Opens a **280x400px** floating window
 - Shows: connection status, token stats, agent list, and recent activity
 - Perfect for keeping on the side while coding
 
@@ -249,7 +299,7 @@ flowchart TD
 
 **Data Flow:**
 
-1. **Claude Code** → Hooks fire events (PreToolUse, PostToolUse, SubagentStart, etc.) → Backend
+1. **Claude Code** → Hooks fire events (PreToolUse, PostToolUse, SessionStart, SessionEnd, etc.) → Backend
 2. **Chrome Extension** → Fetches usage % from claude.ai → Backend (every 1 min)
 3. **Backend** → Aggregates all data → Broadcasts via WebSocket
 4. **Dashboard** → Receives via WebSocket → Renders in real-time
@@ -322,12 +372,18 @@ Oh-My-Claude/
 | Backend | 4824 | `backend/server.js` |
 | Frontend | 4825 | `frontend/vite.config.js` |
 
-### Agent Timeout
+### Agent Status Lifecycle
 
-| Setting | Default | Description |
-|---------|---------|-------------|
-| Timeout | 30 min | Mark as inactive (gray) |
-| Cleanup | 60 min | Remove from list |
+| Status | Timeout | Description |
+|--------|---------|-------------|
+| Active | — | Currently receiving events (green) |
+| Idle | 3 min | No events for 3 min (yellow) |
+| Stale | 8 min | No events for 8 min (orange) |
+| Timeout | 20 min | No events for 20 min (gray) |
+| Removed | 30 min | Cleaned up from agent list |
+
+> **Note:** When an agent goes idle, its smart status automatically changes to "Stopped".
+> If you close your IDE without a graceful exit, the timeout fallback handles cleanup.
 
 ### NPM Scripts
 
@@ -373,8 +429,10 @@ Oh-My-Claude/
 | Status | Color | Meaning |
 |--------|-------|---------|
 | Active | 🟢 Green | Currently receiving events |
-| Stopped | 🔴 Red | Agent finished / stopped |
-| Timeout | ⚪ Gray | 30+ min no activity |
+| Idle | 🟡 Yellow | 3+ min no activity |
+| Stale | 🟠 Orange | 8+ min no activity |
+| Stopped | ⚪ Gray | Agent finished / stopped |
+| Timeout | ⚪ Gray | 20+ min no activity |
 
 ### Model Icons
 
