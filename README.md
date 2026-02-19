@@ -7,7 +7,8 @@
 ![Node](https://img.shields.io/badge/node-18%2B-brightgreen)
 ![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey)
 
-![Uploading image.png…]()
+<img width="942" height="859" alt="image" src="https://github.com/user-attachments/assets/3ff58d94-6d79-4ce0-a1cc-33405fe31e51" />
+
 ---
 
 ## Features
