@@ -42,7 +42,7 @@ app.get('/health', (req, res) => {
 app.get('/stats', (req, res) => {
   res.json({
     eventCounts: {},
-    tokens: { month_used: 0, month_cost: 0 }
+    tokens: { today_used: 0, daily_limit: 1000000, week_used: 0, weekly_limit: 5000000, modelUsage: {} }
   });
 });
 

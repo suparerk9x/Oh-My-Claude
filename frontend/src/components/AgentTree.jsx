@@ -65,14 +65,14 @@ export function AgentTree({ agents = [], colors = {}, compact = false, expanded 
 
   const activeMainCount = agents.filter(a => a.type === 'main' && a.status === 'active').length;
   const activeTaskCount = agents.filter(a => a.type !== 'main' && a.status === 'active').length;
-  const stoppedTaskCount = agents.filter(a => a.type !== 'main' && a.status !== 'active').length;
+  const stoppedTaskCount = agents.filter(a => a.type !== 'main' && (a.status === 'stopped' || a.status === 'timeout')).length;
   const totalTokens = agents.reduce((sum, a) => sum + (a.tokens || (a.inputTokens || 0) + (a.outputTokens || 0) || 0), 0);
 
   // Fixed session numbers (stable, sorted by creation time like mini view)
   const sessionsByCreation = [...rawSessions].sort((a, b) => {
-    const aTime = a.main?.startedAt || a.tasks[0]?.startedAt || '';
-    const bTime = b.main?.startedAt || b.tasks[0]?.startedAt || '';
-    return aTime.localeCompare(bTime);
+    const aTime = a.main?.startedAt ? new Date(a.main.startedAt).getTime() : 0;
+    const bTime = b.main?.startedAt ? new Date(b.main.startedAt).getTime() : 0;
+    return aTime - bTime;
   });
   const sessionNumber = {};
   sessionsByCreation.forEach((s, idx) => { sessionNumber[s.id] = idx + 1; });

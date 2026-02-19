@@ -1,8 +1,51 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { getThemeColors } from './config/theme';
-import { formatTokens } from './utils/format';
+import { formatTokens, getUsageBadge } from './utils/format';
 
 const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:4824';
+
+// Module-level constant (no need to recreate per render)
+const STATUS_PRIORITY = { waiting: 8, thinking: 7, writing: 6, executing: 5, spawning: 4, searching: 3, reading: 2, processing: 1, compacting: 0, stopped: -1 };
+
+// Extracted outside MiniApp to prevent re-creation every render
+function GaugeBar({ label, pct, resetTime, isSession = false, colors }) {
+  const isNA = pct === null;
+  const displayPct = isNA ? 0 : pct;
+
+  const redThreshold = isSession ? 85 : 90;
+  const yellowThreshold = isSession ? 60 : 75;
+
+  // Session: traffic light colors, Weekly: neutral gray
+  const pctColor = isNA ? colors.text.muted : isSession
+    ? (pct >= redThreshold ? 'text-red-500' : pct >= yellowThreshold ? 'text-yellow-500' : 'text-green-500')
+    : 'text-gray-400';
+
+  // Session: gradient bar, Weekly: solid gray
+  const progressBarClass = isNA ? 'bg-gray-600' : isSession
+    ? 'bg-gradient-to-r from-green-500 via-yellow-500 to-red-500'
+    : 'bg-gray-400';
+
+  return (
+    <div className="space-y-0.5">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-1">
+          <span className={`text-[9px] ${colors.text.muted}`}>{label}</span>
+          {resetTime && <span className={`text-[8px] ${colors.text.muted} opacity-60`}>Resets in {resetTime}</span>}
+        </div>
+        <span className={`text-[9px] font-mono font-bold ${pctColor}`}>
+          {isNA ? 'N/A' : `${Math.round(pct)}%`}
+        </span>
+      </div>
+      <div className={`h-1.5 rounded-full ${colors.progressBg} overflow-hidden relative`}>
+        <div className={`absolute inset-0 ${progressBarClass} rounded-full`} />
+        <div
+          className={`absolute inset-0 ${colors.progressBg} rounded-r-full transition-all duration-500 ease-out`}
+          style={{ left: `${Math.min(displayPct, 100)}%` }}
+        />
+      </div>
+    </div>
+  );
+}
 
 export default function MiniApp({ onSwitchToFull }) {
   const [connected, setConnected] = useState(false);
@@ -153,7 +196,6 @@ export default function MiniApp({ onSwitchToFull }) {
   const weeklyPct = claudeUsage?.seven_day?.utilization ?? null;
 
   // Dynamic page title: smart status (priority) + count + usage% + OMC!
-  const STATUS_PRIORITY = { waiting: 8, thinking: 7, writing: 6, executing: 5, spawning: 4, searching: 3, reading: 2, processing: 1, compacting: 0, stopped: -1 };
   useEffect(() => {
     const mainAgents = agents.filter(a => a.type === 'main');
     const activeAgents = mainAgents.filter(a => ['active', 'idle', 'stale'].includes(a.status));
@@ -177,8 +219,9 @@ export default function MiniApp({ onSwitchToFull }) {
 
     const activeCount = activeAgents.length > 0 ? activeAgents.length : mainAgents.length;
     const countPrefix = activeCount > 1 ? `${activeCount}x ` : '';
+    const badge = getUsageBadge(sessionPct);
     const pctStr = sessionPct !== null
-      ? (sessionPct >= 100 ? `🫗 Full` : sessionPct >= 85 ? `🚨${Math.round(sessionPct)}%` : sessionPct >= 60 ? `⚡${Math.round(sessionPct)}%` : `🪴${Math.round(sessionPct)}%`)
+      ? (sessionPct >= 100 ? `${badge.emoji} ${badge.label}` : `${badge.emoji}${Math.round(sessionPct)}%`)
       : '';
     const parts = [countPrefix + (statusIcon ? `${statusIcon} ${statusLabel}` : statusLabel), pctStr, 'OMC!'].filter(Boolean);
     document.title = parts.join(' \u00b7 ');
@@ -247,45 +290,6 @@ export default function MiniApp({ onSwitchToFull }) {
     return 'soon';
   };
 
-  const GaugeBar = ({ label, pct, resetTime, isSession = false }) => {
-    const isNA = pct === null;
-    const displayPct = isNA ? 0 : pct;
-
-    const redThreshold = isSession ? 85 : 90;
-    const yellowThreshold = isSession ? 60 : 75;
-
-    // Session: traffic light colors, Weekly: neutral gray
-    const pctColor = isNA ? colors.text.muted : isSession
-      ? (pct >= redThreshold ? 'text-red-500' : pct >= yellowThreshold ? 'text-yellow-500' : 'text-green-500')
-      : 'text-gray-400';
-
-    // Session: gradient bar, Weekly: solid gray
-    const progressBarClass = isNA ? 'bg-gray-600' : isSession
-      ? 'bg-gradient-to-r from-green-500 via-yellow-500 to-red-500'
-      : 'bg-gray-400';
-
-    return (
-      <div className="space-y-0.5">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-1">
-            <span className={`text-[9px] ${colors.text.muted}`}>{label}</span>
-            {resetTime && <span className={`text-[8px] ${colors.text.muted} opacity-60`}>Resets in {resetTime}</span>}
-          </div>
-          <span className={`text-[9px] font-mono font-bold ${pctColor}`}>
-            {isNA ? 'N/A' : `${Math.round(pct)}%`}
-          </span>
-        </div>
-        <div className={`h-1.5 rounded-full ${colors.progressBg} overflow-hidden relative`}>
-          <div className={`absolute inset-0 ${progressBarClass} rounded-full`} />
-          <div
-            className={`absolute inset-0 ${colors.progressBg} rounded-r-full transition-all duration-500 ease-out`}
-            style={{ left: `${Math.min(displayPct, 100)}%` }}
-          />
-        </div>
-      </div>
-    );
-  };
-
   // Group agents by session
   const sessionMap = {};
   agents.forEach(agent => {
@@ -337,19 +341,19 @@ export default function MiniApp({ onSwitchToFull }) {
           ) : (
             <span className="text-[8px] text-red-400" title="Extension not syncing">💀</span>
           )}
-          <div className={`px-1 h-5 flex items-center rounded text-[8px] font-semibold ${
-            sessionPct === null ? colors.badge.neutral :
-            sessionPct >= 100 ? colors.badge.danger :
-            sessionPct >= 85 ? colors.badge.danger :
-            sessionPct >= 60 ? colors.badge.warning :
-            colors.badge.normal
-          }`}>
-            {sessionPct === null ? '📊 No data' :
-             sessionPct >= 100 ? '🫗 Full' :
-             sessionPct >= 85 ? '🚨 Near limit' :
-             sessionPct >= 60 ? '⚡ High usage' :
-             '🪴 Normal'}
-          </div>
+          {(() => {
+            const badge = getUsageBadge(sessionPct);
+            return (
+              <div className={`px-1 h-5 flex items-center rounded text-[8px] font-semibold ${
+                badge.level === 'neutral' ? colors.badge.neutral :
+                badge.level === 'danger' ? colors.badge.danger :
+                badge.level === 'warning' ? colors.badge.warning :
+                colors.badge.normal
+              }`}>
+                {`${badge.emoji} ${badge.label}`}
+              </div>
+            );
+          })()}
           {onSwitchToFull && (
             <button
               onClick={onSwitchToFull}
@@ -366,9 +370,9 @@ export default function MiniApp({ onSwitchToFull }) {
 
       {/* Session Gauge */}
       <div className={`px-2 pt-1.5 pb-3 border-b ${colors.border} ${colors.bg.secondary}`}>
-        <GaugeBar label="Session" pct={sessionPct} isSession={true} resetTime={getSessionResetTime()} />
+        <GaugeBar label="Session" pct={sessionPct} isSession={true} resetTime={getSessionResetTime()} colors={colors} />
         <div className="mt-1">
-          <GaugeBar label="Weekly" pct={weeklyPct} resetTime={getWeeklyResetTime()} />
+          <GaugeBar label="Weekly" pct={weeklyPct} resetTime={getWeeklyResetTime()} colors={colors} />
         </div>
       </div>
 
@@ -462,9 +466,16 @@ export default function MiniApp({ onSwitchToFull }) {
             {activeMainCount} session{activeMainCount !== 1 ? 's' : ''} · {activeTaskCount} task{activeTaskCount !== 1 ? 's' : ''}
           </span>
         </div>
-        <span className="text-[9px] font-mono font-bold text-emerald-400">
-          ${monthCost.toFixed(2)}
-        </span>
+        <div className="flex items-center gap-1.5">
+          <span className="text-[9px] font-mono font-bold text-emerald-400">
+            ${monthCost.toFixed(2)}
+          </span>
+          <button
+            onClick={() => { fetch('http://localhost:4824/agents', { method: 'DELETE' }); }}
+            className={`text-[8px] px-1 py-0.5 rounded ${colors.button.text} hover:bg-red-500/20 hover:text-red-400 transition-colors`}
+            title="Clear agents"
+          >✕</button>
+        </div>
       </div>
     </div>
   );

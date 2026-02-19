@@ -49,14 +49,16 @@ export function useNotifications() {
     userInteractedRef.current = true;
     try { getAudioContext(); } catch {}
 
-    const idx = MODES.indexOf(mode);
-    const next = MODES[(idx + 1) % MODES.length];
-    setMode(next);
-    localStorage.setItem('notifMode', next);
-    if (next === 'bell') {
-      setTimeout(() => playBell(), 50);
-    }
-  }, [mode, playBell]);
+    setMode(prev => {
+      const idx = MODES.indexOf(prev);
+      const next = MODES[(idx + 1) % MODES.length];
+      localStorage.setItem('notifMode', next);
+      if (next === 'bell') {
+        setTimeout(() => playBell(), 50);
+      }
+      return next;
+    });
+  }, [playBell]);
 
   // Check for agent status changes
   const checkAgentChanges = useCallback((agents) => {

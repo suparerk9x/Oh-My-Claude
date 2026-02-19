@@ -1,12 +1,29 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { EVENT_CONFIG } from './config/eventTypes';
 import { getThemeColors } from './config/theme';
-import { formatTokens, formatRelativeTime, formatTimeWithSeconds as formatTime } from './utils/format';
-import { TokenGauge, AgentCard, AgentTree, HelpGuide, ActivityItem, HourlyBreakdown, TokenStats, getEventTarget } from './components';
+import { formatTokens, formatRelativeTime, getUsageBadge } from './utils/format';
+import { TokenGauge, AgentTree, HelpGuide, ActivityItem, HourlyBreakdown, TokenStats, getEventTarget } from './components';
 import { useNotifications } from './hooks/useNotifications';
 import MiniApp from './MiniApp.jsx';
 
 const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:4824';
+
+// Module-level constant (no need to recreate per render)
+const STATUS_PRIORITY = { waiting: 8, thinking: 7, writing: 6, executing: 5, spawning: 4, searching: 3, reading: 2, processing: 1, compacting: 0, stopped: -1 };
+
+// Extracted Clock component to avoid re-rendering entire App every second
+function LiveClock({ colors }) {
+  const [currentTime, setCurrentTime] = useState(new Date());
+  useEffect(() => {
+    const interval = setInterval(() => setCurrentTime(new Date()), 1000);
+    return () => clearInterval(interval);
+  }, []);
+  return (
+    <span className={`${colors.text.clock} font-mono tabular-nums`}>
+      {currentTime.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+    </span>
+  );
+}
 
 // Detect if running as installed PWA (standalone = no address bar)
 function detectPWA() {
@@ -39,7 +56,7 @@ export default function App() {
   const [isDetailCollapsed, setIsDetailCollapsed] = useState(false); // Collapse event detail panel
   const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'dark');
   const [agentViewMode, setAgentViewMode] = useState(() => localStorage.getItem('agentViewMode') || 'full');
-  const [isAgentsCollapsed, setIsAgentsCollapsed] = useState(false);
+  const [isAgentsCollapsed, setIsAgentsCollapsed] = useState(() => localStorage.getItem('agentsCollapsed') === 'true');
   const [showHelp, setShowHelp] = useState(false);
   const [demoMode, setDemoMode] = useState(false);
   const wsRef = useRef(null);
@@ -49,6 +66,10 @@ export default function App() {
   // Notification system
   const { mode, cycleMode, checkAgentChanges, getModeInfo } = useNotifications();
   const notifInfo = getModeInfo();
+
+  // Stable ref for checkAgentChanges to avoid stale closure in WebSocket handler
+  const checkAgentChangesRef = useRef(checkAgentChanges);
+  useEffect(() => { checkAgentChangesRef.current = checkAgentChanges; }, [checkAgentChanges]);
 
   // Get theme colors from config
   const colors = getThemeColors(theme);
@@ -71,6 +92,7 @@ export default function App() {
     if (isAgentsCollapsed) {
       // collapsed -> full
       setIsAgentsCollapsed(false);
+      localStorage.setItem('agentsCollapsed', 'false');
       setAgentViewMode('full');
       localStorage.setItem('agentViewMode', 'full');
     } else if (agentViewMode === 'full') {
@@ -86,6 +108,7 @@ export default function App() {
       setAgentViewMode('full');
       localStorage.setItem('agentViewMode', 'full');
       setIsAgentsCollapsed(true);
+      localStorage.setItem('agentsCollapsed', 'true');
     }
   };
 
@@ -166,12 +189,12 @@ export default function App() {
         } else if (data.type === 'stats') {
           setStats(data.stats);
           mergeAgents(data.agents || []);
-          checkAgentChanges(data.agents || []);
+          checkAgentChangesRef.current(data.agents || []);
           setSessions(data.sessions || []);
           if (data.usage) setClaudeUsage(data.usage);
         } else if (data.type === 'agents_update') {
           mergeAgents(data.agents || []);
-          checkAgentChanges(data.agents || []);
+          checkAgentChangesRef.current(data.agents || []);
         } else if (data.type === 'usage') {
           setClaudeUsage(data.usage);
         } else if (data.type === 'clear') {
@@ -193,15 +216,6 @@ export default function App() {
       wsRef.current?.close();
     };
   }, [connect]);
-
-  // Live clock that updates every second
-  const [currentTime, setCurrentTime] = useState(new Date());
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setCurrentTime(new Date());
-    }, 1000); // Update every second
-    return () => clearInterval(interval);
-  }, []);
 
   // Demo mode - mock data for testing layout
   const demoAgents = demoMode ? [
@@ -235,8 +249,8 @@ export default function App() {
   const displayAgents = demoMode ? demoAgents : agents;
   const displayEvents = demoMode ? demoEvents : events;
 
-  // Smart status: derive granular status per session from last event
-  const smartStatus = (() => {
+  // Smart status: derive granular status per session from last event (memoized)
+  const smartStatus = useMemo(() => {
     const map = {}; // sessionId -> { status, label, icon, color, animation, since }
     // Find the most recent event per session
     const lastEventBySession = {};
@@ -275,7 +289,7 @@ export default function App() {
       }
     }
     return map;
-  })();
+  }, [displayEvents]);
 
   // Token percentages - ONLY from Chrome extension (claudeUsage)
   // If no extension data, show N/A (null = N/A)
@@ -288,10 +302,8 @@ export default function App() {
   const isSyncActive = hasRealUsage && lastSyncTime && (Date.now() - lastSyncTime) < USAGE_TIMEOUT_MS;
   const sessionPct = hasRealUsage ? claudeUsage.five_hour.utilization : null;
   const weeklyPct = claudeUsage?.seven_day?.utilization ?? null;
-  const sonnetWeeklyPct = claudeUsage?.seven_day_sonnet?.utilization ?? null;
 
   // Dynamic page title: smart status (priority) + count + usage% + OMC!
-  const STATUS_PRIORITY = { waiting: 8, thinking: 7, writing: 6, executing: 5, spawning: 4, searching: 3, reading: 2, processing: 1, compacting: 0, stopped: -1 };
   useEffect(() => {
     const mainAgents = displayAgents.filter(a => a.type === 'main');
     const activeAgents = mainAgents.filter(a => ['active', 'idle', 'stale'].includes(a.status));
@@ -315,8 +327,9 @@ export default function App() {
 
     const activeCount = activeAgents.length > 0 ? activeAgents.length : mainAgents.length;
     const countPrefix = activeCount > 1 ? `${activeCount}x ` : '';
+    const badge = getUsageBadge(sessionPct);
     const pctStr = sessionPct !== null
-      ? (sessionPct >= 100 ? `🫗 Full` : sessionPct >= 85 ? `🚨${Math.round(sessionPct)}%` : sessionPct >= 60 ? `⚡${Math.round(sessionPct)}%` : `🪴${Math.round(sessionPct)}%`)
+      ? (sessionPct >= 100 ? `${badge.emoji} ${badge.label}` : `${badge.emoji}${Math.round(sessionPct)}%`)
       : '';
 
     const parts = [countPrefix + (statusIcon ? `${statusIcon} ${statusLabel}` : statusLabel), pctStr, 'OMC!'].filter(Boolean);
@@ -505,19 +518,19 @@ export default function App() {
             </svg>
           </button>
           {/* Status Badge */}
-          <div className={`px-1.5 h-7 flex items-center rounded-lg text-[10px] font-semibold ${
-            sessionPct === null ? colors.badge.neutral :
-            sessionPct >= 100 ? colors.badge.danger :
-            sessionPct >= 85 ? colors.badge.danger :
-            sessionPct >= 60 ? colors.badge.warning :
-            colors.badge.normal
-          }`}>
-            {sessionPct === null ? '📊 No data' :
-             sessionPct >= 100 ? '🫗 Full' :
-             sessionPct >= 85 ? '🚨 Near limit' :
-             sessionPct >= 60 ? '⚡ High usage' :
-             '🪴 Normal'}
-          </div>
+          {(() => {
+            const badge = getUsageBadge(sessionPct);
+            return (
+              <div className={`px-1.5 h-7 flex items-center rounded-lg text-[10px] font-semibold ${
+                badge.level === 'neutral' ? colors.badge.neutral :
+                badge.level === 'danger' ? colors.badge.danger :
+                badge.level === 'warning' ? colors.badge.warning :
+                colors.badge.normal
+              }`}>
+                {`${badge.emoji} ${badge.label}`}
+              </div>
+            );
+          })()}
         </div>
       </header>
 
@@ -587,23 +600,28 @@ export default function App() {
               Activity
             </h2>
             {/* Quick Stats - Clickable Filters */}
-            <div className="flex items-center flex-nowrap shrink-0 gap-px text-[8px] leading-none">
-              <button onClick={() => setSelectedEventType(null)} className={`px-0.5 py-0.5 rounded transition-all whitespace-nowrap ${!selectedEventType ? 'bg-gray-500/20 ring-1 ring-gray-500/50' : 'hover:bg-gray-500/10'}`} title="Show all">
-                <span className="font-mono text-gray-400">{displayEvents.length}</span>
-              </button>
-              <button onClick={() => setSelectedEventType(selectedEventType === 'tools' ? null : 'tools')} className={`px-0.5 py-0.5 rounded transition-all whitespace-nowrap ${selectedEventType === 'tools' ? 'bg-cyan-500/20 ring-1 ring-cyan-500/50' : 'hover:bg-cyan-500/10'}`} title="Tools">
-                <span className="text-[7px]">🔧</span><span className="font-mono text-cyan-400">{displayEvents.filter(e => e.type === 'PreToolUse').length}</span>
-              </button>
-              <button onClick={() => setSelectedEventType(selectedEventType === 'success' ? null : 'success')} className={`px-0.5 py-0.5 rounded transition-all whitespace-nowrap ${selectedEventType === 'success' ? 'bg-emerald-500/20 ring-1 ring-emerald-500/50' : 'hover:bg-emerald-500/10'}`} title="Success">
-                <span className="text-[7px]">✅</span><span className="font-mono text-emerald-400">{displayEvents.filter(e => e.type === 'PostToolUse').length}</span>
-              </button>
-              <button onClick={() => setSelectedEventType(selectedEventType === 'errors' ? null : 'errors')} className={`px-0.5 py-0.5 rounded transition-all whitespace-nowrap ${selectedEventType === 'errors' ? 'bg-red-500/20 ring-1 ring-red-500/50' : 'hover:bg-red-500/10'}`} title="Errors">
-                <span className="text-[7px]">❌</span><span className="font-mono text-red-400">{displayEvents.filter(e => e.type === 'PostToolUseFailure').length}</span>
-              </button>
-              <button onClick={() => setSelectedEventType(selectedEventType === 'prompts' ? null : 'prompts')} className={`px-0.5 py-0.5 rounded transition-all whitespace-nowrap ${selectedEventType === 'prompts' ? 'bg-amber-500/20 ring-1 ring-amber-500/50' : 'hover:bg-amber-500/10'}`} title="Prompts">
-                <span className="text-[7px]">💬</span><span className="font-mono text-amber-400">{displayEvents.filter(e => e.type === 'UserPromptSubmit').length}</span>
-              </button>
-            </div>
+            {(() => {
+              const sessionEvents = selectedSession ? displayEvents.filter(e => e.sessionId === selectedSession) : displayEvents;
+              return (
+                <div className="flex items-center flex-nowrap shrink-0 gap-px text-[8px] leading-none">
+                  <button onClick={() => setSelectedEventType(null)} className={`px-0.5 py-0.5 rounded transition-all whitespace-nowrap ${!selectedEventType ? 'bg-gray-500/20 ring-1 ring-gray-500/50' : 'hover:bg-gray-500/10'}`} title="Show all">
+                    <span className="font-mono text-gray-400">{sessionEvents.length}</span>
+                  </button>
+                  <button onClick={() => setSelectedEventType(selectedEventType === 'tools' ? null : 'tools')} className={`px-0.5 py-0.5 rounded transition-all whitespace-nowrap ${selectedEventType === 'tools' ? 'bg-cyan-500/20 ring-1 ring-cyan-500/50' : 'hover:bg-cyan-500/10'}`} title="Tools">
+                    <span className="text-[7px]">🔧</span><span className="font-mono text-cyan-400">{sessionEvents.filter(e => e.type === 'PreToolUse').length}</span>
+                  </button>
+                  <button onClick={() => setSelectedEventType(selectedEventType === 'success' ? null : 'success')} className={`px-0.5 py-0.5 rounded transition-all whitespace-nowrap ${selectedEventType === 'success' ? 'bg-emerald-500/20 ring-1 ring-emerald-500/50' : 'hover:bg-emerald-500/10'}`} title="Success">
+                    <span className="text-[7px]">✅</span><span className="font-mono text-emerald-400">{sessionEvents.filter(e => e.type === 'PostToolUse').length}</span>
+                  </button>
+                  <button onClick={() => setSelectedEventType(selectedEventType === 'errors' ? null : 'errors')} className={`px-0.5 py-0.5 rounded transition-all whitespace-nowrap ${selectedEventType === 'errors' ? 'bg-red-500/20 ring-1 ring-red-500/50' : 'hover:bg-red-500/10'}`} title="Errors">
+                    <span className="text-[7px]">❌</span><span className="font-mono text-red-400">{sessionEvents.filter(e => e.type === 'PostToolUseFailure').length}</span>
+                  </button>
+                  <button onClick={() => setSelectedEventType(selectedEventType === 'prompts' ? null : 'prompts')} className={`px-0.5 py-0.5 rounded transition-all whitespace-nowrap ${selectedEventType === 'prompts' ? 'bg-amber-500/20 ring-1 ring-amber-500/50' : 'hover:bg-amber-500/10'}`} title="Prompts">
+                    <span className="text-[7px]">💬</span><span className="font-mono text-amber-400">{sessionEvents.filter(e => e.type === 'UserPromptSubmit').length}</span>
+                  </button>
+                </div>
+              );
+            })()}
           </div>
           {/* Activity Feed */}
           <div className={`flex-1 overflow-hidden ${colors.bg.secondary}`}>
@@ -685,9 +703,7 @@ export default function App() {
             <span className="flex items-center gap-0.5" title="Sonnet"><span className="text-blue-400">●</span><span className="font-mono text-blue-400">${(tokens.monthModelUsage?.Sonnet?.estimatedCost || 0).toLocaleString('en-US', {maximumFractionDigits: 0})}</span></span>
             <span className="flex items-center gap-0.5" title="Haiku"><span className="text-emerald-400">▪</span><span className="font-mono text-emerald-400">${(tokens.monthModelUsage?.Haiku?.estimatedCost || 0).toLocaleString('en-US', {maximumFractionDigits: 0})}</span></span>
             <span className={`${colors.text.muted}`}>|</span>
-            <span className={`${colors.text.clock} font-mono tabular-nums`}>
-              {currentTime.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-            </span>
+            <LiveClock colors={colors} />
           </div>
         </div>
       </footer>
@@ -851,7 +867,6 @@ function ActivityFeed({ events, colors, selectedEvent, onSelectEvent }) {
           <ActivityItem
             key={event.id || i}
             event={event}
-            isFirst={i === 0}
             colors={colors}
             isSelected={selectedEvent?.id === event.id}
             onSelect={() => onSelectEvent(selectedEvent?.id === event.id ? null : event)}

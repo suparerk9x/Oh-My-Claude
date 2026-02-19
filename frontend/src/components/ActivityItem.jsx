@@ -5,7 +5,7 @@ import { formatRelativeTime } from '../utils/format';
 /**
  * Activity Item Component - Displays a single event in the activity feed
  */
-export function ActivityItem({ event, isFirst, colors, isSelected, onSelect }) {
+export function ActivityItem({ event, colors, isSelected, onSelect }) {
   const config = EVENT_CONFIG[event.type] || EVENT_CONFIG.Unknown;
   const target = getEventTarget(event);
 
@@ -151,7 +151,6 @@ ActivityItem.propTypes = {
     sessionId: PropTypes.string,
     agentId: PropTypes.string
   }).isRequired,
-  isFirst: PropTypes.bool,
   colors: PropTypes.shape({
     text: PropTypes.shape({
       muted: PropTypes.string,

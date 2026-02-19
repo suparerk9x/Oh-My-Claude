@@ -137,7 +137,7 @@ wss.on('connection', (ws) => {
       smartStatus: smartStatusMap
     };
     ws.send(JSON.stringify(initData));
-  })();
+  })().catch(err => console.error('[WS] Init send failed:', err.message));
 
   ws.on('close', () => {
     clients.delete(ws);
@@ -448,8 +448,17 @@ function checkAgentTimeouts() {
       changed = true;
     }
 
+    // Sync smartStatus when agent goes inactive
+    if (agent.sessionId && smartStatusMap[agent.sessionId]) {
+      const ss = smartStatusMap[agent.sessionId];
+      if (ss.status !== 'stopped' && (agent.status === 'idle' || agent.status === 'stale' || agent.status === 'timeout' || agent.status === 'stopped')) {
+        smartStatusMap[agent.sessionId] = { status: 'stopped', label: 'Stopped', icon: '○', color: 'text-gray-500' };
+      }
+    }
+
     // Remove old stopped/timeout agents after 60 min
     if ((agent.status === 'stopped' || agent.status === 'timeout') && elapsed > AGENT_CLEANUP_MS) {
+      if (agent.sessionId) delete smartStatusMap[agent.sessionId];
       agents.delete(id);
       console.log(`[AGENT] ${id} removed (cleanup after ${Math.round(elapsed / 60000)}m)`);
       changed = true;
@@ -867,63 +876,63 @@ async function readSessionTokens(sessionId) {
   }
 
   // Find the session transcript file
-  const projectDirs = fs.readdirSync(CLAUDE_PROJECTS_DIR).filter(d => {
-    const stat = fs.statSync(path.join(CLAUDE_PROJECTS_DIR, d));
-    return stat.isDirectory();
-  });
+  let allEntries;
+  try {
+    allEntries = await fs.promises.readdir(CLAUDE_PROJECTS_DIR, { withFileTypes: true });
+  } catch { return null; }
+  const projectDirs = allEntries.filter(d => d.isDirectory()).map(d => d.name);
 
   for (const projectDir of projectDirs) {
     const transcriptPath = path.join(CLAUDE_PROJECTS_DIR, projectDir, `${sessionId}.jsonl`);
-    if (fs.existsSync(transcriptPath)) {
-      try {
-        // Use readline streaming instead of loading entire file
-        const rl = createInterface({
-          input: fs.createReadStream(transcriptPath, { highWaterMark: 64 * 1024 }),
-          crlfDelay: Infinity
-        });
+    try { await fs.promises.access(transcriptPath); } catch { continue; }
+    try {
+      // Use readline streaming instead of loading entire file
+      const rl = createInterface({
+        input: fs.createReadStream(transcriptPath, { highWaterMark: 64 * 1024 }),
+        crlfDelay: Infinity
+      });
 
-        let inputTokens = 0;
-        let outputTokens = 0;
-        let cacheReadTokens = 0;
-        let cacheCreationTokens = 0;
+      let inputTokens = 0;
+      let outputTokens = 0;
+      let cacheReadTokens = 0;
+      let cacheCreationTokens = 0;
 
-        for await (const line of rl) {
-          if (!line.trim()) continue;
-          try {
-            const parsed = JSON.parse(line);
-            if (parsed.message?.usage) {
-              const usage = parsed.message.usage;
-              inputTokens += usage.input_tokens || 0;
-              outputTokens += usage.output_tokens || 0;
-              cacheReadTokens += usage.cache_read_input_tokens || 0;
-              cacheCreationTokens += usage.cache_creation_input_tokens || 0;
-            }
-          } catch {
-            // Skip invalid lines
+      for await (const line of rl) {
+        if (!line.trim()) continue;
+        try {
+          const parsed = JSON.parse(line);
+          if (parsed.message?.usage) {
+            const usage = parsed.message.usage;
+            inputTokens += usage.input_tokens || 0;
+            outputTokens += usage.output_tokens || 0;
+            cacheReadTokens += usage.cache_read_input_tokens || 0;
+            cacheCreationTokens += usage.cache_creation_input_tokens || 0;
           }
+        } catch {
+          // Skip invalid lines
         }
-
-        const data = {
-          inputTokens,
-          outputTokens,
-          cacheReadTokens,
-          cacheCreationTokens,
-          totalTokens: inputTokens + outputTokens
-        };
-
-        // Cache the result
-        sessionTokenCache.set(sessionId, { data, timestamp: Date.now() });
-        return data;
-      } catch (err) {
-        console.error(`Error reading session tokens for ${sessionId}:`, err.message);
       }
+
+      const data = {
+        inputTokens,
+        outputTokens,
+        cacheReadTokens,
+        cacheCreationTokens,
+        totalTokens: inputTokens + outputTokens
+      };
+
+      // Cache the result
+      sessionTokenCache.set(sessionId, { data, timestamp: Date.now() });
+      return data;
+    } catch (err) {
+      console.error(`Error reading session tokens for ${sessionId}:`, err.message);
     }
   }
 
   return null;
 }
 
-// Git diff stats cache (per cwd, TTL 12 seconds)
+// Git diff stats cache (per cwd, TTL 5 seconds)
 const gitDiffCache = new Map();
 const GIT_DIFF_CACHE_TTL = 5000;
 
@@ -1216,6 +1225,7 @@ app.delete('/events', (req, res) => {
   events = [];
   agents.clear();
   sessions.clear();
+  smartStatusMap = {};
   saveEvents();
   saveAgents();
   broadcast({ type: 'clear' });
@@ -1226,6 +1236,7 @@ app.delete('/events', (req, res) => {
 app.delete('/agents', (req, res) => {
   const agentCount = agents.size;
   agents.clear();
+  smartStatusMap = {};
   saveAgents();
   broadcast({ type: 'agents_cleared' });
   console.log(`[CLEAR] Cleared ${agentCount} agents`);
@@ -1277,6 +1288,34 @@ app.get('/usage', (req, res) => {
 loadEvents();
 loadAgents();
 
+// Rebuild smartStatusMap from loaded events (so MiniApp isn't empty after server restart)
+for (const event of events) {
+  const sid = event.sessionId;
+  if (!sid) continue;
+  const type = event.type;
+  const tool = event.toolName;
+  if (type === 'UserPromptSubmit' || type === 'PostToolUse') {
+    smartStatusMap[sid] = { status: 'thinking', label: 'Thinking', icon: '🧠', color: 'text-violet-400' };
+  } else if (type === 'PreToolUse') {
+    if (tool === 'Read' || tool === 'Glob' || tool === 'Grep') {
+      smartStatusMap[sid] = { status: 'reading', label: 'Reading', icon: '👁', color: 'text-sky-400' };
+    } else if (tool === 'Edit' || tool === 'Write') {
+      smartStatusMap[sid] = { status: 'writing', label: 'Writing', icon: '✍️', color: 'text-orange-400' };
+    } else if (tool === 'Bash') {
+      smartStatusMap[sid] = { status: 'executing', label: 'Executing', icon: '⚡', color: 'text-amber-400' };
+    } else if (tool === 'Task') {
+      smartStatusMap[sid] = { status: 'spawning', label: 'Spawning', icon: '🔀', color: 'text-violet-400' };
+    } else if (tool === 'WebSearch' || tool === 'WebFetch') {
+      smartStatusMap[sid] = { status: 'searching', label: 'Searching', icon: '🌐', color: 'text-cyan-400' };
+    } else {
+      smartStatusMap[sid] = { status: 'processing', label: 'Processing', icon: '⚙️', color: 'text-blue-400' };
+    }
+  } else if (type === 'Stop' || type === 'SessionEnd') {
+    smartStatusMap[sid] = { status: 'stopped', label: 'Stopped', icon: '○', color: 'text-gray-500' };
+  }
+}
+console.log(`[LOAD] Rebuilt smartStatus for ${Object.keys(smartStatusMap).length} sessions`);
+
 // Periodic stats broadcast (async)
 setInterval(async () => {
   broadcast({
@@ -1292,7 +1331,7 @@ setInterval(async () => {
 // Start server
 server.listen(PORT, () => {
   console.log(`
-🚀 Claude Code Monitor Server v2.1
+🚀 Oh My Claude! v2.2
 
    HTTP:      http://localhost:${PORT}
    WebSocket: ws://localhost:${PORT}

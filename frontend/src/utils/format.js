@@ -11,9 +11,20 @@ const getUserLocale = () => {
  */
 export function formatTokens(n) {
   if (!n) return '0';
-  if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
+  if (n >= 999950) return (n / 1000000).toFixed(1) + 'M';
   if (n >= 1000) return (n / 1000).toFixed(1) + 'k';
   return n.toString();
+}
+
+/**
+ * Get usage badge info for session percentage (shared across App + MiniApp)
+ */
+export function getUsageBadge(pct) {
+  if (pct === null) return { emoji: '📊', label: 'No data', level: 'neutral' };
+  if (pct >= 100) return { emoji: '🫗', label: 'Full', level: 'danger' };
+  if (pct >= 85) return { emoji: '🚨', label: 'Near limit', level: 'danger' };
+  if (pct >= 60) return { emoji: '⚡', label: 'High usage', level: 'warning' };
+  return { emoji: '🪴', label: 'Normal', level: 'normal' };
 }
 
 /**

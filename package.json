@@ -1,6 +1,6 @@
 {
   "name": "claude-agent-monitor",
-  "version": "1.0.0",
+  "version": "2.2.0",
   "private": true,
   "scripts": {
     "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",

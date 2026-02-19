@@ -105,7 +105,7 @@ export function HelpGuide({ onClose, theme = 'dark', demoMode = false, onDemoTog
 
           <div className={`mt-auto pt-4 border-t ${colors.sidebar.border}`}>
             <div className={`text-[10px] ${colors.text.faint} px-2`}>
-              Oh My Claude v2.0<br />
+              Oh My Claude v2.2<br />
               Real-time Dashboard
             </div>
           </div>
@@ -216,7 +216,7 @@ function OverviewSection({ lang, theme = 'dark' }) {
       toolbarTheme: 'Theme',
       toolbarThemeDesc: 'Toggle Dark / Light mode',
       toolbarMini: 'Mini Pop-out',
-      toolbarMiniDesc: 'Open floating mini window (220x450px)',
+      toolbarMiniDesc: 'Open floating mini window (280x400px)',
       toolbarNotif: 'Notifications',
       toolbarNotifDesc: 'Toggle: Off / Bell',
       toolbarGuide: 'Guide',
@@ -275,7 +275,7 @@ function OverviewSection({ lang, theme = 'dark' }) {
       toolbarTheme: 'Theme',
       toolbarThemeDesc: 'สลับ Dark / Light',
       toolbarMini: 'Mini Pop-out',
-      toolbarMiniDesc: 'เปิดหน้าต่างลอย mini (220x450px)',
+      toolbarMiniDesc: 'เปิดหน้าต่างลอย mini (280x400px)',
       toolbarNotif: 'Notifications',
       toolbarNotifDesc: 'สลับ: Off / Bell',
       toolbarGuide: 'Guide',
@@ -557,7 +557,7 @@ function SetupSection({ lang, theme = 'dark' }) {
       step2File: '~/.claude/settings.json',
       step2FileWin: 'C:\\Users\\<username>\\.claude\\settings.json',
       step2Note: 'Replace <PATH> with your oh-my-claude folder path',
-      step2Hooks: ['PreToolUse', 'PostToolUse', 'SubagentStart', 'SubagentStop', 'UserPromptSubmit', 'Stop', 'PreCompact'],
+      step2Hooks: ['PreToolUse', 'PostToolUse', 'SubagentStart', 'SubagentStop', 'UserPromptSubmit', 'PermissionRequest', 'Stop', 'PreCompact', 'SessionStart', 'SessionEnd'],
       step3: 'Install Chrome Extension',
       step3For: 'Optional - for Sync Usage',
       step3Desc: 'Pull Session % and Weekly % directly from Claude.ai:',
@@ -590,7 +590,7 @@ function SetupSection({ lang, theme = 'dark' }) {
       step2File: '~/.claude/settings.json',
       step2FileWin: 'C:\\Users\\<username>\\.claude\\settings.json',
       step2Note: 'แทนที่ <PATH> ด้วย path ไปยัง folder oh-my-claude ของคุณ',
-      step2Hooks: ['PreToolUse', 'PostToolUse', 'SubagentStart', 'SubagentStop', 'UserPromptSubmit', 'Stop', 'PreCompact'],
+      step2Hooks: ['PreToolUse', 'PostToolUse', 'SubagentStart', 'SubagentStop', 'UserPromptSubmit', 'PermissionRequest', 'Stop', 'PreCompact', 'SessionStart', 'SessionEnd'],
       step3: 'ติดตั้ง Chrome Extension',
       step3For: 'Optional - สำหรับ Sync Usage',
       step3Desc: 'ดึง Session % และ Weekly % จาก Claude.ai โดยตรง:',
@@ -629,7 +629,8 @@ function SetupSection({ lang, theme = 'dark' }) {
           <div className={`pl-4 ${colors.text.dimmed}`}>├── <span className="text-blue-500">backend/</span></div>
           <div className={`pl-8 ${colors.text.dimmed}`}>├── <span className="text-emerald-500">server.js</span> <span className={colors.text.faint}>← Express + WebSocket (port 4824)</span></div>
           <div className={`pl-8 ${colors.text.dimmed}`}>├── <span className="text-emerald-500">statsReader.js</span> <span className={colors.text.faint}>← Read transcript data</span></div>
-          <div className={`pl-8 ${colors.text.dimmed}`}>└── <span className="text-amber-500">events.json</span> <span className={colors.text.faint}>← Event storage (auto)</span></div>
+          <div className={`pl-8 ${colors.text.dimmed}`}>├── <span className="text-amber-500">events.json</span> <span className={colors.text.faint}>← Event storage (auto)</span></div>
+          <div className={`pl-8 ${colors.text.dimmed}`}>└── <span className="text-amber-500">agents.json</span> <span className={colors.text.faint}>← Agent storage (auto)</span></div>
           <div className={`pl-4 ${colors.text.dimmed}`}>├── <span className="text-blue-500">frontend/</span></div>
           <div className={`pl-8 ${colors.text.dimmed}`}>├── <span className="text-emerald-500">src/App.jsx</span> <span className={colors.text.faint}>← React dashboard</span></div>
           <div className={`pl-8 ${colors.text.dimmed}`}>└── <span className="text-amber-500">vite.config.js</span> <span className={colors.text.faint}>← port 4825</span></div>
@@ -1287,13 +1288,13 @@ function AgentsSection({ lang, theme = 'dark' }) {
       statusActive: 'Active',
       statusActiveDesc: 'Receiving events, green pulse',
       statusIdle: 'Idle',
-      statusIdleDesc: 'No activity for 5 min, yellow',
+      statusIdleDesc: 'No activity for 3 min, yellow',
       statusStale: 'Stale',
-      statusStaleDesc: 'No activity for 10 min, orange',
+      statusStaleDesc: 'No activity for 8 min, orange',
       statusTimeout: 'Timeout',
-      statusTimeoutDesc: 'No activity for 30 min, amber pulse',
+      statusTimeoutDesc: 'No activity for 20 min, amber pulse',
       statusRemoved: 'Removed',
-      statusRemovedDesc: 'No activity for 60 min, deleted',
+      statusRemovedDesc: 'No activity for 30 min, deleted',
       autoCleanup: 'Agents automatically return to Active when new events arrive.',
       smartStatusTitle: 'Smart Status Detection',
       smartStatusDesc: 'When an agent is active, the dashboard derives a real-time granular status from the event stream — showing exactly what Claude is doing right now.',
@@ -1339,13 +1340,13 @@ function AgentsSection({ lang, theme = 'dark' }) {
       statusActive: 'Active',
       statusActiveDesc: 'มี events เข้ามา, เขียว กะพริบ',
       statusIdle: 'Idle',
-      statusIdleDesc: 'ไม่มี activity 5 นาที, เหลือง',
+      statusIdleDesc: 'ไม่มี activity 3 นาที, เหลือง',
       statusStale: 'Stale',
-      statusStaleDesc: 'ไม่มี activity 10 นาที, ส้ม',
+      statusStaleDesc: 'ไม่มี activity 8 นาที, ส้ม',
       statusTimeout: 'Timeout',
-      statusTimeoutDesc: 'ไม่มี activity 30 นาที, อำพัน กะพริบ',
+      statusTimeoutDesc: 'ไม่มี activity 20 นาที, อำพัน กะพริบ',
       statusRemoved: 'Removed',
-      statusRemovedDesc: 'ไม่มี activity 60 นาที, ลบออก',
+      statusRemovedDesc: 'ไม่มี activity 30 นาที, ลบออก',
       autoCleanup: 'Agent จะกลับเป็น Active อัตโนมัติเมื่อมี event ใหม่เข้ามา',
       smartStatusTitle: 'Smart Status Detection',
       smartStatusDesc: 'เมื่อ agent กำลังทำงาน dashboard จะวิเคราะห์ event stream แบบ real-time แสดงสถานะละเอียดว่า Claude กำลังทำอะไรอยู่ตอนนี้',
@@ -1677,11 +1678,11 @@ function MiniModeSection({ lang, theme = 'dark' }) {
   const t = {
     en: {
       whatTitle: 'What is Mini Mode?',
-      whatDesc: 'A compact floating popup window (~220x450px) that shows key metrics at a glance. Perfect for keeping on screen while working.',
+      whatDesc: 'A compact floating popup window (~280x400px) that shows key metrics at a glance. Perfect for keeping on screen while working.',
       howTitle: 'How to Open',
       howDesc: 'Click the Mini button in the header bar. A popup window opens with its own WebSocket connection.',
       howStep1: 'Click "Mini" button in header',
-      howStep2: 'Popup window opens (220x450px)',
+      howStep2: 'Popup window opens (280x400px)',
       howStep3: 'Window stays on top while you work',
       featuresTitle: 'What it Shows',
       feat1: 'Session gauge (5h usage %)',
@@ -1696,11 +1697,11 @@ function MiniModeSection({ lang, theme = 'dark' }) {
     },
     th: {
       whatTitle: 'Mini Mode คืออะไร?',
-      whatDesc: 'หน้าต่าง popup ขนาดกะทัดรัด (~220x450px) แสดงข้อมูลสำคัญแบบรวดเร็ว เหมาะสำหรับเปิดค้างไว้ขณะทำงาน',
+      whatDesc: 'หน้าต่าง popup ขนาดกะทัดรัด (~280x400px) แสดงข้อมูลสำคัญแบบรวดเร็ว เหมาะสำหรับเปิดค้างไว้ขณะทำงาน',
       howTitle: 'วิธีเปิด',
       howDesc: 'คลิกปุ่ม Mini ที่ header bar หน้าต่าง popup จะเปิดพร้อม WebSocket connection ของตัวเอง',
       howStep1: 'คลิกปุ่ม "Mini" ที่ header',
-      howStep2: 'หน้าต่าง popup เปิดขึ้น (220x450px)',
+      howStep2: 'หน้าต่าง popup เปิดขึ้น (280x400px)',
       howStep3: 'หน้าต่างลอยอยู่ด้านบนขณะทำงาน',
       featuresTitle: 'แสดงอะไรบ้าง',
       feat1: 'Session gauge (% การใช้งาน 5 ชม.)',
@@ -1898,16 +1899,16 @@ function EventsSection({ lang, theme = 'dark' }) {
       name: 'PostToolUse',
       color: 'text-emerald-400',
       hook: 'PostToolUse',
-      desc: lang === 'th' ? 'หลัง tool ทำงานเสร็จ - จับ output และ success/fail' : 'After tool completes - captures output and success/fail',
-      data: ['toolName', 'toolOutput', 'success']
+      desc: lang === 'th' ? 'หลัง tool ทำงานเสร็จ - จับ output' : 'After tool completes - captures output',
+      data: ['toolName', 'toolOutput', 'sessionId']
     },
     {
       icon: '❌',
       name: 'Tool Failed',
       color: 'text-red-400',
-      hook: 'PostToolUse (error)',
+      hook: 'PostToolUseFailure',
       desc: lang === 'th' ? 'เมื่อ tool ทำงานล้มเหลว - จับ error message' : 'When tool fails - captures error message',
-      data: ['toolName', 'error', 'errorType']
+      data: ['toolName', 'error', 'sessionId']
     },
     {
       icon: '💬',
@@ -1930,8 +1931,8 @@ function EventsSection({ lang, theme = 'dark' }) {
       name: 'SubagentStop',
       color: 'text-violet-400',
       hook: 'SubagentStop',
-      desc: lang === 'th' ? 'เมื่อ subagent จบงาน - จับ tokens, duration, tools used' : 'When subagent finishes - captures tokens, duration, tools used',
-      data: ['agentId', 'tokens', 'duration', 'toolsUsed']
+      desc: lang === 'th' ? 'เมื่อ subagent จบงาน - จับ tokens ที่ใช้' : 'When subagent finishes - captures token usage',
+      data: ['agentId', 'inputTokens', 'outputTokens']
     },
     {
       icon: '📦',
@@ -1939,14 +1940,38 @@ function EventsSection({ lang, theme = 'dark' }) {
       color: 'text-slate-400',
       hook: 'PreCompact',
       desc: lang === 'th' ? 'ก่อน context compaction - บันทึก conversation ก่อนถูกย่อ' : 'Before context compaction - saves conversation before trimming',
-      data: ['sessionId', 'trigger', 'timestamp']
+      data: ['sessionId', 'timestamp']
+    },
+    {
+      icon: '⏳',
+      name: 'PermissionRequest',
+      color: 'text-orange-400',
+      hook: 'PermissionRequest',
+      desc: lang === 'th' ? 'เมื่อ Claude ขอ permission จาก user' : 'When Claude requests user permission for an action',
+      data: ['toolName', 'sessionId', 'timestamp']
+    },
+    {
+      icon: '🚀',
+      name: 'SessionStart',
+      color: 'text-green-400',
+      hook: 'SessionStart',
+      desc: lang === 'th' ? 'เมื่อเริ่ม session ใหม่' : 'When a new session starts',
+      data: ['sessionId', 'cwd', 'timestamp']
     },
     {
       icon: '🛑',
       name: 'Stop',
       color: 'text-red-400',
       hook: 'Stop',
-      desc: lang === 'th' ? 'เมื่อ Claude หยุดตอบ - จับ session ID' : 'When Claude stops responding - captures session ID',
+      desc: lang === 'th' ? 'เมื่อ Claude หยุดตอบ - จับ session ID และเหตุผล' : 'When Claude stops responding - captures session ID and reason',
+      data: ['sessionId', 'stopReason', 'timestamp']
+    },
+    {
+      icon: '🔚',
+      name: 'SessionEnd',
+      color: 'text-gray-400',
+      hook: 'SessionEnd',
+      desc: lang === 'th' ? 'เมื่อ session จบลง' : 'When a session ends',
       data: ['sessionId', 'timestamp']
     },
   ];
@@ -1957,8 +1982,11 @@ function EventsSection({ lang, theme = 'dark' }) {
     { hook: 'SubagentStart', desc: lang === 'th' ? 'Subagent ถูกสร้าง' : 'Subagent spawned' },
     { hook: 'SubagentStop', desc: lang === 'th' ? 'Subagent จบงาน' : 'Subagent finished' },
     { hook: 'UserPromptSubmit', desc: lang === 'th' ? 'User ส่งข้อความ' : 'User sends message' },
+    { hook: 'PermissionRequest', desc: lang === 'th' ? 'ขอ permission จาก user' : 'Permission requested' },
     { hook: 'Stop', desc: lang === 'th' ? 'Claude หยุดตอบ' : 'Claude stops' },
     { hook: 'PreCompact', desc: lang === 'th' ? 'ก่อน compact context' : 'Before context compaction' },
+    { hook: 'SessionStart', desc: lang === 'th' ? 'เริ่ม session ใหม่' : 'Session starts' },
+    { hook: 'SessionEnd', desc: lang === 'th' ? 'จบ session' : 'Session ends' },
   ];
 
   return (
