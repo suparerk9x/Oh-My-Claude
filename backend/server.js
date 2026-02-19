@@ -410,11 +410,14 @@ function loadAgents() {
       const data = JSON.parse(fs.readFileSync(AGENTS_FILE, 'utf-8'));
       if (data.agents && Array.isArray(data.agents)) {
         agents.clear();
+        let skipped = 0;
         data.agents.forEach(agent => {
+          // Skip zombie agents (created by race condition, missing required fields)
+          if (!agent.type || !agent.status) { skipped++; return; }
           agent.model = normalizeModel(agent.model) || agent.model;
           agents.set(agent.id, agent);
         });
-        console.log(`[LOAD] Loaded ${agents.size} agents from disk`);
+        console.log(`[LOAD] Loaded ${agents.size} agents from disk${skipped ? ` (skipped ${skipped} invalid)` : ''}`);
       }
     }
   } catch (err) {
@@ -995,8 +998,9 @@ function getAgentsLightweight() {
         const freshDiff = getGitDiffStats(agent.cwd, agent.initialCommit);
         if (freshDiff) {
           result.gitDiff = freshDiff;
-          // Persist on the stored agent for future fallback
-          agents.set(agent.id, { ...agents.get(agent.id), gitDiff: freshDiff });
+          // Persist on the stored agent for future fallback (guard against deleted agent)
+          const current = agents.get(agent.id);
+          if (current) agents.set(agent.id, { ...current, gitDiff: freshDiff });
         } else {
           // Use previously stored gitDiff as fallback
           result.gitDiff = agent.gitDiff || null;
@@ -1076,7 +1080,9 @@ async function getAgents() {
         const freshDiff = getGitDiffStats(agent.cwd, agent.initialCommit);
         if (freshDiff) {
           result.gitDiff = freshDiff;
-          agents.set(agent.id, { ...agents.get(agent.id), gitDiff: freshDiff });
+          // Guard against agent deleted by checkAgentTimeouts during await
+          const current = agents.get(agent.id);
+          if (current) agents.set(agent.id, { ...current, gitDiff: freshDiff });
         } else {
           result.gitDiff = agent.gitDiff || null;
         }
