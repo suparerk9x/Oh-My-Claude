@@ -53,6 +53,7 @@ export default function MiniApp({ onSwitchToFull }) {
   const [agents, setAgents] = useState([]);
   const [claudeUsage, setClaudeUsage] = useState(null);
   const [smartStatus, setSmartStatus] = useState({});
+  const [teams, setTeams] = useState([]);
   const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'dark');
   const wsRef = useRef(null);
   const reconnectRef = useRef(null);
@@ -128,11 +129,13 @@ export default function MiniApp({ onSwitchToFull }) {
           setAgents(data.agents || []);
           if (data.usage) setClaudeUsage(data.usage);
           if (data.smartStatus) setSmartStatus(data.smartStatus);
+          if (data.teams) setTeams(data.teams);
         } else if (data.type === 'stats') {
           setStats(data.stats);
           mergeAgents(data.agents || []);
           if (data.usage) setClaudeUsage(data.usage);
           if (data.smartStatus) setSmartStatus(data.smartStatus);
+          if (data.teams) setTeams(data.teams);
         } else if (data.type === 'agents_update') {
           mergeAgents(data.agents || []);
         } else if (data.type === 'event' && data.event?.sessionId) {
@@ -156,6 +159,12 @@ export default function MiniApp({ onSwitchToFull }) {
                 next[sid] = { status: 'spawning', label: 'Spawning', icon: '\u{1F500}', color: 'text-violet-400' };
               } else if (tool === 'WebSearch' || tool === 'WebFetch') {
                 next[sid] = { status: 'searching', label: 'Searching', icon: '\u{1F310}', color: 'text-cyan-400' };
+              } else if (tool === 'TeamCreate') {
+                next[sid] = { status: 'teaming', label: 'Creating Team', icon: '\u{1F465}', color: 'text-indigo-400' };
+              } else if (tool === 'SendMessage') {
+                next[sid] = { status: 'messaging', label: 'Messaging', icon: '\u{1F4E8}', color: 'text-cyan-400' };
+              } else if (tool === 'TeamDelete') {
+                next[sid] = { status: 'teaming', label: 'Team Cleanup', icon: '\u{1F9F9}', color: 'text-gray-400' };
               } else {
                 next[sid] = { status: 'processing', label: 'Processing', icon: '\u2699\uFE0F', color: 'text-blue-400' };
               }
@@ -311,6 +320,12 @@ export default function MiniApp({ onSwitchToFull }) {
   const sessionNumber = {};
   sessionsByCreation.forEach((s, i) => { sessionNumber[s.id] = i + 1; });
 
+  // Build team lookup: sessionId -> team info
+  const teamBySession = {};
+  (teams || []).forEach(team => {
+    if (team.leadSessionId) teamBySession[team.leadSessionId] = team;
+  });
+
   // Sort for display: active first
   const sessions = sessionsByCreation.slice().sort((a, b) => {
     const aActive = ['active', 'idle', 'stale'].includes(a.main?.status) || a.tasks.some(t => ['active', 'idle', 'stale'].includes(t.status));
@@ -390,6 +405,7 @@ export default function MiniApp({ onSwitchToFull }) {
             const smart = smartStatus[sid];
             const mainStatus = getStatus(main?.status);
             const projectName = main?.cwd?.split(/[\\/]/).pop() || '';
+            const teamInfo = teamBySession[sid];
 
             return (
               <div key={sid} className={`border-b ${colors.border} ${isActive ? 'bg-emerald-500/[0.03]' : 'opacity-50'}`}>
@@ -419,12 +435,17 @@ export default function MiniApp({ onSwitchToFull }) {
                     {formatTokens(sessionTokens)}
                   </span>
                 </div>
-                {/* Project name + subagent count */}
-                {(projectName || tasks.length > 0) && (
+                {/* Project name + team badge + subagent count */}
+                {(projectName || tasks.length > 0 || teamInfo) && (
                   <div className="flex items-center gap-1 px-2 pb-0.5 pl-[30px]">
                     <span className={`text-[11px] font-mono tracking-widest uppercase text-cyan-400/70 truncate`} style={{ fontFamily: "'Share Tech Mono', 'Fira Code', 'JetBrains Mono', monospace", letterSpacing: '0.15em' }} title={main?.cwd || ''}>
                       {projectName || '—'}
                     </span>
+                    {teamInfo && teamInfo.status === 'active' && (
+                      <span className="text-[8px] px-1 py-0.5 rounded-full bg-indigo-500/15 text-indigo-400 border border-indigo-500/20 shrink-0" title={`Team: ${teamInfo.name}`}>
+                        👥{teamInfo.memberCount}
+                      </span>
+                    )}
                     <div className="flex-1" />
                     {tasks.length > 0 && (
                       <span className={`text-[8px] ${colors.text.muted} shrink-0`}>
@@ -443,10 +464,13 @@ export default function MiniApp({ onSwitchToFull }) {
                         <div
                           key={task.id || i}
                           className="flex items-center gap-0.5"
-                          title={`${task.type || 'task'} - ${task.status} - ${formatTokens(task.tokens || 0)}`}
+                          title={`${task.agentName || task.type || 'task'} - ${task.status} - ${formatTokens(task.tokens || 0)}`}
                         >
                           <div className={`w-1.5 h-1.5 rounded-full ${getStatus(task.status).dot}`} />
                           <span className={`text-[8px] font-bold ${tm.color}`}>{tm.name}</span>
+                          {task.agentName && (
+                            <span className="text-[7px] text-cyan-400/80">{task.agentName}</span>
+                          )}
                         </div>
                       );
                     })}
@@ -471,9 +495,9 @@ export default function MiniApp({ onSwitchToFull }) {
             ${monthCost.toFixed(2)}
           </span>
           <button
-            onClick={() => { fetch('http://localhost:4824/agents', { method: 'DELETE' }); }}
-            className={`text-[8px] px-1 py-0.5 rounded ${colors.button.text} hover:bg-red-500/20 hover:text-red-400 transition-colors`}
-            title="Clear agents"
+            onClick={() => { fetch('http://localhost:4824/agents/stopped', { method: 'DELETE' }); }}
+            className={`text-[8px] px-1 py-0.5 rounded ${colors.text.muted} opacity-40 hover:opacity-100 hover:bg-red-500/20 hover:text-red-400 transition-all`}
+            title="Clear stopped agents"
           >✕</button>
         </div>
       </div>

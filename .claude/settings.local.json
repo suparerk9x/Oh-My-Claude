@@ -1,0 +1,27 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:github.com)",
+      "Bash(npx depcheck:*)",
+      "Bash(npm run test:run:*)",
+      "Bash(npm test:*)",
+      "Bash(npm run build:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git pull:*)",
+      "Bash(git stash:*)",
+      "Bash(npx vite build:*)",
+      "Bash(node -e:*)",
+      "Bash(git rm:*)",
+      "Bash(gh api:*)",
+      "WebFetch(domain:api.iconify.design)",
+      "Bash(curl:*)",
+      "Bash(node:*)",
+      "mcp__plugin_playwright_playwright__browser_wait_for",
+      "Bash(git status:*)",
+      "Bash(\"d:/Antigravity/Oh-My-Claude/docs/AUDIT-REPORT.md\":*)",
+      "Bash(npx jest --passWithNoTests)",
+      "Bash(npx:*)"
+    ]
+  }
+}

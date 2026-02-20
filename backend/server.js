@@ -134,7 +134,9 @@ wss.on('connection', (ws) => {
       agents: await getAgents(),
       sessions: getSessions(),
       usage: claudeUsage,
-      smartStatus: smartStatusMap
+      smartStatus: smartStatusMap,
+      teams: getTeams(),
+      teamComms: getRecentTeamComms()
     };
     ws.send(JSON.stringify(initData));
   })().catch(err => console.error('[WS] Init send failed:', err.message));
@@ -162,6 +164,11 @@ let events = [];
 let agents = new Map();
 let sessions = new Map();
 let smartStatusMap = {}; // sessionId -> { status, label, icon, color }
+
+// Team tracking
+let teams = new Map(); // teamName -> { name, description, leadSessionId, leadAgentId, createdAt, members: Set, status }
+let teamComms = []; // { timestamp, teamName, from, to, type, summary }
+let fileOwnership = new Map(); // filePath -> [{ agentId, agentName, teamName, timestamp }]
 
 // Agent timeout settings (5-level status hierarchy)
 const AGENT_IDLE_MS = 3 * 60 * 1000;      // 3 minutes - mark as idle
@@ -462,6 +469,10 @@ function checkAgentTimeouts() {
     // Remove old stopped/timeout agents after 60 min
     if ((agent.status === 'stopped' || agent.status === 'timeout') && elapsed > AGENT_CLEANUP_MS) {
       if (agent.sessionId) delete smartStatusMap[agent.sessionId];
+      // Remove from team if applicable
+      if (agent.teamName && teams.has(agent.teamName)) {
+        teams.get(agent.teamName).members.delete(id);
+      }
       agents.delete(id);
       console.log(`[AGENT] ${id} removed (cleanup after ${Math.round(elapsed / 60000)}m)`);
       changed = true;
@@ -532,6 +543,9 @@ function processEvent(event) {
     // Initialize toolsUsed Set for tracking tools from events (not just transcript)
     const toolsUsedSet = new Set(existing.toolsUsed || []);
 
+    const agentTeamName = pendingTask?.teamName || existing.teamName || null;
+    const agentName = pendingTask?.agentName || existing.agentName || null;
+
     agents.set(agentId, {
       ...existing,
       id: agentId,
@@ -544,9 +558,17 @@ function processEvent(event) {
       status: 'active',
       tokens: existing.tokens || 0,
       description: pendingTask?.description || existing.description,
-      toolsUsed: Array.from(toolsUsedSet) // Store as array but track as Set
+      toolsUsed: Array.from(toolsUsedSet), // Store as array but track as Set
+      teamName: agentTeamName,
+      agentName: agentName
     });
-    console.log(`[AGENT] Agent ${agentId} started (${event.agentType || pendingTask?.subagentType || 'subagent'}, model: ${model || 'unknown'})`);
+
+    // Add to team if team_name specified
+    if (agentTeamName && teams.has(agentTeamName)) {
+      teams.get(agentTeamName).members.add(agentId);
+    }
+
+    console.log(`[AGENT] Agent ${agentId} started (${event.agentType || pendingTask?.subagentType || 'subagent'}, model: ${model || 'unknown'}${agentTeamName ? `, team: ${agentTeamName}` : ''}${agentName ? `, name: ${agentName}` : ''})`);
   }
 
   // Track agents from SubagentStop events - parse transcript for rich data
@@ -635,6 +657,32 @@ function processEvent(event) {
     }
   }
 
+  // Track file ownership for conflict detection
+  if (event.type === 'PreToolUse' && (event.toolName === 'Edit' || event.toolName === 'Write')) {
+    const filePath = event.toolInput?.file_path;
+    if (filePath) {
+      const ownerAgentId = event.agentId || (event.sessionId ? `main_${event.sessionId}` : null);
+      const ownerAgent = ownerAgentId ? agents.get(ownerAgentId) : null;
+      if (ownerAgent?.teamName) {
+        const owners = fileOwnership.get(filePath) || [];
+        if (!owners.some(o => o.agentId === ownerAgentId)) {
+          owners.push({
+            agentId: ownerAgentId,
+            agentName: ownerAgent.agentName || ownerAgent.id?.slice(0, 8) || 'unknown',
+            teamName: ownerAgent.teamName,
+            timestamp: event.timestamp
+          });
+          fileOwnership.set(filePath, owners);
+          const teamAgents = owners.filter(o => o.teamName === ownerAgent.teamName);
+          const uniqueAgents = new Set(teamAgents.map(o => o.agentId));
+          if (uniqueAgents.size > 1) {
+            console.log(`[TEAM] File conflict: ${filePath} edited by ${uniqueAgents.size} agents in team "${ownerAgent.teamName}"`);
+          }
+        }
+      }
+    }
+  }
+
   // Detect Task tool usage as subagent spawn (backup detection)
   if (event.toolName === 'Task' && event.type === 'PreToolUse') {
     const taskInput = event.toolInput || {};
@@ -651,7 +699,9 @@ function processEvent(event) {
       description,
       subagentType,
       model,
-      sessionId: event.sessionId
+      sessionId: event.sessionId,
+      teamName: taskInput.team_name || null,
+      agentName: taskInput.name || null
     });
 
     // Clean up old pending tasks (older than 1 minute)
@@ -659,6 +709,125 @@ function processEvent(event) {
     processEvent.pendingTasks = processEvent.pendingTasks.filter(
       t => new Date(t.timestamp).getTime() > oneMinAgo
     );
+  }
+
+  // Track team operations from team tools
+  if (event.type === 'PreToolUse') {
+    const toolInput = event.toolInput || {};
+
+    // TeamCreate: create a new team
+    if (event.toolName === 'TeamCreate') {
+      const teamName = toolInput.team_name;
+      if (teamName && !teams.has(teamName)) {
+        const mainAgentId = event.sessionId ? `main_${event.sessionId}` : null;
+        teams.set(teamName, {
+          name: teamName,
+          description: toolInput.description || '',
+          leadSessionId: event.sessionId,
+          leadAgentId: mainAgentId,
+          createdAt: event.timestamp,
+          members: new Set(),
+          status: 'active'
+        });
+        // Mark main agent as team lead
+        if (mainAgentId && agents.has(mainAgentId)) {
+          const main = agents.get(mainAgentId);
+          agents.set(mainAgentId, { ...main, teamName: teamName, isTeamLead: true });
+        }
+        console.log(`[TEAM] Team "${teamName}" created by session ${event.sessionId?.slice(0, 8)}`);
+      }
+    }
+
+    // SendMessage: track team communications
+    if (event.toolName === 'SendMessage') {
+      const senderAgent = event.agentId
+        ? agents.get(event.agentId)
+        : (event.sessionId ? agents.get(`main_${event.sessionId}`) : null);
+      const senderTeam = senderAgent?.teamName;
+      if (senderTeam || toolInput.type) {
+        teamComms.push({
+          timestamp: event.timestamp,
+          teamName: senderTeam || 'unknown',
+          from: senderAgent?.agentName || senderAgent?.id?.slice(0, 8) || 'unknown',
+          to: toolInput.recipient || (toolInput.type === 'broadcast' ? 'ALL' : 'unknown'),
+          type: toolInput.type || 'message',
+          summary: toolInput.summary || toolInput.content?.slice(0, 80) || ''
+        });
+        if (teamComms.length > 200) teamComms = teamComms.slice(-200);
+      }
+    }
+
+    // TeamDelete: mark team as deleted
+    if (event.toolName === 'TeamDelete') {
+      for (const [name, team] of teams.entries()) {
+        if (team.leadSessionId === event.sessionId) {
+          team.status = 'deleted';
+          teams.set(name, team);
+          console.log(`[TEAM] Team "${name}" deleted`);
+          break;
+        }
+      }
+    }
+
+    // TaskUpdate: track task completion within teams
+    if (event.toolName === 'TaskUpdate') {
+      const status = toolInput.status;
+      const owner = toolInput.owner;
+      if (status === 'completed') {
+        const senderAgent = event.agentId
+          ? agents.get(event.agentId)
+          : (event.sessionId ? agents.get(`main_${event.sessionId}`) : null);
+        if (senderAgent?.teamName) {
+          teamComms.push({
+            timestamp: event.timestamp,
+            teamName: senderAgent.teamName,
+            from: senderAgent.agentName || senderAgent.id?.slice(0, 8) || 'unknown',
+            to: 'task-list',
+            type: 'task_completed',
+            summary: toolInput.description || toolInput.content || `Task ${toolInput.task_id || ''} completed`
+          });
+          if (teamComms.length > 200) teamComms = teamComms.slice(-200);
+          console.log(`[TEAM] Task completed by ${senderAgent.agentName || senderAgent.id?.slice(0, 8)} in team "${senderAgent.teamName}"`);
+        }
+      }
+    }
+  }
+
+  // TeammateIdle: mark teammate as idle in team context
+  if (event.type === 'TeammateIdle') {
+    const agentId = event.agentId;
+    const existing = agentId ? agents.get(agentId) : null;
+    if (existing?.teamName) {
+      agents.set(agentId, { ...existing, status: 'idle', lastSeen: event.timestamp, teammateIdleSince: event.timestamp });
+      teamComms.push({
+        timestamp: event.timestamp,
+        teamName: existing.teamName,
+        from: existing.agentName || existing.id?.slice(0, 8) || 'unknown',
+        to: 'system',
+        type: 'idle',
+        summary: 'Teammate went idle'
+      });
+      if (teamComms.length > 200) teamComms = teamComms.slice(-200);
+      console.log(`[TEAM] Teammate ${existing.agentName || agentId?.slice(0, 8)} idle in team "${existing.teamName}"`);
+    }
+  }
+
+  // TaskCompleted hook event: track task completion
+  if (event.type === 'TaskCompleted') {
+    const agentId = event.agentId;
+    const existing = agentId ? agents.get(agentId) : null;
+    if (existing?.teamName) {
+      teamComms.push({
+        timestamp: event.timestamp,
+        teamName: existing.teamName,
+        from: existing.agentName || existing.id?.slice(0, 8) || 'unknown',
+        to: 'task-list',
+        type: 'task_completed',
+        summary: event.raw?.task_description || event.raw?.content || 'Task completed'
+      });
+      if (teamComms.length > 200) teamComms = teamComms.slice(-200);
+      console.log(`[TEAM] TaskCompleted by ${existing.agentName || agentId?.slice(0, 8)} in team "${existing.teamName}"`);
+    }
   }
 
   // Track main session as an "agent" for visibility
@@ -760,6 +929,16 @@ function processEvent(event) {
             // Show query or url
             detail = input.query || input.url?.slice(0, 40) || '';
             break;
+          case 'TeamCreate':
+            if (input.team_name) detail = input.team_name;
+            break;
+          case 'SendMessage':
+            if (input.summary) detail = input.summary;
+            else if (input.recipient) detail = `-> ${input.recipient}`;
+            break;
+          case 'TeamDelete':
+            detail = 'cleanup';
+            break;
           default:
             // For other tools, try to get a meaningful detail
             if (input.description) detail = input.description;
@@ -824,6 +1003,12 @@ function processEvent(event) {
         smartStatusMap[sid] = { status: 'spawning', label: 'Spawning', icon: '🔀', color: 'text-violet-400' };
       } else if (tool === 'WebSearch' || tool === 'WebFetch') {
         smartStatusMap[sid] = { status: 'searching', label: 'Searching', icon: '🌐', color: 'text-cyan-400' };
+      } else if (tool === 'TeamCreate') {
+        smartStatusMap[sid] = { status: 'teaming', label: 'Creating Team', icon: '👥', color: 'text-indigo-400' };
+      } else if (tool === 'SendMessage') {
+        smartStatusMap[sid] = { status: 'messaging', label: 'Messaging', icon: '📨', color: 'text-cyan-400' };
+      } else if (tool === 'TeamDelete') {
+        smartStatusMap[sid] = { status: 'teaming', label: 'Team Cleanup', icon: '🧹', color: 'text-gray-400' };
       } else {
         smartStatusMap[sid] = { status: 'processing', label: 'Processing', icon: '⚙️', color: 'text-blue-400' };
       }
@@ -1101,6 +1286,58 @@ async function getAgents() {
     });
 }
 
+// Get teams
+function getTeams() {
+  return Array.from(teams.entries()).map(([name, team]) => {
+    // Detect file conflicts for this team
+    const conflicts = [];
+    for (const [filePath, owners] of fileOwnership.entries()) {
+      const teamOwners = owners.filter(o => o.teamName === name);
+      const uniqueAgents = new Set(teamOwners.map(o => o.agentId));
+      if (uniqueAgents.size > 1) {
+        conflicts.push({ path: filePath, agents: teamOwners.map(o => o.agentName) });
+      }
+    }
+
+    return {
+      name,
+      description: team.description,
+      leadSessionId: team.leadSessionId,
+      leadAgentId: team.leadAgentId,
+      createdAt: team.createdAt,
+      memberCount: team.members.size,
+      members: Array.from(team.members).map(id => {
+        const agent = agents.get(id);
+        return agent ? { id, name: agent.agentName, type: agent.type, status: agent.status, tokens: agent.tokens || 0 } : { id };
+      }),
+      status: team.status,
+      fileConflicts: conflicts
+    };
+  });
+}
+
+// Get recent team communications
+function getRecentTeamComms(limit = 50) {
+  return teamComms.slice(-limit).reverse();
+}
+
+// Get file ownership for a team
+function getTeamFiles(teamName) {
+  const files = [];
+  for (const [filePath, owners] of fileOwnership.entries()) {
+    const teamOwners = owners.filter(o => o.teamName === teamName);
+    if (teamOwners.length > 0) {
+      const uniqueAgents = new Set(teamOwners.map(o => o.agentId));
+      files.push({
+        path: filePath,
+        owners: teamOwners,
+        hasConflict: uniqueAgents.size > 1
+      });
+    }
+  }
+  return files;
+}
+
 // Get sessions
 function getSessions() {
   return Array.from(sessions.values())
@@ -1216,6 +1453,24 @@ app.get('/sessions', (req, res) => {
   res.json(getSessions());
 });
 
+// Get teams
+app.get('/teams', (req, res) => {
+  res.json(getTeams());
+});
+
+// Get team communications
+app.get('/teams/:name/comms', (req, res) => {
+  const teamName = req.params.name;
+  const comms = teamComms.filter(c => c.teamName === teamName).slice(-50).reverse();
+  res.json(comms);
+});
+
+// Get team file ownership
+app.get('/teams/:name/files', (req, res) => {
+  const teamName = req.params.name;
+  res.json(getTeamFiles(teamName));
+});
+
 // Health check
 app.get('/health', (req, res) => {
   res.json({
@@ -1232,6 +1487,9 @@ app.delete('/events', (req, res) => {
   agents.clear();
   sessions.clear();
   smartStatusMap = {};
+  teams.clear();
+  teamComms = [];
+  fileOwnership.clear();
   saveEvents();
   saveAgents();
   broadcast({ type: 'clear' });
@@ -1247,6 +1505,22 @@ app.delete('/agents', (req, res) => {
   broadcast({ type: 'agents_cleared' });
   console.log(`[CLEAR] Cleared ${agentCount} agents`);
   res.json({ success: true, cleared: agentCount });
+});
+
+// Clear only stopped agents (keep active ones)
+app.delete('/agents/stopped', (req, res) => {
+  let cleared = 0;
+  for (const [id, agent] of agents.entries()) {
+    if (agent.status === 'stopped' || agent.status === 'timeout') {
+      if (agent.sessionId) delete smartStatusMap[agent.sessionId];
+      agents.delete(id);
+      cleared++;
+    }
+  }
+  saveAgents();
+  broadcast({ type: 'agents_update', agents: getAgentsLightweight() });
+  console.log(`[CLEAR] Cleared ${cleared} stopped agents`);
+  res.json({ success: true, cleared });
 });
 
 // Receive Claude.ai usage from extension
@@ -1313,12 +1587,22 @@ for (const event of events) {
       smartStatusMap[sid] = { status: 'spawning', label: 'Spawning', icon: '🔀', color: 'text-violet-400' };
     } else if (tool === 'WebSearch' || tool === 'WebFetch') {
       smartStatusMap[sid] = { status: 'searching', label: 'Searching', icon: '🌐', color: 'text-cyan-400' };
+    } else if (tool === 'TeamCreate') {
+      smartStatusMap[sid] = { status: 'teaming', label: 'Creating Team', icon: '👥', color: 'text-indigo-400' };
+    } else if (tool === 'SendMessage') {
+      smartStatusMap[sid] = { status: 'messaging', label: 'Messaging', icon: '📨', color: 'text-cyan-400' };
+    } else if (tool === 'TeamDelete') {
+      smartStatusMap[sid] = { status: 'teaming', label: 'Team Cleanup', icon: '🧹', color: 'text-gray-400' };
     } else {
       smartStatusMap[sid] = { status: 'processing', label: 'Processing', icon: '⚙️', color: 'text-blue-400' };
     }
   } else if (type === 'Stop' || type === 'SessionEnd') {
     smartStatusMap[sid] = { status: 'stopped', label: 'Stopped', icon: '○', color: 'text-gray-500' };
   }
+}
+// Clean up smartStatus for sessions without agents (ghost sessions from history)
+for (const sid of Object.keys(smartStatusMap)) {
+  if (!agents.has(`main_${sid}`)) delete smartStatusMap[sid];
 }
 console.log(`[LOAD] Rebuilt smartStatus for ${Object.keys(smartStatusMap).length} sessions`);
 
@@ -1330,7 +1614,9 @@ setInterval(async () => {
     agents: await getAgents(),
     sessions: getSessions(),
     usage: claudeUsage,
-    smartStatus: smartStatusMap
+    smartStatus: smartStatusMap,
+    teams: getTeams(),
+    teamComms: getRecentTeamComms()
   });
 }, 5000);
 
@@ -1348,6 +1634,7 @@ server.listen(PORT, () => {
    GET  /stats      - Get stats + tokens
    GET  /agents     - Get active agents
    GET  /sessions   - Get sessions
+   GET  /teams      - Get team data
    POST /usage      - Receive Claude.ai usage (from extension)
    GET  /usage      - Get Claude.ai usage
    GET  /health     - Health check

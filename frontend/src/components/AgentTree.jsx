@@ -5,7 +5,7 @@ import { formatTokens } from '../utils/format';
  * AgentTree - Compact but COMPLETE information
  * No truncation - show all data
  */
-export function AgentTree({ agents = [], colors = {}, compact = false, expanded = false, smartStatus = {} }) {
+export function AgentTree({ agents = [], colors = {}, compact = false, expanded = false, smartStatus = {}, teams = [] }) {
   // Group by session - handle subagents with different sessionIds
   // First, build a map of main agents by their ID (main_<sessionId>)
   const mainAgentMap = {};
@@ -145,6 +145,9 @@ export function AgentTree({ agents = [], colors = {}, compact = false, expanded 
       'Task': { icon: '🔀', color: 'text-violet-500', bg: 'bg-violet-500/15' },
       'WebFetch': { icon: '🌐', color: 'text-cyan-500', bg: 'bg-cyan-500/15' },
       'WebSearch': { icon: '🔎', color: 'text-cyan-500', bg: 'bg-cyan-500/15' },
+      'TeamCreate': { icon: '👥', color: 'text-indigo-500', bg: 'bg-indigo-500/15' },
+      'SendMessage': { icon: '📨', color: 'text-cyan-500', bg: 'bg-cyan-500/15' },
+      'TeamDelete': { icon: '🧹', color: 'text-gray-500', bg: 'bg-gray-500/15' },
     };
 
     // Try to extract tool name from start of lastTask
@@ -168,10 +171,213 @@ export function AgentTree({ agents = [], colors = {}, compact = false, expanded 
     return `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
   };
 
+  // Build team lookup: sessionId -> team info
+  const teamBySession = {};
+  (teams || []).forEach(team => {
+    if (team.leadSessionId) teamBySession[team.leadSessionId] = team;
+  });
+
+  // Build file conflict lookup: agentId -> conflict count
+  const agentConflicts = {};
+  (teams || []).forEach(team => {
+    (team.fileConflicts || []).forEach(conflict => {
+      (conflict.agents || []).forEach(agentName => {
+        // Find agent by name in team members
+        (team.members || []).forEach(member => {
+          if (member.name === agentName) {
+            agentConflicts[member.id] = (agentConflicts[member.id] || 0) + 1;
+          }
+        });
+      });
+    });
+  });
+
+  // Health thresholds for team members
+  const IDLE_WARNING_MS = 5 * 60 * 1000; // 5 minutes idle = yellow warning
+  const HIGH_TOKEN_THRESHOLD = 50000; // 50k tokens = orange warning
+
+  // Get health indicator for a teammate
+  const getHealthIndicator = (task) => {
+    const warnings = [];
+    const now = Date.now();
+
+    // Idle too long
+    if (task.status === 'idle' && task.lastSeen) {
+      const idleMs = now - new Date(task.lastSeen).getTime();
+      if (idleMs > IDLE_WARNING_MS) {
+        const mins = Math.floor(idleMs / 60000);
+        warnings.push({ level: 'yellow', icon: '💤', label: `Idle ${mins}m`, title: `Teammate idle for ${mins} minutes` });
+      }
+    }
+
+    // Excessive token usage
+    const tokens = task.tokens || (task.inputTokens || 0) + (task.outputTokens || 0);
+    if (tokens > HIGH_TOKEN_THRESHOLD) {
+      warnings.push({ level: 'orange', icon: '🔥', label: formatTokens(tokens), title: `High token usage: ${tokens.toLocaleString()}` });
+    }
+
+    // File conflicts
+    const conflicts = agentConflicts[task.id] || 0;
+    if (conflicts > 0) {
+      warnings.push({ level: 'red', icon: '⚠', label: `${conflicts} conflict${conflicts > 1 ? 's' : ''}`, title: `${conflicts} file conflict(s)` });
+    }
+
+    return warnings;
+  };
+
+  // Compute team health summary
+  const getTeamHealth = (teamInfo, teamTasks) => {
+    if (!teamInfo || teamInfo.status !== 'active') return null;
+    let health = 'green'; // green = healthy
+    const issues = [];
+
+    const conflictCount = teamInfo.fileConflicts?.length || 0;
+    if (conflictCount > 0) {
+      health = 'red';
+      issues.push(`${conflictCount} file conflict${conflictCount > 1 ? 's' : ''}`);
+    }
+
+    const now = Date.now();
+    const idleMembers = teamTasks.filter(t => {
+      if (t.status !== 'idle' || !t.lastSeen) return false;
+      return (now - new Date(t.lastSeen).getTime()) > IDLE_WARNING_MS;
+    });
+    if (idleMembers.length > 0) {
+      if (health === 'green') health = 'yellow';
+      issues.push(`${idleMembers.length} idle`);
+    }
+
+    const highTokenMembers = teamTasks.filter(t => (t.tokens || 0) > HIGH_TOKEN_THRESHOLD);
+    if (highTokenMembers.length > 0) {
+      if (health === 'green') health = 'orange';
+      issues.push(`${highTokenMembers.length} high-token`);
+    }
+
+    return { health, issues };
+  };
+
   // Theme-aware colors
   const textMuted = colors?.text?.muted || 'text-gray-500';
   const borderColor = colors?.border || 'border-gray-800/40';
   const tasksBg = colors?.bg?.tasks || 'bg-black/10';
+
+  // Render a single task/agent row
+  const renderTask = (task, i, totalCount, ctx) => {
+    const status = ctx.getStatus(task.status);
+    const model = ctx.getModel(task.model);
+    const typeInfo = ctx.getTypeInfo(task.type);
+    const tokens = task.tokens || (task.inputTokens || 0) + (task.outputTokens || 0);
+    const duration = ctx.getDuration(task);
+    const desc = task.description || task.lastTask;
+    const healthWarnings = ctx.getHealthIndicator(task);
+    const tokenPct = ctx.teamTotalTokens > 0 && tokens > 0 ? Math.round((tokens / ctx.teamTotalTokens) * 100) : 0;
+
+    const calcDuration = () => {
+      if (duration) return duration;
+      if (task.startedAt && (task.stoppedAt || task.lastSeen)) {
+        const start = new Date(task.startedAt).getTime();
+        const end = new Date(task.stoppedAt || task.lastSeen).getTime();
+        const secs = Math.floor((end - start) / 1000);
+        if (secs < 60) return `${secs}s`;
+        const mins = Math.floor(secs / 60);
+        const remSecs = secs % 60;
+        return `${mins}m ${remSecs}s`;
+      }
+      return null;
+    };
+    const displayDuration = calcDuration();
+
+    return (
+      <div
+        key={task.id || i}
+        className={`${ctx.expanded ? 'px-3 pt-3 pb-0' : 'px-2 pt-2 pb-0'} ${i < totalCount - 1 ? 'border-b border-gray-800/20' : ''} ${task.status === 'stopped' ? 'opacity-50' : ''}`}
+      >
+        <div className={`${ctx.expanded ? 'pl-4 space-y-1.5' : 'pl-3 space-y-1'}`}>
+          {/* Line 1: Status (fixed) + Model + Type + Name + Health + Duration + Tokens */}
+          <div className="flex items-center flex-nowrap">
+            <div className="flex-1 min-w-0 flex items-center gap-1 overflow-hidden">
+              <span className={`${ctx.textMuted} text-[9px] shrink-0`}>└</span>
+              {model && (
+                <span className={`${ctx.expanded ? 'text-[10px]' : 'text-[9px]'} font-medium px-1.5 py-0.5 rounded shrink-0 whitespace-nowrap ${model.color} ${model.bg}`}>
+                  {model.name}
+                </span>
+              )}
+              {typeInfo && (
+                <span className={`${ctx.expanded ? 'text-[10px]' : 'text-[9px]'} font-medium px-1.5 py-0.5 rounded shrink-0 whitespace-nowrap ${typeInfo.bg} ${typeInfo.text}`}>
+                  {typeInfo.name}
+                </span>
+              )}
+              {task.agentName && (
+                <span className={`${ctx.expanded ? 'text-[10px]' : 'text-[9px]'} font-medium px-1.5 py-0.5 rounded shrink-0 whitespace-nowrap bg-cyan-500/15 text-cyan-400`}>
+                  {task.agentName}
+                </span>
+              )}
+              {/* Health warnings */}
+              {healthWarnings.map((w, idx) => (
+                <span key={idx} className={`${ctx.expanded ? 'text-[8px]' : 'text-[7px]'} px-1 py-0.5 rounded-full shrink-0 ${
+                  w.level === 'red' ? 'bg-red-500/15 text-red-400' :
+                  w.level === 'orange' ? 'bg-orange-500/15 text-orange-400' :
+                  'bg-yellow-500/15 text-yellow-400'
+                }`} title={w.title}>
+                  {w.icon}
+                </span>
+              ))}
+              <span className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded shrink-0 ${status.bg}`}>
+                <span className={`${ctx.expanded ? 'text-[10px]' : 'text-[9px]'} shrink-0 ${status.color} ${status.pulse ? 'animate-pulse' : ''}`}>
+                  {status.icon}
+                </span>
+                <span className={`${ctx.expanded ? 'text-[9px]' : 'text-[8px]'} whitespace-nowrap ${status.color}`}>
+                  {status.label}
+                </span>
+              </span>
+            </div>
+            <div className="shrink-0 flex items-center gap-1 pl-1">
+              <span className={`font-mono ${ctx.expanded ? 'text-[10px]' : 'text-[9px]'} tabular-nums w-[48px] text-right whitespace-nowrap ${displayDuration ? 'text-gray-400' : 'text-gray-500'}`}>
+                {displayDuration || (task.stoppedAt || task.lastSeen ? ctx.formatTime(task.stoppedAt || task.lastSeen) : '')}
+              </span>
+              <span className={`font-mono ${ctx.expanded ? 'text-[10px]' : 'text-[9px]'} tabular-nums text-amber-500 w-[45px] text-right`}>
+                {tokens > 0 ? ctx.formatTokens(tokens) : ''}
+              </span>
+            </div>
+          </div>
+
+          {/* Token bar - only for team members with tokens */}
+          {!ctx.compact && tokenPct > 0 && (
+            <div className="pl-4 flex items-center gap-1.5">
+              <div className="flex-1 h-1 rounded-full bg-gray-700/30 overflow-hidden max-w-[80px]">
+                <div className="h-full rounded-full bg-amber-500/50 transition-all" style={{ width: `${Math.min(tokenPct, 100)}%` }} />
+              </div>
+              <span className="text-[8px] font-mono text-amber-500/70">{tokenPct}%</span>
+            </div>
+          )}
+
+          {/* Line 2: Tools */}
+          {!ctx.compact && task.toolsUsed && task.toolsUsed.length > 0 && (
+            <div className={`flex items-center gap-1 ${ctx.expanded ? 'pl-4 flex-wrap' : 'pl-4'}`}>
+              <span className="text-[9px] text-gray-500 shrink-0">🔧</span>
+              {task.toolsUsed.map((tool, idx) => (
+                <span key={idx} className={`${ctx.expanded ? 'text-[9px]' : 'text-[8px]'} px-1.5 py-0.5 rounded bg-sky-500/10 text-sky-400/80`}>
+                  {tool}
+                </span>
+              ))}
+            </div>
+          )}
+
+          {/* Line 3: Description */}
+          {!ctx.compact && desc && (
+            <div className="flex items-center gap-1.5 pl-4">
+              <span className={`${ctx.expanded ? 'text-[10px]' : 'text-[9px]'} text-gray-400 truncate flex-1 min-w-0`}>
+                💬 {desc}
+              </span>
+              {task.id && (
+                <code className="text-gray-600 font-mono text-[8px] shrink-0">{task.id.slice(0, 7)}</code>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
 
   // Empty state
   if (sessions.length === 0) {
@@ -196,6 +402,14 @@ export function AgentTree({ agents = [], colors = {}, compact = false, expanded 
           const mainModel = main ? getModel(main.model) : null;
           const sessionTokens = (main?.tokens || 0) + tasks.reduce((sum, t) => sum + (t.tokens || 0), 0);
           const activeTaskCount = tasks.filter(t => t.status === 'active').length;
+          const teamInfo = teamBySession[sessionId];
+          const hasConflicts = teamInfo?.fileConflicts?.length > 0;
+
+          // Separate team members from non-team tasks
+          const teamTasks = teamInfo?.status === 'active' ? tasks.filter(t => t.teamName === teamInfo.name) : [];
+          const nonTeamTasks = teamInfo?.status === 'active' ? tasks.filter(t => t.teamName !== teamInfo.name) : tasks;
+          const teamHealth = getTeamHealth(teamInfo, teamTasks);
+          const teamTotalTokens = teamTasks.reduce((sum, t) => sum + (t.tokens || (t.inputTokens || 0) + (t.outputTokens || 0) || 0), 0);
 
           return (
             <div key={sessionId} className={`${expanded ? `flex flex-col rounded-lg border ${borderColor}` : `border-b ${borderColor}`} ${isActive ? 'bg-emerald-500/[0.03]' : 'opacity-50'}`}>
@@ -232,12 +446,24 @@ export function AgentTree({ agents = [], colors = {}, compact = false, expanded 
                   </div>
                 </div>
 
-                {/* Project name */}
-                {main?.cwd && (
-                  <div className="mt-0.5 pl-[22px]">
-                    <span className="text-[10px] font-mono tracking-widest uppercase text-cyan-400/70" style={{ fontFamily: "'Share Tech Mono', 'Fira Code', 'JetBrains Mono', monospace", letterSpacing: '0.15em' }} title={main.cwd}>
-                      {main.cwd.split(/[\\/]/).pop()}
-                    </span>
+                {/* Project name + Team badge */}
+                {(main?.cwd || teamInfo) && (
+                  <div className="mt-0.5 pl-[22px] flex items-center gap-1.5">
+                    {main?.cwd && (
+                      <span className="text-[10px] font-mono tracking-widest uppercase text-cyan-400/70" style={{ fontFamily: "'Share Tech Mono', 'Fira Code', 'JetBrains Mono', monospace", letterSpacing: '0.15em' }} title={main.cwd}>
+                        {main.cwd.split(/[\\/]/).pop()}
+                      </span>
+                    )}
+                    {teamInfo && teamInfo.status === 'active' && (
+                      <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-indigo-500/15 text-indigo-400 border border-indigo-500/20 whitespace-nowrap" title={`Team: ${teamInfo.name} (${teamInfo.memberCount} members)`}>
+                        👥 {teamInfo.name}
+                      </span>
+                    )}
+                    {hasConflicts && (
+                      <span className="text-[9px] px-1 py-0.5 rounded-full bg-red-500/15 text-red-400 border border-red-500/20 whitespace-nowrap" title={`${teamInfo.fileConflicts.length} file conflict(s)`}>
+                        ⚠ {teamInfo.fileConflicts.length} conflict{teamInfo.fileConflicts.length > 1 ? 's' : ''}
+                      </span>
+                    )}
                   </div>
                 )}
 
@@ -294,101 +520,42 @@ export function AgentTree({ agents = [], colors = {}, compact = false, expanded 
                 )}
               </div>
 
-              {/* Tasks - in expanded mode, fills remaining space */}
-              {tasks.length > 0 && (
+              {/* Team Section - grouped team members */}
+              {teamTasks.length > 0 && (
+                <div className={`border-t ${borderColor}`}>
+                  {/* Team header */}
+                  <div className={`${expanded ? 'px-3 py-1.5' : 'px-2 py-1'} bg-indigo-500/[0.05] border-b border-indigo-500/10 flex items-center justify-between`}>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[10px]">👥</span>
+                      <span className="text-[10px] font-semibold text-indigo-400">{teamInfo.name}</span>
+                      <span className={`text-[9px] ${textMuted}`}>{teamTasks.length} member{teamTasks.length !== 1 ? 's' : ''}</span>
+                      {teamHealth && (
+                        <span className={`text-[8px] px-1.5 py-0.5 rounded-full border ${
+                          teamHealth.health === 'red' ? 'bg-red-500/15 text-red-400 border-red-500/20' :
+                          teamHealth.health === 'orange' ? 'bg-orange-500/15 text-orange-400 border-orange-500/20' :
+                          teamHealth.health === 'yellow' ? 'bg-yellow-500/15 text-yellow-400 border-yellow-500/20' :
+                          'bg-emerald-500/15 text-emerald-400 border-emerald-500/20'
+                        }`} title={teamHealth.issues.length > 0 ? teamHealth.issues.join(', ') : 'Healthy'}>
+                          {teamHealth.health === 'red' ? '🔴' : teamHealth.health === 'orange' ? '🟠' : teamHealth.health === 'yellow' ? '🟡' : '🟢'}
+                          {teamHealth.issues.length > 0 ? ` ${teamHealth.issues.join(' · ')}` : ' Healthy'}
+                        </span>
+                      )}
+                    </div>
+                    <span className="font-mono text-[9px] tabular-nums text-amber-500">
+                      {teamTotalTokens > 0 ? formatTokens(teamTotalTokens) : ''}
+                    </span>
+                  </div>
+                  {/* Team members */}
+                  <div className={tasksBg}>
+                    {teamTasks.map((task, i) => renderTask(task, i, teamTasks.length, { expanded, compact, textMuted, borderColor, getStatus, getModel, getTypeInfo, getDuration, formatTime, formatTokens, getHealthIndicator, agentConflicts, teamTotalTokens }))}
+                  </div>
+                </div>
+              )}
+
+              {/* Non-team tasks */}
+              {nonTeamTasks.length > 0 && (
                 <div className={`border-t ${borderColor} ${tasksBg}`}>
-                  {tasks.map((task, i) => {
-                    const status = getStatus(task.status);
-                    const model = getModel(task.model);
-                    const typeInfo = getTypeInfo(task.type);
-                    const tokens = task.tokens || (task.inputTokens || 0) + (task.outputTokens || 0);
-                    const duration = getDuration(task);
-                    const desc = task.description || task.lastTask;
-
-                    // Calculate duration from timestamps if not provided
-                    const calcDuration = () => {
-                      if (duration) return duration;
-                      if (task.startedAt && (task.stoppedAt || task.lastSeen)) {
-                        const start = new Date(task.startedAt).getTime();
-                        const end = new Date(task.stoppedAt || task.lastSeen).getTime();
-                        const secs = Math.floor((end - start) / 1000);
-                        if (secs < 60) return `${secs}s`;
-                        const mins = Math.floor(secs / 60);
-                        const remSecs = secs % 60;
-                        return `${mins}m ${remSecs}s`;
-                      }
-                      return null;
-                    };
-                    const displayDuration = calcDuration();
-
-                    return (
-                      <div
-                        key={task.id || i}
-                        className={`${expanded ? 'px-3 pt-3 pb-0' : 'px-2 pt-2 pb-0'} ${i < tasks.length - 1 ? 'border-b border-gray-800/20' : ''} ${task.status === 'stopped' ? 'opacity-50' : ''}`}
-                      >
-                        <div className={`${expanded ? 'pl-4 space-y-1.5' : 'pl-3 space-y-1'}`}>
-                          {/* Line 1: Status (fixed) + Model + Type + Duration + Tokens */}
-                          <div className="flex items-center flex-nowrap">
-                            {/* Left: flexible content */}
-                            <div className="flex-1 min-w-0 flex items-center gap-1 overflow-hidden">
-                              <span className={`${textMuted} text-[9px] shrink-0`}>└</span>
-                              {model && (
-                                <span className={`${expanded ? 'text-[10px]' : 'text-[9px]'} font-medium px-1.5 py-0.5 rounded shrink-0 whitespace-nowrap ${model.color} ${model.bg}`}>
-                                  {model.name}
-                                </span>
-                              )}
-                              {typeInfo && (
-                                <span className={`${expanded ? 'text-[10px]' : 'text-[9px]'} font-medium px-1.5 py-0.5 rounded shrink-0 whitespace-nowrap ${typeInfo.bg} ${typeInfo.text}`}>
-                                  {typeInfo.name}
-                                </span>
-                              )}
-                              <span className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded shrink-0 ${status.bg}`}>
-                                <span className={`${expanded ? 'text-[10px]' : 'text-[9px]'} shrink-0 ${status.color} ${status.pulse ? 'animate-pulse' : ''}`}>
-                                  {status.icon}
-                                </span>
-                                <span className={`${expanded ? 'text-[9px]' : 'text-[8px]'} whitespace-nowrap ${status.color}`}>
-                                  {status.label}
-                                </span>
-                              </span>
-                            </div>
-                            {/* Right: fixed columns - same width as main row */}
-                            <div className="shrink-0 flex items-center gap-1 pl-1">
-                              <span className={`font-mono ${expanded ? 'text-[10px]' : 'text-[9px]'} tabular-nums w-[48px] text-right whitespace-nowrap ${displayDuration ? 'text-gray-400' : 'text-gray-500'}`}>
-                                {displayDuration || (task.stoppedAt || task.lastSeen ? formatTime(task.stoppedAt || task.lastSeen) : '')}
-                              </span>
-                              <span className={`font-mono ${expanded ? 'text-[10px]' : 'text-[9px]'} tabular-nums text-amber-500 w-[45px] text-right`}>
-                                {tokens > 0 ? formatTokens(tokens) : ''}
-                              </span>
-                            </div>
-                          </div>
-
-                          {/* Line 2: Tools */}
-                          {!compact && task.toolsUsed && task.toolsUsed.length > 0 && (
-                            <div className={`flex items-center gap-1 ${expanded ? 'pl-4 flex-wrap' : 'pl-4'}`}>
-                              <span className="text-[9px] text-gray-500 shrink-0">🔧</span>
-                              {task.toolsUsed.map((tool, idx) => (
-                                <span key={idx} className={`${expanded ? 'text-[9px]' : 'text-[8px]'} px-1.5 py-0.5 rounded bg-sky-500/10 text-sky-400/80`}>
-                                  {tool}
-                                </span>
-                              ))}
-                            </div>
-                          )}
-
-                          {/* Line 3: Description - full text in expanded mode */}
-                          {!compact && desc && (
-                            <div className="flex items-center gap-1.5 pl-4">
-                              <span className={`${expanded ? 'text-[10px]' : 'text-[9px]'} text-gray-400 truncate flex-1 min-w-0`}>
-                                💬 {desc}
-                              </span>
-                              {task.id && (
-                                <code className="text-gray-600 font-mono text-[8px] shrink-0">{task.id.slice(0, 7)}</code>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
+                  {nonTeamTasks.map((task, i) => renderTask(task, i, nonTeamTasks.length, { expanded, compact, textMuted, borderColor, getStatus, getModel, getTypeInfo, getDuration, formatTime, formatTokens, getHealthIndicator, agentConflicts, teamTotalTokens: 0 }))}
                 </div>
               )}
             </div>
@@ -457,7 +624,15 @@ AgentTree.propTypes = {
   }),
   compact: PropTypes.bool,
   expanded: PropTypes.bool,
-  smartStatus: PropTypes.object
+  smartStatus: PropTypes.object,
+  teams: PropTypes.arrayOf(PropTypes.shape({
+    name: PropTypes.string,
+    leadSessionId: PropTypes.string,
+    memberCount: PropTypes.number,
+    members: PropTypes.array,
+    fileConflicts: PropTypes.array,
+    status: PropTypes.string
+  }))
 };
 
 export default AgentTree;

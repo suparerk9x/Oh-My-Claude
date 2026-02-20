@@ -27,6 +27,9 @@ export function ActivityItem({ event, colors, isSelected, onSelect }) {
     if (toolName === 'Edit' || toolName === 'Write') return { color: 'text-orange-500', bg: 'bg-orange-500/15' };
     if (toolName === 'Bash') return { color: 'text-amber-500', bg: 'bg-amber-500/15' };
     if (toolName === 'Task') return { color: 'text-violet-500', bg: 'bg-violet-500/15' };
+    if (toolName === 'TeamCreate') return { color: 'text-indigo-500', bg: 'bg-indigo-500/15' };
+    if (toolName === 'SendMessage') return { color: 'text-cyan-500', bg: 'bg-cyan-500/15' };
+    if (toolName === 'TeamDelete') return { color: 'text-gray-500', bg: 'bg-gray-500/15' };
     if (toolName.includes('mcp__')) return { color: 'text-pink-500', bg: 'bg-pink-500/15' };
     return { color: 'text-cyan-500', bg: 'bg-cyan-500/15' };
   };
@@ -126,7 +129,9 @@ export function formatEventType(type) {
     'PermissionRequest': 'Permission',
     'PreCompact': 'Compacting',
     'Notification': 'Notification',
-    'Stop': 'Stopped'
+    'Stop': 'Stopped',
+    'TeamCreate': 'Team Created',
+    'TeamDelete': 'Team Deleted'
   };
   return typeMap[type] || type;
 }
@@ -137,6 +142,9 @@ export function getEventTarget(event) {
   if (event.toolInput?.file_path) return event.toolInput.file_path.split(/[/\\]/).pop();
   if (event.toolInput?.command) return event.toolInput.command.slice(0, 40);
   if (event.toolInput?.pattern) return event.toolInput.pattern;
+  if (event.toolInput?.team_name) return event.toolInput.team_name;
+  if (event.toolInput?.recipient) return `→ ${event.toolInput.recipient}`;
+  if (event.toolInput?.summary) return event.toolInput.summary;
   if (event.toolName) return event.toolName;
   return '-';
 }

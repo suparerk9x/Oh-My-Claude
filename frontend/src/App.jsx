@@ -50,6 +50,8 @@ export default function App() {
   const [agents, setAgents] = useState([]);
   const [sessions, setSessions] = useState([]);
   const [claudeUsage, setClaudeUsage] = useState(null); // Claude.ai usage from extension (includes lastSync from backend)
+  const [teams, setTeams] = useState([]);
+  const [teamComms, setTeamComms] = useState([]);
   const [selectedSession, setSelectedSession] = useState(null); // null = show all
   const [selectedEventType, setSelectedEventType] = useState(null); // null = show all, 'tools' | 'success' | 'errors' | 'prompts'
   const [selectedEvent, setSelectedEvent] = useState(null); // For viewing event details
@@ -172,6 +174,8 @@ export default function App() {
           setAgents(data.agents || []);
           setSessions(data.sessions || []);
           if (data.usage) setClaudeUsage(data.usage);
+          if (data.teams) setTeams(data.teams);
+          if (data.teamComms) setTeamComms(data.teamComms);
         } else if (data.type === 'event') {
           // Deduplicate: skip if we've seen this event ID before
           const eventId = data.event?.id;
@@ -192,6 +196,8 @@ export default function App() {
           checkAgentChangesRef.current(data.agents || []);
           setSessions(data.sessions || []);
           if (data.usage) setClaudeUsage(data.usage);
+          if (data.teams) setTeams(data.teams);
+          if (data.teamComms) setTeamComms(data.teamComms);
         } else if (data.type === 'agents_update') {
           mergeAgents(data.agents || []);
           checkAgentChangesRef.current(data.agents || []);
@@ -277,6 +283,12 @@ export default function App() {
           map[sid] = { status: 'spawning', label: 'Spawning', icon: '🔀', color: 'text-violet-400', bg: 'bg-violet-500/15', animation: 'animate-spin', since: evt.timestamp };
         } else if (tool === 'WebSearch' || tool === 'WebFetch') {
           map[sid] = { status: 'searching', label: 'Searching', icon: '🌐', color: 'text-cyan-400', bg: 'bg-cyan-500/15', animation: 'animate-pulse', since: evt.timestamp };
+        } else if (tool === 'TeamCreate') {
+          map[sid] = { status: 'teaming', label: 'Creating Team', icon: '👥', color: 'text-indigo-400', bg: 'bg-indigo-500/15', animation: 'animate-pulse', since: evt.timestamp };
+        } else if (tool === 'SendMessage') {
+          map[sid] = { status: 'messaging', label: 'Messaging', icon: '📨', color: 'text-cyan-400', bg: 'bg-cyan-500/15', animation: 'animate-pulse', since: evt.timestamp };
+        } else if (tool === 'TeamDelete') {
+          map[sid] = { status: 'teaming', label: 'Team Cleanup', icon: '🧹', color: 'text-gray-400', bg: 'bg-gray-500/15', animation: '', since: evt.timestamp };
         } else {
           map[sid] = { status: 'processing', label: 'Processing', icon: '⚙️', color: 'text-blue-400', bg: 'bg-blue-500/15', animation: 'animate-pulse', since: evt.timestamp };
         }
@@ -583,12 +595,19 @@ export default function App() {
         {/* Center: Agents */}
         {!isAgentsCollapsed && (
           <aside className={`${agentViewMode === 'expanded' ? 'flex-1' : 'w-[340px] flex-shrink-0'} ${colors.bg.secondary} border-r ${colors.border} flex flex-col overflow-hidden`}>
-            <div className={`h-8 min-h-[32px] px-3 flex items-center border-b ${colors.border} ${colors.sectionHeader.agents} flex-shrink-0`}>
+            <div className={`h-8 min-h-[32px] px-3 flex items-center justify-between border-b ${colors.border} ${colors.sectionHeader.agents} flex-shrink-0`}>
               <h2 className={`text-[11px] font-medium ${colors.accent.agents} uppercase tracking-wider leading-none`}>
                 Agents <span className={`font-mono ${colors.accent.agentsCount} normal-case`}>({displayAgents.length})</span>
               </h2>
+              {displayAgents.some(a => a.status === 'stopped' || a.status === 'timeout') && (
+                <button
+                  onClick={() => fetch('http://localhost:4824/agents/stopped', { method: 'DELETE' })}
+                  className={`text-[9px] px-1.5 py-0.5 rounded ${colors.text.muted} opacity-40 hover:opacity-100 hover:bg-red-500/20 hover:text-red-400 transition-all`}
+                  title="Remove stopped agents"
+                >Clear Stopped</button>
+              )}
             </div>
-            <AgentTree agents={displayAgents} colors={colors} compact={agentViewMode === 'compact'} expanded={agentViewMode === 'expanded'} smartStatus={smartStatus} />
+            <AgentTree agents={displayAgents} colors={colors} compact={agentViewMode === 'compact'} expanded={agentViewMode === 'expanded'} smartStatus={smartStatus} teams={teams} />
           </aside>
         )}
 
@@ -623,6 +642,39 @@ export default function App() {
               );
             })()}
           </div>
+          {/* Team Comms Timeline */}
+          {teamComms.length > 0 && (
+            <div className={`border-b ${colors.border} ${colors.bg.secondary}`}>
+              <div className={`px-2 py-1 flex items-center gap-1`}>
+                <span className="text-[9px]">📨</span>
+                <span className={`text-[9px] font-medium text-indigo-400 uppercase tracking-wider`}>Team Comms</span>
+                <span className={`text-[8px] font-mono ${colors.text.muted}`}>({teamComms.length})</span>
+              </div>
+              <div className="max-h-[80px] overflow-y-auto px-1 pb-1 space-y-0.5">
+                {teamComms.slice(0, 10).map((comm, i) => {
+                  const typeColors = {
+                    message: 'text-cyan-400',
+                    broadcast: 'text-amber-400',
+                    shutdown_request: 'text-red-400',
+                    shutdown_response: 'text-orange-400',
+                    idle: 'text-yellow-400',
+                    task_completed: 'text-emerald-400',
+                  };
+                  return (
+                    <div key={i} className="flex items-center gap-1 px-1 py-0.5 text-[9px]">
+                      <span className={`font-mono ${colors.text.muted} shrink-0 w-[35px]`}>
+                        {new Date(comm.timestamp).toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                      <span className={`font-medium text-cyan-400 shrink-0`}>{comm.from}</span>
+                      <span className={colors.text.muted}>→</span>
+                      <span className={`font-medium ${typeColors[comm.type] || 'text-gray-400'} shrink-0`}>{comm.to}</span>
+                      <span className={`${colors.text.muted} truncate flex-1 min-w-0`}>{comm.summary}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
           {/* Activity Feed */}
           <div className={`flex-1 overflow-hidden ${colors.bg.secondary}`}>
             <ActivityFeed
