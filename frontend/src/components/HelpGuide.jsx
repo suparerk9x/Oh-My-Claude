@@ -213,7 +213,7 @@ function OverviewSection({ lang, theme = 'dark' }) {
       headerLeft: 'Left: App title, LIVE/OFF indicator, sync status',
       headerRight: 'Right: Toolbar buttons (icon-only for compact layout)',
       toolbarViewMode: 'Agent View Mode',
-      toolbarViewModeDesc: 'Cycle: Full > Compact > Expanded > Hidden',
+      toolbarViewModeDesc: 'Cycle: Full > Compact > Focus > Expanded > Hidden',
       toolbarViewModeNote: 'Only button with text label',
       toolbarTheme: 'Theme',
       toolbarThemeDesc: 'Toggle Dark / Light mode',
@@ -272,7 +272,7 @@ function OverviewSection({ lang, theme = 'dark' }) {
       headerLeft: 'ซ้าย: ชื่อแอป, ไฟ LIVE/OFF, สถานะ sync',
       headerRight: 'ขวา: ปุ่ม Toolbar (แสดงแค่ icon เพื่อประหยัดเนื้อที่)',
       toolbarViewMode: 'Agent View Mode',
-      toolbarViewModeDesc: 'สลับ: Full > Compact > Expanded > Hidden',
+      toolbarViewModeDesc: 'สลับ: Full > Compact > Focus > Expanded > Hidden',
       toolbarViewModeNote: 'ปุ่มเดียวที่แสดงชื่อโหมด',
       toolbarTheme: 'Theme',
       toolbarThemeDesc: 'สลับ Dark / Light',
@@ -549,7 +549,7 @@ function SetupSection({ lang, theme = 'dark' }) {
   const t = {
     en: {
       title: 'Setting Up Oh My Claude',
-      desc: 'The system consists of 4 main parts: Backend Server, Frontend Dashboard, Claude Code Hooks, and Chrome Extension (optional)',
+      desc: 'The system consists of 4 main parts: Backend Server, Frontend Dashboard, Claude Code Hooks, and Chrome Extension (strongly recommended)',
       fileStructure: 'File Structure',
       installSteps: 'Installation Steps',
       step1: 'Install Dependencies',
@@ -561,7 +561,7 @@ function SetupSection({ lang, theme = 'dark' }) {
       step2Note: 'Replace <PATH> with your oh-my-claude folder path',
       step2Hooks: ['PreToolUse', 'PostToolUse', 'SubagentStart', 'SubagentStop', 'UserPromptSubmit', 'PermissionRequest', 'Stop', 'PreCompact', 'Notification', 'TeammateIdle', 'TaskCompleted'],
       step3: 'Install Chrome Extension',
-      step3For: 'Optional - for Sync Usage',
+      step3For: 'Strongly Recommended - for Token Usage tracking',
       step3Desc: 'Pull Session % and Weekly % directly from Claude.ai:',
       step3Steps: ['Open chrome://extensions/', 'Enable "Developer mode"', 'Click "Load unpacked"', 'Select extension/ folder', 'Open claude.ai once to login (grabs your session)'],
       step3Note: 'Extension syncs usage data every 1 minute → Shows',
@@ -583,7 +583,7 @@ function SetupSection({ lang, theme = 'dark' }) {
     },
     th: {
       title: 'การติดตั้ง Oh My Claude',
-      desc: 'ระบบประกอบด้วย 4 ส่วนหลัก: Backend Server, Frontend Dashboard, Claude Code Hooks และ Chrome Extension (optional)',
+      desc: 'ระบบประกอบด้วย 4 ส่วนหลัก: Backend Server, Frontend Dashboard, Claude Code Hooks และ Chrome Extension (แนะนำอย่างยิ่ง)',
       fileStructure: 'File Structure',
       installSteps: 'ขั้นตอนการติดตั้ง',
       step1: 'ติดตั้ง Dependencies',
@@ -595,7 +595,7 @@ function SetupSection({ lang, theme = 'dark' }) {
       step2Note: 'แทนที่ <PATH> ด้วย path ไปยัง folder oh-my-claude ของคุณ',
       step2Hooks: ['PreToolUse', 'PostToolUse', 'SubagentStart', 'SubagentStop', 'UserPromptSubmit', 'PermissionRequest', 'Stop', 'PreCompact', 'Notification', 'TeammateIdle', 'TaskCompleted'],
       step3: 'ติดตั้ง Chrome Extension',
-      step3For: 'Optional - สำหรับ Sync Usage',
+      step3For: 'แนะนำอย่างยิ่ง - สำหรับดู Token Usage',
       step3Desc: 'ดึง Session % และ Weekly % จาก Claude.ai โดยตรง:',
       step3Steps: ['เปิด chrome://extensions/', 'เปิด "Developer mode"', 'คลิก "Load unpacked"', 'เลือก folder extension/', 'เปิด claude.ai สักครั้งเพื่อ login (extension จะจับ session ไว้)'],
       step3Note: 'Extension sync ข้อมูลทุก 1 นาที → แสดง',
@@ -640,7 +640,7 @@ function SetupSection({ lang, theme = 'dark' }) {
           <div className={`pl-8 ${colors.text.dimmed}`}>└── <span className="text-amber-500">vite.config.js</span> <span className={colors.text.faint}>← port 4825</span></div>
           <div className={`pl-4 ${colors.text.dimmed}`}>├── <span className="text-violet-500">hooks/</span></div>
           <div className={`pl-8 ${colors.text.dimmed}`}>└── <span className="text-emerald-500">send_event.js</span> <span className={colors.text.faint}>← Hook script (sends to backend)</span></div>
-          <div className={`pl-4 ${colors.text.dimmed}`}>├── <span className="text-cyan-500">extension/</span> <span className={colors.text.faint}>← Chrome Extension (optional)</span></div>
+          <div className={`pl-4 ${colors.text.dimmed}`}>├── <span className="text-cyan-500">extension/</span> <span className={colors.text.faint}>← Chrome Extension (recommended)</span></div>
           <div className={`pl-4 ${colors.text.dimmed}`}>└── <span className="text-amber-500">start.bat</span> <span className={colors.text.faint}>← Quick start (Windows)</span></div>
         </div>
       </div>

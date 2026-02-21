@@ -44,7 +44,7 @@ Started as "how much quota left?" → became a window into how Claude Code works
 
 ---
 
-## Features
+## ✨ Features
 
 | Feature | Description |
 |---------|-------------|
@@ -61,7 +61,7 @@ Started as "how much quota left?" → became a window into how Claude Code works
 | **Dark / Light Theme** | Toggle between dark and light mode |
 | **Notifications** | Desktop notifications for events (bell toggle) |
 | **Bilingual Guide** | Built-in help guide in English & Thai (11 sections) |
-| **Chrome Extension** | Sync usage % directly from Claude.ai (optional) |
+| **Chrome Extension** | Sync usage % directly from Claude.ai — **strongly recommended** |
 | **Demo Mode** | Replay 1,006 real events with retro tape counter UI |
 
 ### Usage Status Indicator
@@ -75,7 +75,7 @@ Started as "how much quota left?" → became a window into how Claude Code works
 
 ---
 
-## Quick Start
+## 🚀 Quick Start
 
 ### Prerequisites
 
@@ -257,7 +257,7 @@ Open **http://localhost:4825** — you should see:
 
 ---
 
-## Demo Mode
+## 🎬 Demo Mode
 
 Try the full dashboard without a live Claude Code session. Demo Mode replays 1,006 real captured events with simulated data.
 
@@ -312,7 +312,7 @@ Events are captured from a real Claude Code session using `scripts/prepare-demo-
 
 ---
 
-## Install as Desktop App (PWA)
+## 💻 Install as Desktop App (PWA)
 
 Oh My Claude supports **Progressive Web App** — you can install it as a standalone desktop app:
 
@@ -330,7 +330,7 @@ Oh My Claude supports **Progressive Web App** — you can install it as a standa
 
 ---
 
-## Mini Pop-out Window
+## 🪟 Mini Pop-out Window
 
 A compact floating window for monitoring while you work:
 
@@ -341,15 +341,18 @@ A compact floating window for monitoring while you work:
 
 ---
 
-## Chrome Extension (Optional)
+## 🌐 Chrome Extension (Strongly Recommended)
 
-Syncs your Claude.ai usage percentage to the dashboard automatically.
+> **This is how the Token Usage panel gets its data.** Without the extension, you won't see session/weekly usage percentages or countdown timers — the core feature that prevents token burnout.
+
+Syncs your Claude.ai usage percentage to the dashboard every minute, automatically.
 
 ### Install
 
 1. Open `chrome://extensions/`
 2. Enable **Developer mode** (top right)
 3. Click **Load unpacked** → select the `extension/` folder
+4. Open [claude.ai](https://claude.ai) once to login (extension grabs your session)
 
 ### How it works
 
@@ -357,13 +360,15 @@ Syncs your Claude.ai usage percentage to the dashboard automatically.
 Claude.ai → Extension (fetches API every 1 min) → Backend :4824 → Dashboard
 ```
 
-1. Log into [claude.ai](https://claude.ai)
-2. Extension detects your organization and starts syncing
-3. Dashboard header shows **Sync** badge with fun status messages
+1. Extension detects your organization and starts syncing
+2. Dashboard header shows **Sync** badge with fun status messages
+3. Token Usage panel updates with live session % and countdown timers
+
+> **Note:** First login to claude.ai is required so the extension can grab your session cookie. After that, sync works in the background — no need to keep the tab open.
 
 ---
 
-## System Architecture
+## 🏗️ System Architecture
 
 ```mermaid
 flowchart TD
@@ -397,7 +402,7 @@ flowchart TD
 
 ---
 
-## Project Structure
+## 📁 Project Structure
 
 ```
 Oh-My-Claude/
@@ -456,19 +461,20 @@ Oh-My-Claude/
 ├── scripts/
 │   └── prepare-demo-data.js  # Convert real events → demo dataset
 │
-├── extension/                # Chrome extension (optional)
+├── extension/                # Chrome extension (strongly recommended)
 │   ├── manifest.json         # Manifest V3
 │   ├── background.js         # Background sync worker
 │   ├── content.js            # Fetches usage from claude.ai
 │   └── icons/                # Extension icons
 │
 └── docs/
-    └── AUDIT-REPORT.md       # Codebase audit report
+    ├── AUDIT-REPORT.md       # Codebase audit report
+    └── CODE_REVIEW.md        # Code review notes
 ```
 
 ---
 
-## Configuration
+## ⚙️ Configuration
 
 ### Ports
 
@@ -511,7 +517,7 @@ Oh-My-Claude/
 
 ---
 
-## Dashboard Layout
+## 🖥️ Dashboard Layout
 
 ```
 ┌─────────────────────────────────────────────────────┐
@@ -531,7 +537,7 @@ Oh-My-Claude/
 
 | Button | Description |
 |--------|-------------|
-| **View Mode** | Cycle: Full → Compact → Expanded → Hidden |
+| **View Mode** | Cycle: Full → Compact → Focus → Expanded → Hidden |
 | **Theme** | Toggle Dark / Light |
 | **Mini** | Open mini pop-out window |
 | **Notifications** | Toggle: Off / Bell |
@@ -558,7 +564,7 @@ Oh-My-Claude/
 
 ---
 
-## Verify Installation
+## ✅ Verify Installation
 
 ```bash
 # Test 1: Backend health
@@ -574,7 +580,7 @@ curl http://localhost:4824/health
 
 ---
 
-## Troubleshooting
+## 🔧 Troubleshooting
 
 | Problem | Solution |
 |---------|----------|
@@ -586,7 +592,7 @@ curl http://localhost:4824/health
 
 ---
 
-## API Reference
+## 📡 API Reference
 
 ### REST
 
@@ -623,7 +629,7 @@ Connect: `ws://localhost:4824`
 
 ---
 
-## Tech Stack
+## 🛠️ Tech Stack
 
 | Layer | Technology |
 |-------|------------|
@@ -640,7 +646,7 @@ MIT
 
 ---
 
-## Contributing
+## 🤝 Contributing
 
 1. Fork the repository
 2. Create feature branch: `git checkout -b feature/amazing`

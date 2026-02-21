@@ -42,7 +42,7 @@
 
 ---
 
-## ฟีเจอร์
+## ✨ ฟีเจอร์
 
 | ฟีเจอร์ | รายละเอียด |
 |---------|-------------|
@@ -59,7 +59,7 @@
 | **Dark / Light Theme** | สลับธีมมืด / สว่าง |
 | **Notifications** | แจ้งเตือน desktop สำหรับ events |
 | **Bilingual Guide** | คู่มือใน app EN/TH (11 หมวด) |
-| **Chrome Extension** | Sync usage % จาก Claude.ai อัตโนมัติ |
+| **Chrome Extension** | Sync usage % จาก Claude.ai อัตโนมัติ — **แนะนำอย่างยิ่ง** |
 | **Demo Mode** | เล่นซ้ำ 1,006 events จริงพร้อม retro tape counter UI |
 
 ### ตัวบอกสถานะ Usage
@@ -73,7 +73,7 @@
 
 ---
 
-## เริ่มต้นใช้งาน
+## 🚀 เริ่มต้นใช้งาน
 
 ### สิ่งที่ต้องมี
 
@@ -255,7 +255,7 @@ npm run dev
 
 ---
 
-## Demo Mode
+## 🎬 Demo Mode
 
 ลองใช้ dashboard เต็มรูปแบบโดยไม่ต้องมี Claude Code session จริง — เล่นซ้ำ 1,006 events จริงพร้อม simulated data
 
@@ -310,7 +310,7 @@ Events จับมาจาก Claude Code session จริงโดยใช�
 
 ---
 
-## ติดตั้งเป็นแอป Desktop (PWA)
+## 💻 ติดตั้งเป็นแอป Desktop (PWA)
 
 Oh My Claude รองรับ **Progressive Web App** — ติดตั้งเป็นแอป standalone บน desktop ได้:
 
@@ -328,7 +328,7 @@ Oh My Claude รองรับ **Progressive Web App** — ติดตั้�
 
 ---
 
-## Mini Pop-out Window
+## 🪟 Mini Pop-out Window
 
 หน้าต่างลอยขนาดกะทัดรัดสำหรับดูระหว่างทำงาน:
 
@@ -339,15 +339,18 @@ Oh My Claude รองรับ **Progressive Web App** — ติดตั้�
 
 ---
 
-## Chrome Extension (ไม่บังคับ)
+## 🌐 Chrome Extension (แนะนำอย่างยิ่ง)
 
-Sync % การใช้งานจาก Claude.ai มาที่ dashboard อัตโนมัติ
+> **นี่คือวิธีที่ Token Usage panel ได้ข้อมูลมา** ถ้าไม่มี extension จะไม่เห็น session/weekly usage % หรือนับถอยหลัง — ซึ่งเป็นฟีเจอร์หลักที่ป้องกันไม่ให้ token หมดโดยไม่รู้ตัว
+
+Sync % การใช้งานจาก Claude.ai มาที่ dashboard ทุก 1 นาที อัตโนมัติ
 
 ### ติดตั้ง
 
 1. เปิด `chrome://extensions/`
 2. เปิด **Developer mode** (มุมขวาบน)
 3. กด **Load unpacked** → เลือกโฟลเดอร์ `extension/`
+4. เปิด [claude.ai](https://claude.ai) สักครั้งเพื่อ login (extension จะจับ session ไว้)
 
 ### วิธีทำงาน
 
@@ -355,13 +358,15 @@ Sync % การใช้งานจาก Claude.ai มาที่ dashboard 
 Claude.ai → Extension (ดึง API ทุก 1 นาที) → Backend :4824 → Dashboard
 ```
 
-1. Login เข้า [claude.ai](https://claude.ai)
-2. Extension ตรวจจับ organization และเริ่ม sync
-3. Header ของ dashboard แสดง **Sync** badge พร้อมสถานะตลกๆ
+1. Extension ตรวจจับ organization และเริ่ม sync
+2. Header ของ dashboard แสดง **Sync** badge พร้อมสถานะตลกๆ
+3. Token Usage panel อัปเดต session % พร้อมนับถอยหลังแบบสดๆ
+
+> **หมายเหตุ:** ต้อง login เข้า claude.ai ครั้งแรกเพื่อให้ extension จับ session cookie ได้ หลังจากนั้น sync ทำงานใน background ได้เลย — ไม่ต้องเปิด tab ค้างไว้
 
 ---
 
-## สถาปัตยกรรมระบบ
+## 🏗️ สถาปัตยกรรมระบบ
 
 ```mermaid
 flowchart TD
@@ -395,7 +400,7 @@ flowchart TD
 
 ---
 
-## โครงสร้างโปรเจค
+## 📁 โครงสร้างโปรเจค
 
 ```
 Oh-My-Claude/
@@ -454,19 +459,20 @@ Oh-My-Claude/
 ├── scripts/
 │   └── prepare-demo-data.js  # แปลง events จริง → ชุดข้อมูล demo
 │
-├── extension/                # Chrome extension (ไม่บังคับ)
+├── extension/                # Chrome extension (แนะนำอย่างยิ่ง)
 │   ├── manifest.json         # Manifest V3
 │   ├── background.js         # Background sync worker
 │   ├── content.js            # ดึง usage จาก claude.ai
 │   └── icons/                # ไอคอน extension
 │
 └── docs/
-    └── AUDIT-REPORT.md       # รายงาน audit โค้ด
+    ├── AUDIT-REPORT.md       # รายงาน audit โค้ด
+    └── CODE_REVIEW.md        # บันทึก code review
 ```
 
 ---
 
-## การตั้งค่า
+## ⚙️ การตั้งค่า
 
 ### Ports
 
@@ -509,7 +515,7 @@ Oh-My-Claude/
 
 ---
 
-## Layout ของ Dashboard
+## 🖥️ Layout ของ Dashboard
 
 ```
 ┌─────────────────────────────────────────────────────┐
@@ -529,7 +535,7 @@ Oh-My-Claude/
 
 | ปุ่ม | รายละเอียด |
 |------|-------------|
-| **View Mode** | สลับ: Full → Compact → Expanded → Hidden |
+| **View Mode** | สลับ: Full → Compact → Focus → Expanded → Hidden |
 | **Theme** | สลับ Dark / Light |
 | **Mini** | เปิดหน้าต่าง mini pop-out |
 | **Notifications** | สลับ: Off / Bell |
@@ -556,7 +562,7 @@ Oh-My-Claude/
 
 ---
 
-## ตรวจสอบการติดตั้ง
+## ✅ ตรวจสอบการติดตั้ง
 
 ```bash
 # Test 1: Backend health
@@ -572,7 +578,7 @@ curl http://localhost:4824/health
 
 ---
 
-## แก้ปัญหา
+## 🔧 แก้ปัญหา
 
 | ปัญหา | วิธีแก้ |
 |--------|---------|
@@ -584,7 +590,7 @@ curl http://localhost:4824/health
 
 ---
 
-## API Reference
+## 📡 API Reference
 
 ### REST
 
@@ -621,7 +627,7 @@ curl http://localhost:4824/health
 
 ---
 
-## Tech Stack
+## 🛠️ Tech Stack
 
 | Layer | เทคโนโลยี |
 |-------|------------|
@@ -638,7 +644,7 @@ MIT
 
 ---
 
-## Contributing
+## 🤝 Contributing
 
 1. Fork repository
 2. สร้าง feature branch: `git checkout -b feature/amazing`
