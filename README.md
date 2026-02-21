@@ -1,6 +1,8 @@
 # Oh My Claude
 
 > Real-time monitoring dashboard for Claude Code — track tokens, agents, teams, costs, and activity live.
+>
+> **🇹🇭 [อ่านภาษาไทย](README_TH.md)**
 
 ![Version](https://img.shields.io/badge/version-2.2-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
@@ -12,18 +14,48 @@
 
 ---
 
+## Why I Built This
+
+### 🔥 Token Burnout — the real pain
+
+- Used Claude Code in flow state, shipped feature after feature... then **BAM — rate limit hit**
+- 5-hour session gone. Didn't even see it coming
+- Needed a way to see usage **while working**, not after it's too late
+
+**Solution → Token Usage panel with live countdown:**
+
+| | Session | Weekly |
+|---|---------|--------|
+| **Resets in** | 1h 18m | 5d 23h |
+| **Usage** | 60% | 19% |
+
+- Status badge warns you: 🪴 Normal → ⚡ High → 🚨 Near limit → 🫗 Full
+- Now I actually pace myself instead of rage-waiting 5 hours
+
+### 🤖 "What are my agents doing?"
+
+- Opus 4.6 spawns team agents — code-reviewer, worker, reviewer-2 — but **what are they actually doing?**
+- Wanted to see: who's active, what tool they're using, how many tokens each one burns
+- **Team Comms** — they literally talk to each other (broadcasts, DMs, task assignments). Fun to watch
+- **Subagents** — watch them spawn, do work, and die. Circle of AI life
+- The session % with team agents? Drains *hilariously* fast. Like watching your phone battery on a video call
+
+Started as "how much quota left?" → became a window into how Claude Code works under the hood
+
+---
+
 ## Features
 
 | Feature | Description |
 |---------|-------------|
-| **Token Tracking** | Session (5h) & Weekly usage with per-model breakdown |
-| **Agent Monitoring** | Live main agents + subagents tree with status |
-| **Team Monitoring** | Track team agents (TeamCreate, SendMessage) with member health |
-| **Team Comms** | Inter-agent messages displayed in real-time |
-| **Activity Feed** | Tool calls, prompts, errors streamed in real-time |
+| **Token Tracking** | Session (5h) & Weekly usage with countdown timers and per-model breakdown |
+| **Agent Monitoring** | Live main agents + subagents tree with status, tokens, and current tool |
+| **Team Monitoring** | Track team agents with independent token growth and member health |
+| **Team Comms** | Inter-agent messages (broadcasts, DMs) displayed in real-time |
+| **Activity Feed** | Tool calls, prompts, errors streamed live with filterable event types |
 | **Cost Estimation** | Monthly cost by model (Opus / Sonnet / Haiku) |
 | **Last 12 Hours** | Hourly token usage bar chart with model breakdown |
-| **Event Details** | Click any event to inspect Input/Output in footer panel |
+| **Event Details** | Click any event to inspect Input/Output in footer detail panel |
 | **Mini Pop-out** | Floating mini window (280x400px) for compact monitoring |
 | **Install as App** | PWA support — install to desktop, runs without browser UI |
 | **Dark / Light Theme** | Toggle between dark and light mode |
@@ -372,7 +404,8 @@ Oh-My-Claude/
 ├── package.json              # Root scripts (npm run dev, install:all)
 ├── start.bat                 # Windows quick start
 ├── create-shortcut.bat       # Create desktop shortcut (Windows)
-├── README.md
+├── README.md                 # Documentation (EN)
+├── README_TH.md              # Documentation (TH)
 │
 ├── backend/
 │   ├── server.js             # Express + WebSocket server (port 4824)
