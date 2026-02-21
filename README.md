@@ -1,6 +1,6 @@
 # Oh My Claude
 
-> Real-time monitoring dashboard for Claude Code — track tokens, agents, costs, and activity live.
+> Real-time monitoring dashboard for Claude Code — track tokens, agents, teams, costs, and activity live.
 
 ![Version](https://img.shields.io/badge/version-2.2-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
@@ -18,15 +18,19 @@
 |---------|-------------|
 | **Token Tracking** | Session (5h) & Weekly usage with per-model breakdown |
 | **Agent Monitoring** | Live main agents + subagents tree with status |
+| **Team Monitoring** | Track team agents (TeamCreate, SendMessage) with member health |
+| **Team Comms** | Inter-agent messages displayed in real-time |
 | **Activity Feed** | Tool calls, prompts, errors streamed in real-time |
 | **Cost Estimation** | Monthly cost by model (Opus / Sonnet / Haiku) |
+| **Last 12 Hours** | Hourly token usage bar chart with model breakdown |
+| **Event Details** | Click any event to inspect Input/Output in footer panel |
 | **Mini Pop-out** | Floating mini window (280x400px) for compact monitoring |
 | **Install as App** | PWA support — install to desktop, runs without browser UI |
 | **Dark / Light Theme** | Toggle between dark and light mode |
 | **Notifications** | Desktop notifications for events (bell toggle) |
-| **Bilingual Guide** | Built-in help guide in English & Thai |
+| **Bilingual Guide** | Built-in help guide in English & Thai (11 sections) |
 | **Chrome Extension** | Sync usage % directly from Claude.ai (optional) |
-| **Demo Mode** | Try the dashboard with simulated data (no setup needed) |
+| **Demo Mode** | Replay 1,006 real events with retro tape counter UI |
 
 ### Usage Status Indicator
 
@@ -221,6 +225,61 @@ Open **http://localhost:4825** — you should see:
 
 ---
 
+## Demo Mode
+
+Try the full dashboard without a live Claude Code session. Demo Mode replays 1,006 real captured events with simulated data.
+
+### How to Enable
+
+1. Open the **Dashboard Guide** (? button in toolbar)
+2. Click the **Demo** button in the guide header
+3. Header changes from **LIVE** to **DEMO** with amber glow
+
+### Playback Controls
+
+A retro-styled tape counter and control buttons appear next to the DEMO badge:
+
+| Control | Description |
+|---------|-------------|
+| **Counter** | Digital LED counter (Share Tech Mono font) showing current event number. Digits spin up with animation. |
+| **Play / Pause** | Start replaying events. Click again to pause — counter freezes and state is preserved. |
+| **Reset** | Stop playback and clear all state. Counter returns to 0000, all panels reset. |
+
+### Playback States
+
+| State | Description |
+|-------|-------------|
+| **Idle** | Initial state — counter shows 0000, dashboard empty |
+| **Playing** | Events replay at variable speed based on event type |
+| **Paused** | Frozen in place — all data visible, counter stopped |
+| **Finished** | All 1,006 events played — dashboard shows final state |
+
+### Event Timing
+
+| Event Type | Delay | Note |
+|------------|-------|------|
+| `UserPromptSubmit` | 600ms | User messages — longest pause |
+| `SubagentStart/Stop` | 400ms | Agent lifecycle events |
+| `SendMessage/TeamCreate` | 250ms | Team operations |
+| `PreToolUse/PostToolUse` | 80ms | Tool calls — fastest |
+
+### What Gets Simulated
+
+- **Token Usage** — Session 30%, Weekly 17%, with countdown timers and Last 12 Hours chart
+- **Agents Panel** — Main sessions spawn, subagents appear with real tool activity
+- **Team Agents** — 3 team members (code-reviewer, worker, reviewer-2) with independent token growth
+- **Team Comms** — 8 inter-agent messages flow between team members during replay
+- **Activity Feed** — Read, Write, Edit, Bash, Grep, Glob, TodoWrite events stream in real-time
+- **Event Details** — Click any event to see Input/Output in the footer detail panel
+- **Footer Stats** — Event counts, monthly cost ($7,867), per-model breakdown
+- **Status Badge** — Header shows usage status with session percentage
+
+### Demo Data Source
+
+Events are captured from a real Claude Code session using `scripts/prepare-demo-data.js`. The script converts `backend/events.json` into a trimmed, reproducible dataset at `frontend/src/data/demoData.js`.
+
+---
+
 ## Install as Desktop App (PWA)
 
 Oh My Claude supports **Progressive Web App** — you can install it as a standalone desktop app:
@@ -268,7 +327,7 @@ Claude.ai → Extension (fetches API every 1 min) → Backend :4824 → Dashboar
 
 1. Log into [claude.ai](https://claude.ai)
 2. Extension detects your organization and starts syncing
-3. Dashboard header shows **Sync** badge when data arrives
+3. Dashboard header shows **Sync** badge with fun status messages
 
 ---
 
@@ -284,7 +343,7 @@ flowchart TD
 
     BS["🖥️ Backend Server\nExpress + WebSocket · port 4824"]
 
-    BS --- Data["Events · Agents · Sessions · Usage %"]
+    BS --- Data["Events · Agents · Sessions · Teams · Usage %"]
 
     Data -->|"WebSocket live updates"| DB
 
@@ -312,6 +371,7 @@ flowchart TD
 Oh-My-Claude/
 ├── package.json              # Root scripts (npm run dev, install:all)
 ├── start.bat                 # Windows quick start
+├── create-shortcut.bat       # Create desktop shortcut (Windows)
 ├── README.md
 │
 ├── backend/
@@ -325,6 +385,8 @@ Oh-My-Claude/
 │   ├── index.html            # Main dashboard entry
 │   ├── mini.html             # Mini pop-out entry
 │   ├── vite.config.js        # Vite config (port 4825, proxy)
+│   ├── tailwind.config.js    # Tailwind CSS config
+│   ├── postcss.config.js     # PostCSS config
 │   ├── public/
 │   │   ├── favicon.svg       # App icon
 │   │   ├── manifest.json     # PWA manifest
@@ -334,10 +396,14 @@ Oh-My-Claude/
 │       ├── MiniApp.jsx       # Mini pop-out window
 │       ├── main.jsx          # Main entry + PWA registration
 │       ├── mini-main.jsx     # Mini entry + PWA registration
+│       ├── index.css          # Global styles (Tailwind imports)
 │       ├── config/
 │       │   ├── theme.js      # Dark/Light theme colors
 │       │   └── eventTypes.js # Event type definitions
+│       ├── data/
+│       │   └── demoData.js   # Demo replay dataset (1,006 events)
 │       ├── hooks/
+│       │   ├── useDemoReplay.js     # Demo replay state machine
 │       │   ├── useNotifications.js  # Desktop notifications
 │       │   └── usePolling.js        # API polling hook
 │       ├── utils/
@@ -349,16 +415,22 @@ Oh-My-Claude/
 │           ├── TokenGauge.jsx      # Circular usage gauge
 │           ├── TokenStats.jsx      # Model breakdown stats
 │           ├── HourlyBreakdown.jsx # Hourly usage chart
-│           └── HelpGuide.jsx       # Help guide (EN/TH)
+│           └── HelpGuide.jsx       # Help guide (EN/TH, 11 sections)
 │
 ├── hooks/
 │   └── send_event.js         # Hook script → sends events to backend
 │
-└── extension/                # Chrome extension (optional)
-    ├── manifest.json         # Manifest V3
-    ├── background.js         # Background sync worker
-    ├── content.js            # Fetches usage from claude.ai
-    └── icons/                # Extension icons
+├── scripts/
+│   └── prepare-demo-data.js  # Convert real events → demo dataset
+│
+├── extension/                # Chrome extension (optional)
+│   ├── manifest.json         # Manifest V3
+│   ├── background.js         # Background sync worker
+│   ├── content.js            # Fetches usage from claude.ai
+│   └── icons/                # Extension icons
+│
+└── docs/
+    └── AUDIT-REPORT.md       # Codebase audit report
 ```
 
 ---
@@ -371,6 +443,15 @@ Oh-My-Claude/
 |---------|------|------|
 | Backend | 4824 | `backend/server.js` |
 | Frontend | 4825 | `frontend/vite.config.js` |
+
+### Security
+
+| Feature | Details |
+|---------|---------|
+| **CORS** | Restricted to localhost origins (4825, 5173) |
+| **Rate Limiting** | General: 1,000 req/15min, Events: 300/min |
+| **Input Validation** | Zod schema validation on all POST endpoints |
+| **Path Traversal** | Sanitized file paths in statsReader |
 
 ### Agent Status Lifecycle
 
@@ -421,7 +502,7 @@ Oh-My-Claude/
 | **Theme** | Toggle Dark / Light |
 | **Mini** | Open mini pop-out window |
 | **Notifications** | Toggle: Off / Bell |
-| **Guide** | Help guide with Demo toggle |
+| **Guide** | Help guide with Demo toggle (11 sections, EN/TH) |
 | **Status Badge** | Usage status (🪴⚡🚨🫗) |
 
 ### Agent Status
@@ -468,6 +549,7 @@ curl http://localhost:4824/health
 | No events appearing | 1. Verify hooks in `~/.claude/settings.json` <br> 2. Check path uses forward slashes `/` <br> 3. Restart Claude Code terminal |
 | Extension not syncing | 1. Must be logged into claude.ai <br> 2. Check extension enabled at `chrome://extensions/` <br> 3. Check backend console for "Usage received" |
 | PWA not installable | 1. Must access via `http://localhost:4825` (not IP) <br> 2. Use Chrome or Edge <br> 3. Check DevTools → Application → Manifest |
+| Demo mode not working | 1. Open Guide → click Demo button <br> 2. Check browser console for errors <br> 3. Ensure `frontend/src/data/demoData.js` exists |
 
 ---
 
@@ -478,11 +560,19 @@ curl http://localhost:4824/health
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | GET | `/health` | Health check |
-| GET | `/stats` | Token stats + agents |
-| GET | `/events` | Recent events (last 100) |
+| GET | `/stats` | Token stats (cached) |
+| GET | `/events` | Recent events |
+| GET | `/agents` | Agent list with status |
 | GET | `/sessions` | Session list |
-| POST | `/events` | Receive hook events |
+| GET | `/teams` | Active teams |
+| GET | `/teams/:name/comms` | Team communications |
+| GET | `/teams/:name/files` | Team shared files |
+| GET | `/usage` | Chrome extension usage data |
+| POST | `/events` | Receive hook events (rate-limited: 300/min) |
 | POST | `/usage` | Receive Chrome extension data |
+| DELETE | `/events` | Clear all events |
+| DELETE | `/agents` | Clear all agents |
+| DELETE | `/agents/stopped` | Clear stopped agents only |
 
 ### WebSocket
 
@@ -490,11 +580,13 @@ Connect: `ws://localhost:4824`
 
 | Message | Direction | Description |
 |---------|-----------|-------------|
-| `init` | Server → Client | Initial state (agents, events, stats) |
+| `init` | Server → Client | Initial state (agents, events, stats, usage) |
 | `event` | Server → Client | New event arrived |
 | `stats` | Server → Client | Updated token stats |
-| `agents` | Server → Client | Updated agent list |
+| `agents_update` | Server → Client | Updated agent list |
 | `usage` | Server → Client | Usage data from extension |
+| `clear` | Server → Client | Events cleared |
+| `agents_cleared` | Server → Client | Agents cleared |
 
 ---
 
