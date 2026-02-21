@@ -4,6 +4,7 @@ import { getThemeColors } from './config/theme';
 import { formatTokens, formatRelativeTime, getUsageBadge } from './utils/format';
 import { TokenGauge, AgentTree, HelpGuide, ActivityItem, HourlyBreakdown, TokenStats, getEventTarget } from './components';
 import { useNotifications } from './hooks/useNotifications';
+import { useDemoReplay } from './hooks/useDemoReplay';
 import MiniApp from './MiniApp.jsx';
 
 const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:4824';
@@ -61,6 +62,7 @@ export default function App() {
   const [isAgentsCollapsed, setIsAgentsCollapsed] = useState(() => localStorage.getItem('agentsCollapsed') === 'true');
   const [showHelp, setShowHelp] = useState(false);
   const [demoMode, setDemoMode] = useState(false);
+  const demo = useDemoReplay(demoMode);
   const wsRef = useRef(null);
   const reconnectRef = useRef(null);
   const seenEventIds = useRef(new Set()); // Deduplicate events
@@ -89,7 +91,7 @@ export default function App() {
     localStorage.setItem('theme', newTheme);
   };
 
-  // Toggle agent view mode: full -> compact -> expanded -> collapsed -> full
+  // Toggle agent view mode: full -> compact -> compact-expanded -> expanded -> collapsed -> full
   const toggleAgentViewMode = () => {
     if (isAgentsCollapsed) {
       // collapsed -> full
@@ -102,7 +104,11 @@ export default function App() {
       setAgentViewMode('compact');
       localStorage.setItem('agentViewMode', 'compact');
     } else if (agentViewMode === 'compact') {
-      // compact -> expanded (agents full width, activity hidden)
+      // compact -> compact-expanded (compact details, full width, no activity)
+      setAgentViewMode('compact-expanded');
+      localStorage.setItem('agentViewMode', 'compact-expanded');
+    } else if (agentViewMode === 'compact-expanded') {
+      // compact-expanded -> expanded (full details, full width, no activity)
       setAgentViewMode('expanded');
       localStorage.setItem('agentViewMode', 'expanded');
     } else {
@@ -223,37 +229,49 @@ export default function App() {
     };
   }, [connect]);
 
-  // Demo mode - mock data for testing layout
-  const demoAgents = demoMode ? [
-    { id: 'main_sess-001', sessionId: 'sess-001', type: 'main', status: 'active', model: 'claude-opus-4-6', tokens: 45200, inputTokens: 38000, outputTokens: 7200, lastSeen: new Date().toISOString(), lastTask: 'Edit frontend/src/App.jsx', elapsedFormatted: '12m 34s', gitDiff: { additions: 142, deletions: 38, files: 5 } },
-    { id: 'task_001', sessionId: 'sess-001', type: 'general-purpose', parentId: 'main_sess-001', status: 'active', model: 'claude-sonnet-4-5-20250929', tokens: 12800, lastSeen: new Date().toISOString(), lastTask: 'Grep searching for patterns', description: 'Search for component references across the codebase', toolsUsed: ['Grep', 'Glob', 'Read'], startedAt: new Date(Date.now() - 180000).toISOString() },
-    { id: 'task_002', sessionId: 'sess-001', type: 'code-reviewer', parentId: 'main_sess-001', status: 'active', model: 'claude-opus-4-6', tokens: 8400, lastSeen: new Date().toISOString(), lastTask: 'Read src/components/AgentTree.jsx', description: 'Review code changes for quality and security', toolsUsed: ['Read', 'Grep'], startedAt: new Date(Date.now() - 120000).toISOString() },
-    { id: 'task_003', sessionId: 'sess-001', type: 'bash', parentId: 'main_sess-001', status: 'stopped', model: 'claude-haiku-4-5-20251001', tokens: 3200, lastSeen: new Date(Date.now() - 300000).toISOString(), lastTask: 'Bash npm test', description: 'Run test suite', toolsUsed: ['Bash'], startedAt: new Date(Date.now() - 360000).toISOString(), stoppedAt: new Date(Date.now() - 300000).toISOString() },
-    { id: 'main_sess-002', sessionId: 'sess-002', type: 'main', status: 'active', model: 'claude-sonnet-4-5-20250929', tokens: 28600, inputTokens: 24000, outputTokens: 4600, lastSeen: new Date().toISOString(), lastTask: 'Write backend/routes/api.js', elapsedFormatted: '8m 15s', gitDiff: { additions: 89, deletions: 12, files: 3 } },
-    { id: 'task_004', sessionId: 'sess-002', type: 'explore', parentId: 'main_sess-002', status: 'idle', model: 'claude-haiku-4-5-20251001', tokens: 5100, lastSeen: new Date(Date.now() - 30000).toISOString(), lastTask: 'Glob **/*.test.js', description: 'Explore test file structure', toolsUsed: ['Glob', 'Read'], startedAt: new Date(Date.now() - 90000).toISOString() },
-    { id: 'task_005', sessionId: 'sess-002', type: 'plan', parentId: 'main_sess-002', status: 'stopped', model: 'claude-sonnet-4-5-20250929', tokens: 6800, lastSeen: new Date(Date.now() - 600000).toISOString(), lastTask: 'Read docs/architecture.md', description: 'Plan implementation strategy for new API endpoints', toolsUsed: ['Read', 'Grep', 'Glob'], startedAt: new Date(Date.now() - 900000).toISOString(), stoppedAt: new Date(Date.now() - 600000).toISOString() },
-    { id: 'main_sess-003', sessionId: 'sess-003', type: 'main', status: 'stopped', model: 'claude-opus-4-6', tokens: 67500, inputTokens: 58000, outputTokens: 9500, lastSeen: new Date(Date.now() - 1800000).toISOString(), lastTask: 'Main Session', elapsedFormatted: '25m 10s' },
-    { id: 'task_006', sessionId: 'sess-003', type: 'general-purpose', parentId: 'main_sess-003', status: 'stopped', model: 'claude-sonnet-4-5-20250929', tokens: 15200, lastSeen: new Date(Date.now() - 1800000).toISOString(), lastTask: 'Edit backend/server.js', description: 'Refactor WebSocket connection handler with retry logic', toolsUsed: ['Read', 'Edit', 'Write', 'Bash'], startedAt: new Date(Date.now() - 2400000).toISOString(), stoppedAt: new Date(Date.now() - 1800000).toISOString() },
-  ] : [];
+  const displayAgents = demoMode ? demo.agents : agents;
+  const displayEvents = demoMode ? demo.events : events;
+  const displayTeams = demoMode ? demo.teams : teams;
+  const displayTeamComms = demoMode ? demo.teamComms : teamComms;
 
-  const demoEvents = demoMode ? [
-    { id: 'evt-1', type: 'PreToolUse', toolName: 'Edit', timestamp: new Date(Date.now() - 5000).toISOString(), sessionId: 'sess-001', data: { tool_name: 'Edit', input: { file_path: 'frontend/src/App.jsx' } } },
-    { id: 'evt-2', type: 'PostToolUse', toolName: 'Edit', timestamp: new Date(Date.now() - 8000).toISOString(), sessionId: 'sess-001', data: { tool_name: 'Edit', input: { file_path: 'frontend/src/App.jsx' } } },
-    { id: 'evt-3', type: 'PreToolUse', toolName: 'Grep', timestamp: new Date(Date.now() - 12000).toISOString(), sessionId: 'sess-001', data: { tool_name: 'Grep', input: { pattern: 'ActivityFeed' } } },
-    { id: 'evt-4', type: 'UserPromptSubmit', timestamp: new Date(Date.now() - 20000).toISOString(), sessionId: 'sess-001', data: { prompt: 'Fix the expanded layout for AgentTree cards' } },
-    { id: 'evt-5', type: 'PostToolUse', toolName: 'Read', timestamp: new Date(Date.now() - 25000).toISOString(), sessionId: 'sess-002', data: { tool_name: 'Read', input: { file_path: 'backend/routes/api.js' } } },
-    { id: 'evt-6', type: 'PreToolUse', toolName: 'Write', timestamp: new Date(Date.now() - 30000).toISOString(), sessionId: 'sess-002', data: { tool_name: 'Write', input: { file_path: 'backend/routes/api.js' } } },
-    { id: 'evt-7', type: 'PreToolUse', toolName: 'Bash', timestamp: new Date(Date.now() - 45000).toISOString(), sessionId: 'sess-001', data: { tool_name: 'Bash', input: { command: 'npm test' } } },
-    { id: 'evt-8', type: 'PostToolUseFailure', toolName: 'Bash', timestamp: new Date(Date.now() - 50000).toISOString(), sessionId: 'sess-001', data: { tool_name: 'Bash', input: { command: 'npm test' }, error: '2 tests failed' } },
-    { id: 'evt-9', type: 'PreToolUse', toolName: 'Task', timestamp: new Date(Date.now() - 60000).toISOString(), sessionId: 'sess-001', data: { tool_name: 'Task', input: { description: 'Review code changes' } } },
-    { id: 'evt-10', type: 'PostToolUse', toolName: 'Glob', timestamp: new Date(Date.now() - 75000).toISOString(), sessionId: 'sess-002', data: { tool_name: 'Glob', input: { pattern: '**/*.test.js' } } },
-    { id: 'evt-11', type: 'UserPromptSubmit', timestamp: new Date(Date.now() - 90000).toISOString(), sessionId: 'sess-002', data: { prompt: 'Add new API endpoints for user management' } },
-    { id: 'evt-12', type: 'PreCompact', timestamp: new Date(Date.now() - 100000).toISOString(), sessionId: 'sess-001', data: {} },
-    { id: 'evt-13', type: 'Stop', timestamp: new Date(Date.now() - 1800000).toISOString(), sessionId: 'sess-003', data: { reason: 'completed' } },
-  ] : [];
-
-  const displayAgents = demoMode ? demoAgents : agents;
-  const displayEvents = demoMode ? demoEvents : events;
+  // Fixed demo data for Token Usage panel & footer
+  const DEMO_TOKENS = demoMode ? {
+    session_hourly: (() => {
+      const now = new Date();
+      const h = now.getHours();
+      // offset -> { opus, sonnet, haiku } — mixed realistic pattern
+      const pattern = [
+        { opus: 500, sonnet: 0, haiku: 800 },         // current hour (just started)
+        { opus: 12000, sonnet: 1500, haiku: 18000 },  // -1h (heavy, haiku cache)
+        { opus: 8500, sonnet: 0, haiku: 0 },          // -2h (opus only)
+        { opus: 6000, sonnet: 2200, haiku: 14000 },   // -3h (mixed)
+        { opus: 3500, sonnet: 0, haiku: 0 },          // -4h (opus only, light)
+        { opus: 0, sonnet: 0, haiku: 0 },             // -5h (break)
+        { opus: 0, sonnet: 0, haiku: 0 },             // -6h
+        { opus: 9000, sonnet: 0, haiku: 0 },          // -7h (opus only session)
+        { opus: 5500, sonnet: 3200, haiku: 22000 },   // -8h (morning peak, haiku heavy)
+        { opus: 7200, sonnet: 800, haiku: 12000 },    // -9h (mixed)
+        { opus: 4000, sonnet: 0, haiku: 0 },          // -10h (opus only warm-up)
+        { opus: 1500, sonnet: 0, haiku: 2000 },       // -11h (light start)
+      ];
+      return pattern.map((m, i) => {
+        const hr = (h - i + 24) % 24;
+        return { hour: hr, timeLabel: `${hr.toString().padStart(2, '0')}:00`, tokens: m.opus + m.sonnet + m.haiku, isCurrentHour: i === 0, byModel: m };
+      });
+    })(),
+    modelUsage: {
+      Opus:   { inputTokens: 458700, outputTokens: 110000, totalTokens: 568700, cacheReadTokens: 1108400000, estimatedCost: 2759.98 },
+      Haiku:  { inputTokens: 231700, outputTokens: 1200, totalTokens: 232900, cacheReadTokens: 9700000, estimatedCost: 0.84 },
+      Sonnet: { inputTokens: 3400, outputTokens: 208, totalTokens: 3608, cacheReadTokens: 1700000, estimatedCost: 6.13 },
+    },
+    month_cost: 7866.65,
+    monthModelUsage: {
+      Opus:   { estimatedCost: 7786 },
+      Sonnet: { estimatedCost: 76 },
+      Haiku:  { estimatedCost: 5 },
+    },
+  } : null;
+  const DEMO_EVENT_COUNTS = demoMode ? { PreToolUse: 481, PostToolUse: 446, PostToolUseFailure: 0, UserPromptSubmit: 19 } : null;
 
   // Smart status: derive granular status per session from last event (memoized)
   const smartStatus = useMemo(() => {
@@ -305,15 +323,15 @@ export default function App() {
 
   // Token percentages - ONLY from Chrome extension (claudeUsage)
   // If no extension data, show N/A (null = N/A)
-  const tokens = stats?.tokens || {};
-  const hasRealUsage = claudeUsage?.five_hour != null;
+  const tokens = DEMO_TOKENS || (stats?.tokens || {});
+  const hasRealUsage = demoMode || claudeUsage?.five_hour != null;
   // Only show Sync indicator if extension synced within last 2 minutes
   // Uses lastSync timestamp from backend (set when extension actually syncs)
   const USAGE_TIMEOUT_MS = 2 * 60 * 1000; // 2 minutes
   const lastSyncTime = claudeUsage?.lastSync ? new Date(claudeUsage.lastSync).getTime() : 0;
   const isSyncActive = hasRealUsage && lastSyncTime && (Date.now() - lastSyncTime) < USAGE_TIMEOUT_MS;
-  const sessionPct = hasRealUsage ? claudeUsage.five_hour.utilization : null;
-  const weeklyPct = claudeUsage?.seven_day?.utilization ?? null;
+  const sessionPct = demoMode ? 30 : (hasRealUsage ? claudeUsage.five_hour.utilization : null);
+  const weeklyPct = demoMode ? 17 : (claudeUsage?.seven_day?.utilization ?? null);
 
   // Dynamic page title: smart status (priority) + count + usage% + OMC!
   useEffect(() => {
@@ -350,6 +368,7 @@ export default function App() {
 
   // Session reset time - only from Chrome extension
   const getSessionResetTime = () => {
+    if (demoMode) return '3h 8m';
     if (!claudeUsage?.five_hour?.resets_at) return 'N/A';
 
     const resetTime = new Date(claudeUsage.five_hour.resets_at);
@@ -366,6 +385,7 @@ export default function App() {
 
   // Weekly reset time - only from Chrome extension
   const getWeeklyAllModelsReset = () => {
+    if (demoMode) return '6d 1h';
     if (!claudeUsage?.seven_day?.resets_at) return 'N/A';
 
     const resetTime = new Date(claudeUsage.seven_day.resets_at);
@@ -385,8 +405,8 @@ export default function App() {
   };
 
   // Event counts
-  const eventCounts = stats?.eventCounts || {};
-  const totalEvents = Object.values(eventCounts).reduce((a, b) => a + b, 0);
+  const eventCounts = DEMO_EVENT_COUNTS || (stats?.eventCounts || {});
+  const totalEvents = demoMode ? 1000 : Object.values(eventCounts).reduce((a, b) => a + b, 0);
 
   // Filter events by selected session and event type
   const filteredEvents = displayEvents.filter(e => {
@@ -411,7 +431,7 @@ export default function App() {
   }
 
   return (
-    <div className={`h-screen w-[750px] mx-auto ${colors.bg.primary} ${colors.text.primary} flex flex-col overflow-hidden font-['Inter',system-ui,sans-serif]`}>
+    <div className={`h-screen w-full min-w-[950px] mx-auto ${colors.bg.primary} ${colors.text.primary} flex flex-col overflow-hidden font-['Inter',system-ui,sans-serif]`}>
       {/* Top accent line - Claude coral */}
       <div className="h-0.5 bg-gradient-to-r from-[#d97757] via-[#e8956f] to-[#d97757] flex-shrink-0" />
 
@@ -433,7 +453,85 @@ export default function App() {
             <div className={`w-2 h-2 rounded-full ${demoMode ? 'bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.5)] animate-pulse' : connected ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.5)] animate-pulse' : 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.5)]'}`} />
             <span className={`text-xs font-semibold ${demoMode ? 'text-amber-400' : connected ? 'text-green-500' : 'text-red-500'} uppercase tracking-wider`}>{demoMode ? 'DEMO' : connected ? 'LIVE' : 'OFF'}</span>
           </div>
-          {isSyncActive ? (
+          {demoMode && (
+            <div className="flex items-center gap-px ml-2.5">
+              <style>{`
+                @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap');
+                @keyframes digitSpinUp {
+                  0% { transform: translateY(60%); opacity: 0; }
+                  60% { opacity: 1; }
+                  100% { transform: translateY(0); opacity: 1; }
+                }
+              `}</style>
+              {/* Retro tape counter */}
+              <div className="flex items-center rounded-sm overflow-hidden mr-0.5" style={{
+                background: 'linear-gradient(180deg, #1a1a1a 0%, #0d0d0d 40%, #0a0a0a 60%, #1a1a1a 100%)',
+                border: '1px solid #555',
+                boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.8), 0 0 4px rgba(100,100,100,0.3)',
+                height: '20px',
+              }}>
+                {String(demo.progress.current).padStart(4, '0').split('').map((d, i) => (
+                  <span key={`${i}_${d}`} className="inline-flex items-center justify-center" style={{
+                    fontFamily: "'Share Tech Mono', 'Courier New', monospace",
+                    fontSize: '14px',
+                    fontWeight: 400,
+                    width: '13px',
+                    height: '20px',
+                    lineHeight: '20px',
+                    paddingTop: '2px',
+                    overflow: 'hidden',
+                    color: '#c8f0c8',
+                    textShadow: '0 0 4px rgba(100,255,100,0.4)',
+                    background: 'linear-gradient(180deg, rgba(255,255,255,0.06) 0%, transparent 30%, transparent 70%, rgba(255,255,255,0.04) 100%)',
+                    borderLeft: i > 0 ? '1px solid #555' : 'none',
+                    animation: 'digitSpinUp 0.18s ease-out',
+                  }}>{d}</span>
+                ))}
+              </div>
+              <button
+                onClick={() => {
+                  if (demo.replayState === 'playing') demo.pause();
+                  else if (demo.replayState === 'paused') demo.resume();
+                  else demo.play();
+                }}
+                className="flex items-center justify-center w-5 h-5 border transition-all duration-100 active:scale-90"
+                style={{
+                  borderColor: demo.replayState === 'playing' ? '#facc15' : '#22c55e',
+                  background: demo.replayState === 'playing'
+                    ? 'rgba(250,204,21,0.15)' : 'rgba(34,197,94,0.15)',
+                  boxShadow: demo.replayState === 'playing'
+                    ? '0 0 4px rgba(250,204,21,0.3)' : '0 0 4px rgba(34,197,94,0.3)',
+                }}
+                title={demo.replayState === 'playing' ? 'Pause' : demo.replayState === 'paused' ? 'Resume' : 'Play'}
+              >
+                {demo.replayState === 'playing' ? (
+                  <svg width="8" height="9" viewBox="0 0 10 12" fill="#facc15">
+                    <rect x="1" y="0" width="3" height="12" />
+                    <rect x="6" y="0" width="3" height="12" />
+                  </svg>
+                ) : (
+                  <svg width="8" height="9" viewBox="0 0 10 12" fill="#22c55e">
+                    <polygon points="0,0 10,6 0,12" />
+                  </svg>
+                )}
+              </button>
+              <button
+                onClick={() => demo.reset()}
+                className="flex items-center justify-center w-5 h-5 border transition-all duration-100 active:scale-90"
+                style={{
+                  borderColor: '#ef4444',
+                  background: 'rgba(239,68,68,0.12)',
+                  boxShadow: '0 0 3px rgba(239,68,68,0.2)',
+                }}
+                title="Reset"
+              >
+                <svg width="7" height="7" viewBox="0 0 10 10" fill="#ef4444">
+                  <rect x="0" y="0" width="10" height="10" />
+                </svg>
+              </button>
+            </div>
+          )}
+          {!demoMode && (isSyncActive ? (
             <div className={`flex items-center gap-1.5 text-xs ${colors.status.info}`} title="Synced from Claude.ai via extension">
               <svg className="w-3.5 h-3.5 animate-spin" style={{animationDuration: '20s'}} fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
                 <path d="M21 2v6h-6M3 12a9 9 0 0 1 15-6.7L21 8M3 22v-6h6M21 12a9 9 0 0 1-15 6.7L3 16" />
@@ -445,7 +543,7 @@ export default function App() {
               <span className="text-sm">💀</span>
               <span className="font-medium">RIP Sync</span>
             </div>
-          )}
+          ))}
         </div>
 
         {/* Right: Live Clock + Theme + Guide + Status */}
@@ -455,7 +553,7 @@ export default function App() {
           <button
             onClick={toggleAgentViewMode}
             className={`flex items-center gap-1 px-1.5 h-7 rounded-lg ${colors.button.base} border transition-all text-[10px] ${colors.button.text}`}
-            title={isAgentsCollapsed ? 'Show Agents Panel' : agentViewMode === 'full' ? 'Switch to Compact' : agentViewMode === 'compact' ? 'Switch to Expanded' : 'Hide Agents'}
+            title={isAgentsCollapsed ? 'Show Agents Panel' : agentViewMode === 'full' ? 'Switch to Compact' : agentViewMode === 'compact' ? 'Switch to Focus' : agentViewMode === 'compact-expanded' ? 'Switch to Expanded' : 'Hide Agents'}
           >
             {isAgentsCollapsed ? (
               <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -464,6 +562,14 @@ export default function App() {
             ) : agentViewMode === 'full' ? (
               <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+              </svg>
+            ) : agentViewMode === 'compact' ? (
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+              </svg>
+            ) : agentViewMode === 'compact-expanded' ? (
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 18h16" />
               </svg>
             ) : agentViewMode === 'expanded' ? (
               <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -474,7 +580,7 @@ export default function App() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 5l7 7-7 7" />
               </svg>
             )}
-            <span className="font-medium">{isAgentsCollapsed ? 'Hidden' : agentViewMode === 'full' ? 'Full' : agentViewMode === 'compact' ? 'Compact' : 'Expanded'}</span>
+            <span className="font-medium">{isAgentsCollapsed ? 'Hidden' : agentViewMode === 'full' ? 'Full' : agentViewMode === 'compact' ? 'Compact' : agentViewMode === 'compact-expanded' ? 'Focus' : 'Expanded'}</span>
           </button>
           {/* Theme Toggle */}
           <button
@@ -594,12 +700,12 @@ export default function App() {
 
         {/* Center: Agents */}
         {!isAgentsCollapsed && (
-          <aside className={`${agentViewMode === 'expanded' ? 'flex-1' : 'w-[340px] flex-shrink-0'} ${colors.bg.secondary} border-r ${colors.border} flex flex-col overflow-hidden`}>
+          <aside className={`${agentViewMode === 'expanded' || agentViewMode === 'compact-expanded' ? 'flex-1' : 'w-[500px] flex-shrink-0'} ${colors.bg.secondary} border-r ${colors.border} flex flex-col overflow-hidden`}>
             <div className={`h-8 min-h-[32px] px-3 flex items-center justify-between border-b ${colors.border} ${colors.sectionHeader.agents} flex-shrink-0`}>
               <h2 className={`text-[11px] font-medium ${colors.accent.agents} uppercase tracking-wider leading-none`}>
                 Agents <span className={`font-mono ${colors.accent.agentsCount} normal-case`}>({displayAgents.length})</span>
               </h2>
-              {displayAgents.some(a => a.status === 'stopped' || a.status === 'timeout') && (
+              {!demoMode && displayAgents.some(a => a.status === 'stopped' || a.status === 'timeout') && (
                 <button
                   onClick={() => fetch('http://localhost:4824/agents/stopped', { method: 'DELETE' })}
                   className={`text-[9px] px-1.5 py-0.5 rounded ${colors.text.muted} opacity-40 hover:opacity-100 hover:bg-red-500/20 hover:text-red-400 transition-all`}
@@ -607,16 +713,16 @@ export default function App() {
                 >Clear Stopped</button>
               )}
             </div>
-            <AgentTree agents={displayAgents} colors={colors} compact={agentViewMode === 'compact'} expanded={agentViewMode === 'expanded'} smartStatus={smartStatus} teams={teams} />
+            <AgentTree agents={displayAgents} colors={colors} compact={agentViewMode === 'compact' || agentViewMode === 'compact-expanded'} expanded={agentViewMode === 'expanded' || agentViewMode === 'compact-expanded'} smartStatus={smartStatus} teams={displayTeams} />
           </aside>
         )}
 
         {/* Right: Live Events */}
-        <section className={`${isAgentsCollapsed ? 'flex-1' : 'w-[210px] flex-shrink-0'} flex flex-col overflow-hidden ${agentViewMode === 'expanded' && !isAgentsCollapsed ? 'hidden' : ''}`}>
+        <section className={`${isAgentsCollapsed ? 'flex-1' : 'min-w-[250px] flex-1'} flex flex-col overflow-hidden ${(agentViewMode === 'expanded' || agentViewMode === 'compact-expanded') && !isAgentsCollapsed ? 'hidden' : ''}`}>
           {/* Header - Same height as other panels */}
           <div className={`h-8 min-h-[32px] px-3 flex items-center justify-between border-b ${colors.border} ${colors.sectionHeader.activity} flex-shrink-0`}>
             <h2 className={`text-[11px] font-medium ${colors.accent.activity} uppercase tracking-wider leading-none`}>
-              Activity
+              Activity Feed
             </h2>
             {/* Quick Stats - Clickable Filters */}
             {(() => {
@@ -643,15 +749,15 @@ export default function App() {
             })()}
           </div>
           {/* Team Comms Timeline */}
-          {teamComms.length > 0 && (
+          {displayTeamComms.length > 0 && (
             <div className={`border-b ${colors.border} ${colors.bg.secondary}`}>
               <div className={`px-2 py-1 flex items-center gap-1`}>
                 <span className="text-[9px]">📨</span>
                 <span className={`text-[9px] font-medium text-indigo-400 uppercase tracking-wider`}>Team Comms</span>
-                <span className={`text-[8px] font-mono ${colors.text.muted}`}>({teamComms.length})</span>
+                <span className={`text-[8px] font-mono ${colors.text.muted}`}>({displayTeamComms.length})</span>
               </div>
-              <div className="max-h-[80px] overflow-y-auto px-1 pb-1 space-y-0.5">
-                {teamComms.slice(0, 10).map((comm, i) => {
+              <div className="max-h-[200px] overflow-y-auto px-1 pb-1 space-y-0.5">
+                {displayTeamComms.slice(0, 30).map((comm, i) => {
                   const typeColors = {
                     message: 'text-cyan-400',
                     broadcast: 'text-amber-400',
@@ -661,8 +767,8 @@ export default function App() {
                     task_completed: 'text-emerald-400',
                   };
                   return (
-                    <div key={i} className="flex items-center gap-1 px-1 py-0.5 text-[9px]">
-                      <span className={`font-mono ${colors.text.muted} shrink-0 w-[35px]`}>
+                    <div key={i} className="flex items-center gap-1.5 px-1 py-0.5 text-[11px]">
+                      <span className={`font-mono ${colors.text.muted} shrink-0 w-[38px]`}>
                         {new Date(comm.timestamp).toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' })}
                       </span>
                       <span className={`font-medium text-cyan-400 shrink-0`}>{comm.from}</span>

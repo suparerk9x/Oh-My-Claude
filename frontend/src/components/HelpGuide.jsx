@@ -65,6 +65,7 @@ export function HelpGuide({ onClose, theme = 'dark', demoMode = false, onDemoTog
     { id: 'notifications', label: 'Notifications', icon: '🔔' },
     { id: 'events', label: 'Events', icon: '📡' },
     { id: 'footer', label: 'Footer', icon: '📈' },
+    { id: 'demo', label: 'Demo Mode', icon: '🧪' },
   ];
 
   return (
@@ -163,6 +164,7 @@ export function HelpGuide({ onClose, theme = 'dark', demoMode = false, onDemoTog
             {activeSection === 'notifications' && <NotificationsSection lang={lang} theme={theme} />}
             {activeSection === 'events' && <EventsSection lang={lang} theme={theme} />}
             {activeSection === 'footer' && <FooterSection lang={lang} theme={theme} />}
+            {activeSection === 'demo' && <DemoSection lang={lang} theme={theme} />}
           </div>
         </div>
       </div>
@@ -234,9 +236,9 @@ function OverviewSection({ lang, theme = 'dark' }) {
       leftPanel: 'Left Panel',
       leftContent: 'Token Usage (200px)',
       centerPanel: 'Center Panel',
-      centerContent: 'Agents (340px)',
+      centerContent: 'Agents (500px)',
       rightPanel: 'Right Panel',
-      rightContent: 'Activity Feed (210px, flex when agents hidden)',
+      rightContent: 'Activity Feed (250px, flex when agents hidden)',
       footer: 'Footer',
       footerContent: 'Event filters, monthly cost, clock'
     },
@@ -293,9 +295,9 @@ function OverviewSection({ lang, theme = 'dark' }) {
       leftPanel: 'Left Panel',
       leftContent: 'Token Usage (200px)',
       centerPanel: 'Center Panel',
-      centerContent: 'Agents (340px)',
+      centerContent: 'Agents (500px)',
       rightPanel: 'Right Panel',
-      rightContent: 'Activity Feed (210px, flex เมื่อซ่อน agents)',
+      rightContent: 'Activity Feed (250px, flex เมื่อซ่อน agents)',
       footer: 'Footer',
       footerContent: 'Event filters, monthly cost, นาฬิกา'
     }
@@ -557,14 +559,15 @@ function SetupSection({ lang, theme = 'dark' }) {
       step2File: '~/.claude/settings.json',
       step2FileWin: 'C:\\Users\\<username>\\.claude\\settings.json',
       step2Note: 'Replace <PATH> with your oh-my-claude folder path',
-      step2Hooks: ['PreToolUse', 'PostToolUse', 'SubagentStart', 'SubagentStop', 'UserPromptSubmit', 'PermissionRequest', 'Stop', 'PreCompact', 'SessionStart', 'SessionEnd'],
+      step2Hooks: ['PreToolUse', 'PostToolUse', 'SubagentStart', 'SubagentStop', 'UserPromptSubmit', 'PermissionRequest', 'Stop', 'PreCompact', 'Notification', 'TeammateIdle', 'TaskCompleted'],
       step3: 'Install Chrome Extension',
       step3For: 'Optional - for Sync Usage',
       step3Desc: 'Pull Session % and Weekly % directly from Claude.ai:',
-      step3Steps: ['Open chrome://extensions/', 'Enable "Developer mode"', 'Click "Load unpacked"', 'Select extension/ folder'],
+      step3Steps: ['Open chrome://extensions/', 'Enable "Developer mode"', 'Click "Load unpacked"', 'Select extension/ folder', 'Open claude.ai once to login (grabs your session)'],
       step3Note: 'Extension syncs usage data every 1 minute → Shows',
       step3Badge: 'Sync',
       step3Badge2: 'badge in header',
+      step3Warn: 'First login to claude.ai is required so the extension can grab your session cookie. After that, sync works in the background — no need to keep the tab open.',
       step4: 'Start the Dashboard',
       step4Desc: 'Run both backend and frontend:',
       step4Note: 'Dashboard opens at',
@@ -590,14 +593,15 @@ function SetupSection({ lang, theme = 'dark' }) {
       step2File: '~/.claude/settings.json',
       step2FileWin: 'C:\\Users\\<username>\\.claude\\settings.json',
       step2Note: 'แทนที่ <PATH> ด้วย path ไปยัง folder oh-my-claude ของคุณ',
-      step2Hooks: ['PreToolUse', 'PostToolUse', 'SubagentStart', 'SubagentStop', 'UserPromptSubmit', 'PermissionRequest', 'Stop', 'PreCompact', 'SessionStart', 'SessionEnd'],
+      step2Hooks: ['PreToolUse', 'PostToolUse', 'SubagentStart', 'SubagentStop', 'UserPromptSubmit', 'PermissionRequest', 'Stop', 'PreCompact', 'Notification', 'TeammateIdle', 'TaskCompleted'],
       step3: 'ติดตั้ง Chrome Extension',
       step3For: 'Optional - สำหรับ Sync Usage',
       step3Desc: 'ดึง Session % และ Weekly % จาก Claude.ai โดยตรง:',
-      step3Steps: ['เปิด chrome://extensions/', 'เปิด "Developer mode"', 'คลิก "Load unpacked"', 'เลือก folder extension/'],
+      step3Steps: ['เปิด chrome://extensions/', 'เปิด "Developer mode"', 'คลิก "Load unpacked"', 'เลือก folder extension/', 'เปิด claude.ai สักครั้งเพื่อ login (extension จะจับ session ไว้)'],
       step3Note: 'Extension sync ข้อมูลทุก 1 นาที → แสดง',
       step3Badge: 'Sync',
       step3Badge2: 'badge ที่ header',
+      step3Warn: 'ต้อง login เข้า claude.ai ครั้งแรกเพื่อให้ extension จับ session cookie ได้ หลังจากนั้น sync ทำงานใน background ได้เลย — ไม่ต้องเปิด tab ค้างไว้',
       step4: 'เริ่มใช้งาน Dashboard',
       step4Desc: 'รัน backend และ frontend:',
       step4Note: 'Dashboard เปิดที่',
@@ -673,17 +677,76 @@ function SetupSection({ lang, theme = 'dark' }) {
               <span className={colors.text.faint}>or</span>
               <code className="text-blue-500 bg-blue-500/10 px-1.5 py-0.5 rounded">{txt.step2FileWin}</code>
             </div>
-            <div className={`font-mono text-[10px] ${colors.text.muted} ${colors.code.bg} p-2 rounded mb-2 overflow-x-auto`}>
-              <div className={colors.text.dimmed}>{'{'}</div>
-              <div className={`pl-2 ${colors.text.dimmed}`}>{'"hooks": {'}</div>
-              <div className="pl-4 text-cyan-500">{'"PreToolUse": [{ "matcher": "", "hooks": [{'}</div>
-              <div className="pl-6 text-emerald-500">{'"type": "command",'}</div>
-              <div className="pl-6 text-amber-500">{'"command": "node \\"<PATH>/hooks/send_event.js\\" --event-type PreToolUse"'}</div>
-              <div className="pl-4 text-cyan-500">{'  }]}],'}</div>
-              <div className={`pl-4 ${colors.text.faint}`}>{'// ... same for PostToolUse, SubagentStart, SubagentStop, UserPromptSubmit, Stop, PreCompact'}</div>
-              <div className={`pl-2 ${colors.text.dimmed}`}>{'}'}</div>
-              <div className={colors.text.dimmed}>{'}'}</div>
-            </div>
+            {(() => {
+              const withMatcher = ['PreToolUse', 'PostToolUse'];
+              const allHooks = txt.step2Hooks;
+              // Build full JSON for copy
+              const hookCmd = (name) => `node "<PATH>/hooks/send_event.js" --event-type ${name}`;
+              const fullJson = JSON.stringify({
+                hooks: Object.fromEntries(allHooks.map(name => [
+                  name,
+                  [{ ...(withMatcher.includes(name) ? { matcher: '' } : {}), hooks: [{ type: 'command', command: hookCmd(name) }] }]
+                ]))
+              }, null, 2);
+              return (
+                <div className={`relative font-mono text-[9px] ${colors.code.bg} rounded-lg mb-2 border ${colors.card.border} overflow-hidden`}>
+                  <button
+                    onClick={(e) => {
+                      navigator.clipboard.writeText(fullJson);
+                      const btn = e.currentTarget;
+                      btn.textContent = '✓ Copied!';
+                      setTimeout(() => { btn.textContent = '📋 Copy'; }, 1500);
+                    }}
+                    className={`absolute top-1.5 right-1.5 z-10 text-[9px] px-1.5 py-0.5 rounded ${theme === 'light' ? 'bg-slate-200 text-slate-600 hover:bg-slate-300' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'} transition-all`}
+                    title="Copy full hooks JSON"
+                  >📋 Copy</button>
+
+                  <div className="p-2.5 overflow-x-auto max-h-[360px] overflow-y-auto">
+                    {/* Structure */}
+                    <div className={colors.text.dimmed}>{'{'}</div>
+                    <div className="text-cyan-500 pl-2">{'"hooks": {'}</div>
+
+                    {allHooks.map((name, i) => {
+                      const hasMatcher = withMatcher.includes(name);
+                      const isLast = i === allHooks.length - 1;
+                      return (
+                        <div key={name} className="pl-4 leading-snug">
+                          <div>
+                            <span className="text-sky-400">{`"${name}"`}</span>
+                            <span className={colors.text.dimmed}>{': [{'}</span>
+                            {hasMatcher && <>
+                              <span className="text-violet-400">{' "matcher"'}</span>
+                              <span className={colors.text.dimmed}>{': "",'}</span>
+                            </>}
+                          </div>
+                          <div className="pl-4">
+                            <span className={colors.text.dimmed}>{'"hooks"'}: [{'{'} </span>
+                            <span className="text-emerald-500">{'"type"'}</span>
+                            <span className={colors.text.dimmed}>: "command",</span>
+                          </div>
+                          <div className="pl-6 break-all">
+                            <span className="text-amber-500">{'"command"'}</span>
+                            <span className={colors.text.dimmed}>{': '}</span>
+                            <span className="text-amber-400/70">{`"node \\"<PATH>/hooks/send_event.js\\"`}</span>
+                          </div>
+                          <div className="pl-8 break-all">
+                            <span className="text-amber-400/70">{`--event-type `}</span>
+                            <span className="text-amber-300 font-semibold">{name}</span>
+                            <span className="text-amber-400/70">{'"'}</span>
+                          </div>
+                          <div className="pl-4">
+                            <span className={colors.text.dimmed}>{`}] }]${isLast ? '' : ','}`}</span>
+                          </div>
+                        </div>
+                      );
+                    })}
+
+                    <div className="text-cyan-500 pl-2">{'}'}</div>
+                    <div className={colors.text.dimmed}>{'}'}</div>
+                  </div>
+                </div>
+              );
+            })()}
             <div className="flex items-center gap-2 text-[10px]">
               <span className="text-amber-500">⚠️</span>
               <span className="text-amber-500/80">{txt.step2Note}</span>
@@ -712,6 +775,10 @@ function SetupSection({ lang, theme = 'dark' }) {
             </div>
             <div className="text-[10px] text-cyan-500/80">
               ✓ {txt.step3Note} <span className="bg-cyan-500/20 px-1 rounded">{txt.step3Badge}</span> {txt.step3Badge2}
+            </div>
+            <div className="flex items-start gap-2 text-[10px] mt-2 p-2 rounded bg-blue-500/10 border border-blue-500/20">
+              <span className="text-blue-400 shrink-0">ℹ️</span>
+              <span className="text-blue-400/90">{txt.step3Warn}</span>
             </div>
           </div>
 
@@ -1280,9 +1347,10 @@ function AgentsSection({ lang, theme = 'dark' }) {
       whatDesc: 'Claude Code uses agents to manage tasks. Main is the primary agent. Task tool creates Subagents for parallel work.',
       typesTitle: 'Agent Types',
       mainType: 'Primary conversation agent',
-      exploreType: 'Codebase exploration',
-      planType: 'Architecture planning',
-      bashType: 'Command execution',
+      generalPurposeType: 'Full-capability agent (read, write, bash)',
+      exploreType: 'Codebase exploration (read-only)',
+      planType: 'Architecture planning (read-only)',
+      bashType: 'Command execution specialist',
       lifecycleTitle: 'Agent Lifecycle (5-Level)',
       lifecycleDesc: 'Status is shown as a colored dot + label (e.g. "● Active") on the first line of each agent card. Agents transition through 5 levels based on inactivity:',
       statusActive: 'Active',
@@ -1308,13 +1376,19 @@ function AgentsSection({ lang, theme = 'dark' }) {
       smartCompacting: 'Context compaction — freeing up context window',
       smartProcessing: 'Other tool in progress',
       cardLayoutTitle: 'Card Layout (Full Mode)',
-      cardLayoutDesc: 'Each main agent displays up to 3 lines. Subagents show up to 3 lines indented below. Stopped sessions/subagents are dimmed (opacity 50%).',
-      cardLine1: 'Line 1: Model badge, Smart Status (icon + label, no bg) or Status badge (with colored bg), Duration, Tokens',
-      cardLine2: 'Line 2: Last activity (tool icon + name), Session ID — hidden if no activity',
-      cardLine3: 'Line 3: Task count badge, Git diff chip (+adds -dels files)',
-      cardSubLine1: 'Subagent Line 1: └ Model + Type + Status badge (with colored bg), Duration, Tokens',
-      cardSubLine2: 'Subagent Line 2: Tools used (if any)',
-      cardSubLine3: 'Subagent Line 3: Description (truncated), Agent ID',
+      cardLayoutDesc: 'Each main agent displays up to 4 lines. Team members show 3 lines indented. Non-team subagents show 3 lines. Stopped sessions/subagents are dimmed (opacity 50%).',
+      cardLine1: 'Main Line 1: Session number + Model badge (with version) + Smart Status (icon + label) or Status badge + Duration + Tokens',
+      cardLine2: 'Main Line 2: Project name (monospace cyan uppercase) + Team badge (👥 team-name, if team lead)',
+      cardLine3: 'Main Line 3: Last activity (tool icon + tool name + file path) + Session ID',
+      cardLine4: 'Main Line 4: Task count badge (active/total running) + Git diff chip (+adds -dels files)',
+      teamHeaderTitle: 'Team Header',
+      teamHeaderDesc: 'Users SVG icon (2-person stroke) + Team name + Member count + Health badge (🟢 Healthy / 🟡 idle / 🟠 high-token / 🔴 conflict) + Total team tokens',
+      cardSubLine1: 'Team Member Line 1: └ + Person icon + Agent name badge + Model + Type + Health warnings (🔥 high tokens / 💤 idle >5m / ⚠ file conflict) + Status + Duration + Tokens',
+      cardSubLine2: 'Team Member Line 2: 🔧 Tools used (left) + Token bar with % of team total (right-aligned)',
+      cardSubLine3: 'Team Member Line 3: 💬 Description + Agent ID',
+      cardNonTeamLine1: 'Non-team Subagent Line 1: └ + Model + Type + Status + Duration + Tokens',
+      cardNonTeamLine2: 'Non-team Subagent Line 2: 🔧 Tools used',
+      cardNonTeamLine3: 'Non-team Subagent Line 3: 💬 Description + Agent ID',
       gitDiffTitle: 'Git Diff Stats',
       gitDiffDesc: 'Shows uncommitted changes per agent working directory as a segmented chip with color-coded sections.',
       gitDiffAdd: 'Lines added (insertions) — green',
@@ -1332,9 +1406,10 @@ function AgentsSection({ lang, theme = 'dark' }) {
       whatDesc: 'Claude Code ใช้ agents ในการจัดการงาน Main คือ agent หลัก Task tool สร้าง Subagents สำหรับทำงานแบบ parallel',
       typesTitle: 'Agent Types',
       mainType: 'Agent หลักที่สนทนา',
-      exploreType: 'สำรวจ codebase',
-      planType: 'วางแผน architecture',
-      bashType: 'รัน commands',
+      generalPurposeType: 'Agent แบบเต็ม (อ่าน, เขียน, bash)',
+      exploreType: 'สำรวจ codebase (อ่านอย่างเดียว)',
+      planType: 'วางแผน architecture (อ่านอย่างเดียว)',
+      bashType: 'รัน commands เฉพาะทาง',
       lifecycleTitle: 'Agent Lifecycle (5 ระดับ)',
       lifecycleDesc: 'สถานะแสดงเป็นจุดสี + label (เช่น "● Active") บนบรรทัดแรกของแต่ละ agent card เปลี่ยนสถานะตาม 5 ระดับเมื่อไม่มี activity:',
       statusActive: 'Active',
@@ -1360,13 +1435,19 @@ function AgentsSection({ lang, theme = 'dark' }) {
       smartCompacting: 'Context compaction — เคลียร์ context window',
       smartProcessing: 'Tool อื่นกำลังทำงาน',
       cardLayoutTitle: 'Card Layout (Full Mode)',
-      cardLayoutDesc: 'Main agent แสดงสูงสุด 3 บรรทัด, Subagent แสดงสูงสุด 3 บรรทัดย่อยด้านล่าง Session/subagent ที่ stopped จะจางลง (opacity 50%)',
-      cardLine1: 'บรรทัด 1: Model badge, Smart Status (icon + label ไม่มี bg) หรือ Status badge (มี bg สี), Duration, Tokens',
-      cardLine2: 'บรรทัด 2: Activity ล่าสุด (ไอคอน + ชื่อ tool), Session ID — ซ่อนถ้าไม่มี activity',
-      cardLine3: 'บรรทัด 3: Task count badge, Git diff chip (+เพิ่ม -ลบ ไฟล์)',
-      cardSubLine1: 'Subagent บรรทัด 1: └ Model + Type + Status badge (มี bg สี), Duration, Tokens',
-      cardSubLine2: 'Subagent บรรทัด 2: Tools ที่ใช้ (ถ้ามี)',
-      cardSubLine3: 'Subagent บรรทัด 3: Description (ตัดถ้ายาว), Agent ID',
+      cardLayoutDesc: 'Main agent แสดง 4 บรรทัด, Team member แสดง 3 บรรทัดย่อย, Non-team subagent แสดง 3 บรรทัด Session/subagent ที่ stopped จะจางลง (opacity 50%)',
+      cardLine1: 'Main บรรทัด 1: ลำดับ session + Model badge (พร้อมเวอร์ชัน) + Smart Status (icon + label) หรือ Status badge + Duration + Tokens',
+      cardLine2: 'Main บรรทัด 2: ชื่อ project (monospace สีฟ้า ตัวพิมพ์ใหญ่) + Team badge (👥 ชื่อทีม, ถ้าเป็น team lead)',
+      cardLine3: 'Main บรรทัด 3: Activity ล่าสุด (ไอคอน tool + ชื่อ + path ไฟล์) + Session ID',
+      cardLine4: 'Main บรรทัด 4: Task count badge (active/total running) + Git diff chip (+เพิ่ม -ลบ ไฟล์)',
+      teamHeaderTitle: 'Team Header',
+      teamHeaderDesc: 'SVG ไอคอน Users (2 คน stroke) + ชื่อทีม + จำนวน members + Health badge (🟢 Healthy / 🟡 idle / 🟠 high-token / 🔴 conflict) + Total tokens ของทีม',
+      cardSubLine1: 'Team Member บรรทัด 1: └ + ไอคอนคน + ชื่อ Agent badge + Model + Type + Health warnings (🔥 tokens สูง / 💤 idle >5m / ⚠ file conflict) + Status + Duration + Tokens',
+      cardSubLine2: 'Team Member บรรทัด 2: 🔧 Tools ที่ใช้ (ซ้าย) + Token bar พร้อม % ของทีม (ชิดขวา)',
+      cardSubLine3: 'Team Member บรรทัด 3: 💬 Description + Agent ID',
+      cardNonTeamLine1: 'Non-team Subagent บรรทัด 1: └ + Model + Type + Status + Duration + Tokens',
+      cardNonTeamLine2: 'Non-team Subagent บรรทัด 2: 🔧 Tools ที่ใช้',
+      cardNonTeamLine3: 'Non-team Subagent บรรทัด 3: 💬 Description + Agent ID',
       gitDiffTitle: 'Git Diff Stats',
       gitDiffDesc: 'แสดง uncommitted changes ต่อ working directory เป็น segmented chip แยกสีตามประเภท',
       gitDiffAdd: 'บรรทัดที่เพิ่ม (insertions) — เขียว',
@@ -1397,6 +1478,10 @@ function AgentsSection({ lang, theme = 'dark' }) {
           <div className="p-3 rounded-lg bg-gray-500/10">
             <div className={`text-[12px] font-semibold ${colors.text.secondary}`}>Main</div>
             <div className={`text-[11px] ${colors.text.dimmed}`}>{txt.mainType}</div>
+          </div>
+          <div className="p-3 rounded-lg bg-pink-500/10">
+            <div className="text-[12px] font-semibold text-pink-400">General-Purpose</div>
+            <div className={`text-[11px] ${colors.text.dimmed}`}>{txt.generalPurposeType}</div>
           </div>
           <div className="p-3 rounded-lg bg-violet-500/10">
             <div className="text-[12px] font-semibold text-violet-500">Explore</div>
@@ -1511,101 +1596,508 @@ function AgentsSection({ lang, theme = 'dark' }) {
         </div>
       </div>
 
-      {/* Card Layout Example */}
+      {/* Card Layout Example — Full Demo */}
       <div>
         <h4 className={`text-[13px] font-semibold ${colors.text.tertiary} uppercase tracking-wider mb-3`}>{txt.cardLayoutTitle}</h4>
         <p className={`text-[12px] ${colors.text.dimmed} mb-3`}>{txt.cardLayoutDesc}</p>
-        {/* Visual mock of agent card */}
-        <div className={`rounded-xl ${colors.card.bg} border ${colors.card.border} overflow-hidden`}>
-          {/* Main agent - Line 1 */}
-          <div className="px-3 pt-2.5 flex items-center justify-between">
-            <div className="flex items-center gap-1.5">
-              <span className="text-[10px] font-medium px-1 py-0.5 rounded bg-violet-500/15 text-violet-400">Opus</span>
-              <span className="text-[10px] animate-pulse">🧠</span>
-              <span className="text-[9px] font-medium text-violet-400">Thinking</span>
-            </div>
-            <div className="flex items-center gap-2 font-mono text-[10px]">
-              <span className={colors.text.dimmed}>2h 41m</span>
-              <span className="text-amber-500">372.4k</span>
-            </div>
-          </div>
-          {/* Main agent - Line 2 */}
-          <div className="px-3 pt-1 flex items-center justify-between">
-            <div className="flex items-center gap-1 text-[10px]">
-              <span className="text-cyan-500">📝</span>
-              <span className={colors.text.dimmed}>Edit</span>
-              <span className={colors.text.faint}>HelpGuide.jsx</span>
-            </div>
-            <code className={`text-[8px] font-mono ${colors.text.faint}`}>91188c6</code>
-          </div>
-          {/* Main agent - Line 3 */}
-          <div className="px-3 pt-1 pb-2 flex items-center gap-2">
-            <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold bg-emerald-500/15 text-emerald-400 border border-emerald-500/20">2 done</span>
-            <div className="inline-flex items-center gap-0 rounded-md border border-gray-700/40 overflow-hidden text-[10px] font-mono">
-              <span className="flex items-center gap-1 px-1.5 py-0.5 bg-green-500/10">
-                <span className="w-1 h-1 rounded-full bg-green-400" />
-                <span className="text-green-400">+1,372</span>
-              </span>
-              <span className="flex items-center gap-1 px-1.5 py-0.5 bg-red-500/10 border-l border-gray-700/40">
-                <span className="w-1 h-1 rounded-full bg-red-400" />
-                <span className="text-red-400">-668</span>
-              </span>
-              <span className="px-1.5 py-0.5 text-gray-500 border-l border-gray-700/40">17 files</span>
-            </div>
-          </div>
-          {/* Subagent 1 - stopped (dimmed) */}
-          <div className={`border-t ${colors.card.border} opacity-50`}>
-            <div className="px-3 pt-2 flex items-center justify-between">
-              <div className="flex items-center gap-1 text-[10px]">
-                <span className={colors.text.faint}>└</span>
-                <span className="font-medium px-1 py-0.5 rounded bg-violet-500/15 text-violet-400">Opus</span>
-                <span className={`px-1 py-0.5 rounded ${colors.card.bgAlt} text-pink-400`}>Subagent</span>
-                <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-gray-500/15">
-                  <span className="text-gray-500">○</span>
-                  <span className="text-[8px] text-gray-500">Stopped</span>
-                </span>
+
+        {/* ═══ FULL DASHBOARD MOCKUP ═══ */}
+        <div className={`rounded-xl border ${colors.card.border} overflow-hidden`}>
+
+          {/* ── Session 1: Active Opus with Team + Subagents ── */}
+          <div className={`${colors.card.bg} bg-emerald-500/[0.02]`}>
+            {/* Main agent - Line 1: Number + Model + Smart Status + Duration + Tokens */}
+            <div className="px-3 pt-2.5 flex items-center justify-between">
+              <div className="flex items-center gap-1.5">
+                <span className="text-[11px] font-mono font-bold text-white w-[16px] text-right">1.</span>
+                <span className="text-[10px] font-medium px-1 py-0.5 rounded bg-violet-500/15 text-violet-400">Opus 4.6</span>
+                <span className="text-[10px] animate-pulse">✍️</span>
+                <span className="text-[9px] font-medium text-orange-400">Writing</span>
               </div>
               <div className="flex items-center gap-2 font-mono text-[10px]">
-                <span className={colors.text.dimmed}>3m 18s</span>
-                <span className="text-amber-500">166.8k</span>
+                <span className={colors.text.dimmed}>2h 41m</span>
+                <span className="text-amber-500">753.7k</span>
               </div>
             </div>
-            <div className="px-3 pt-0.5 pb-1 flex items-center justify-between">
-              <span className={`text-[9px] ${colors.text.faint} truncate max-w-[220px]`}>💬 Research pre-existing errors</span>
-              <code className={`text-[8px] font-mono ${colors.text.faint}`}>ad37b4e</code>
+            {/* Main agent - Line 2: Project name + Team badge */}
+            <div className="px-3 pt-1 pl-[28px] flex items-center gap-1.5">
+              <span className="text-[10px] font-mono tracking-widest uppercase text-cyan-400/70">OH-MY-CLAUDE</span>
+              <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-indigo-500/15 text-indigo-400 border border-indigo-500/20 whitespace-nowrap">👥 refactor-crew</span>
+            </div>
+            {/* Main agent - Line 3: Last activity + Session ID */}
+            <div className="px-3 pt-1 pl-[20px] flex items-center justify-between">
+              <div className="flex items-center gap-1 text-[10px]">
+                <span className="text-orange-500">✏️</span>
+                <span className="font-medium text-orange-500">Edit</span>
+                <span className={colors.text.dimmed}>frontend/src/App.jsx</span>
+              </div>
+              <code className={`text-[8px] font-mono ${colors.text.faint}`}>sess-00</code>
+            </div>
+            {/* Main agent - Line 4: Task count + Git diff */}
+            <div className="px-3 pt-1 pb-2 pl-[20px] flex items-center gap-2">
+              <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold bg-emerald-500/15 text-emerald-400">2/4 running</span>
+              <div className="inline-flex items-center gap-0 rounded-md border border-gray-700/40 overflow-hidden text-[10px] font-mono">
+                <span className="flex items-center gap-1 px-1.5 py-0.5 bg-green-500/10">
+                  <span className="w-1 h-1 rounded-full bg-green-400" />
+                  <span className="text-green-400">+1,372</span>
+                </span>
+                <span className="flex items-center gap-1 px-1.5 py-0.5 bg-red-500/10 border-l border-gray-700/40">
+                  <span className="w-1 h-1 rounded-full bg-red-400" />
+                  <span className="text-red-400">-668</span>
+                </span>
+                <span className="px-1.5 py-0.5 text-gray-500 border-l border-gray-700/40">17 files</span>
+              </div>
+            </div>
+
+            {/* ── Team Section ── */}
+            <div className={`border-t ${colors.card.border}`}>
+              {/* Team header: Users icon + name + members + health + tokens */}
+              <div className="pl-5 pr-2 py-1 bg-indigo-500/[0.05] border-b border-indigo-500/10 flex items-center justify-between">
+                <div className="flex items-center gap-1.5">
+                  <span className="shrink-0 flex items-center justify-center w-[18px] h-[18px] rounded bg-white/15">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-gray-100">
+                      <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/>
+                      <circle cx="9" cy="7" r="4"/>
+                      <path d="M22 21v-2a4 4 0 0 0-3-3.87"/>
+                      <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+                    </svg>
+                  </span>
+                  <span className="text-[10px] font-semibold text-gray-100">refactor-crew</span>
+                  <span className={`text-[9px] ${colors.text.muted}`}>3 members</span>
+                  <span className="text-[8px] px-1.5 py-0.5 rounded-full border bg-yellow-500/15 text-yellow-400 border-yellow-500/20">🟡 1 idle · 2 high-token</span>
+                </div>
+                <span className="font-mono text-[9px] tabular-nums text-amber-500">214.5k</span>
+              </div>
+              {/* Team member 1 - Backend-Staff: Active Sonnet */}
+              <div className={`${colors.card.bgAlt} pb-2`}>
+                {/* Line 1: └ + person icon + name + model + type + health + status + duration + tokens */}
+                <div className="px-3 pt-2 flex items-center justify-between">
+                  <div className="flex items-center gap-1 text-[10px]">
+                    <span className={colors.text.faint}>└</span>
+                    <span className="shrink-0 flex items-center justify-center w-[18px] h-[18px] rounded bg-white/15">
+                      <svg width="10" height="10" viewBox="0 0 16 16" fill="none" className="text-gray-100">
+                        <circle cx="8" cy="4.5" r="3" fill="currentColor"/><path d="M2.5 15c0-3 2.5-5.5 5.5-5.5s5.5 2.5 5.5 5.5" fill="currentColor" opacity="0.7"/>
+                      </svg>
+                    </span>
+                    <span className="font-medium px-1.5 py-0.5 rounded bg-white/15 text-gray-100">Backend-Staff</span>
+                    <span className="font-medium px-1 py-0.5 rounded bg-sky-500/15 text-sky-400">Sonnet 4.5</span>
+                    <span className={`px-1 py-0.5 rounded bg-pink-500/15 text-pink-400`}>General-Purpose</span>
+                    <span className="text-[8px] px-1 py-0.5 rounded-full bg-orange-500/15 text-orange-400">🔥</span>
+                    <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-emerald-500/15">
+                      <span className="text-emerald-400 animate-pulse">●</span>
+                      <span className="text-[8px] text-emerald-400">Active</span>
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2 font-mono text-[10px]">
+                    <span className={colors.text.dimmed}>12m 4s</span>
+                    <span className="text-amber-500">89.2k</span>
+                  </div>
+                </div>
+                {/* Line 2: Tools (left) + Token bar (right) */}
+                <div className="px-3 pt-1 pl-8 flex items-center gap-1">
+                  <span className="text-[9px] text-gray-500">🔧</span>
+                  <span className="text-[8px] px-1.5 py-0.5 rounded bg-sky-500/10 text-sky-400/80">Read</span>
+                  <span className="text-[8px] px-1.5 py-0.5 rounded bg-sky-500/10 text-sky-400/80">Grep</span>
+                  <span className="text-[8px] px-1.5 py-0.5 rounded bg-sky-500/10 text-sky-400/80">Glob</span>
+                  <div className="flex items-center gap-1.5 ml-auto">
+                    <div className="w-[50px] h-1 rounded-full bg-gray-700/30 overflow-hidden">
+                      <div className="h-full bg-amber-500/50 rounded-full" style={{ width: '42%' }} />
+                    </div>
+                    <span className="text-[8px] font-mono text-amber-500/70">42%</span>
+                  </div>
+                </div>
+                {/* Line 3: Description + Agent ID */}
+                <div className="px-3 pt-0.5 pl-8 flex items-center justify-between">
+                  <span className={`text-[9px] ${colors.text.dimmed}`}>💬 Audit auth module for security issues</span>
+                  <code className={`text-[8px] font-mono ${colors.text.faint}`}>task_00</code>
+                </div>
+              </div>
+              {/* Team member 2 - Frontend-Fixes: Idle Haiku with 💤 warning */}
+              <div className={`${colors.card.bgAlt} border-t ${colors.card.border} pb-2 relative`}>
+                <div className="px-3 pt-2 flex items-center justify-between">
+                  <div className="flex items-center gap-1 text-[10px]">
+                    <span className={colors.text.faint}>└</span>
+                    <span className="shrink-0 flex items-center justify-center w-[18px] h-[18px] rounded bg-white/15">
+                      <svg width="10" height="10" viewBox="0 0 16 16" fill="none" className="text-gray-100">
+                        <circle cx="8" cy="4.5" r="3" fill="currentColor"/><path d="M2.5 15c0-3 2.5-5.5 5.5-5.5s5.5 2.5 5.5 5.5" fill="currentColor" opacity="0.7"/>
+                      </svg>
+                    </span>
+                    <span className="font-medium px-1.5 py-0.5 rounded bg-white/15 text-gray-100">Frontend-Fixes</span>
+                    <span className="font-medium px-1 py-0.5 rounded bg-teal-500/15 text-teal-400">Haiku 4.5</span>
+                    <span className={`px-1 py-0.5 rounded bg-pink-500/15 text-pink-400`}>General-Purpose</span>
+                    <span className="text-[8px] px-1 py-0.5 rounded-full bg-yellow-500/15 text-yellow-400">💤</span>
+                    <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-yellow-500/15">
+                      <span className="text-yellow-400">●</span>
+                      <span className="text-[8px] text-yellow-400">Idle</span>
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2 font-mono text-[10px]">
+                    <span className={colors.text.dimmed}>12m 32s</span>
+                    <span className="text-amber-500">12.1k</span>
+                  </div>
+                </div>
+                <div className="px-3 pt-1 pl-8 flex items-center gap-1">
+                  <span className="text-[9px] text-gray-500">🔧</span>
+                  <span className="text-[8px] px-1.5 py-0.5 rounded bg-sky-500/10 text-sky-400/80">Read</span>
+                  <span className="text-[8px] px-1.5 py-0.5 rounded bg-sky-500/10 text-sky-400/80">Edit</span>
+                  <span className="text-[8px] px-1.5 py-0.5 rounded bg-sky-500/10 text-sky-400/80">Bash</span>
+                  <div className="flex items-center gap-1.5 ml-auto">
+                    <div className="w-[50px] h-1 rounded-full bg-gray-700/30 overflow-hidden">
+                      <div className="h-full bg-amber-500/50 rounded-full" style={{ width: '6%' }} />
+                    </div>
+                    <span className="text-[8px] font-mono text-amber-500/70">6%</span>
+                  </div>
+                </div>
+                <div className="px-3 pt-0.5 pl-8 flex items-center justify-between">
+                  <span className={`text-[9px] ${colors.text.dimmed}`}>💬 Fix frontend layout and responsive issues</span>
+                  <code className={`text-[8px] font-mono ${colors.text.faint}`}>task_00</code>
+                </div>
+                {/* Annotation: idle + health warning */}
+                <div className="absolute -right-1 top-1/2 -translate-y-1/2 translate-x-full hidden sm:flex items-center gap-1">
+                  <span className="w-4 h-px bg-yellow-500/40" />
+                  <span className="text-[7px] px-1 py-0.5 rounded bg-yellow-500/15 text-yellow-400 border border-yellow-500/20 whitespace-nowrap">💤 idle &gt;5m warning</span>
+                </div>
+              </div>
+              {/* Team member 3 - Backend-Security: Active Sonnet with 🔥 */}
+              <div className={`${colors.card.bgAlt} border-t ${colors.card.border} pb-2 relative`}>
+                <div className="px-3 pt-2 flex items-center justify-between">
+                  <div className="flex items-center gap-1 text-[10px]">
+                    <span className={colors.text.faint}>└</span>
+                    <span className="shrink-0 flex items-center justify-center w-[18px] h-[18px] rounded bg-white/15">
+                      <svg width="10" height="10" viewBox="0 0 16 16" fill="none" className="text-gray-100">
+                        <circle cx="8" cy="4.5" r="3" fill="currentColor"/><path d="M2.5 15c0-3 2.5-5.5 5.5-5.5s5.5 2.5 5.5 5.5" fill="currentColor" opacity="0.7"/>
+                      </svg>
+                    </span>
+                    <span className="font-medium px-1.5 py-0.5 rounded bg-white/15 text-gray-100">Backend-Security</span>
+                    <span className="font-medium px-1 py-0.5 rounded bg-sky-500/15 text-sky-400">Sonnet 4.5</span>
+                    <span className={`px-1 py-0.5 rounded bg-pink-500/15 text-pink-400`}>General-Purpose</span>
+                    <span className="text-[8px] px-1 py-0.5 rounded-full bg-orange-500/15 text-orange-400">🔥</span>
+                    <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-emerald-500/15">
+                      <span className="text-emerald-400 animate-pulse">●</span>
+                      <span className="text-[8px] text-emerald-400">Active</span>
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2 font-mono text-[10px]">
+                    <span className={colors.text.dimmed}>8m 51s</span>
+                    <span className="text-amber-500">113.2k</span>
+                  </div>
+                </div>
+                <div className="px-3 pt-1 pl-8 flex items-center gap-1">
+                  <span className="text-[9px] text-gray-500">🔧</span>
+                  <span className="text-[8px] px-1.5 py-0.5 rounded bg-sky-500/10 text-sky-400/80">Read</span>
+                  <span className="text-[8px] px-1.5 py-0.5 rounded bg-sky-500/10 text-sky-400/80">Edit</span>
+                  <span className="text-[8px] px-1.5 py-0.5 rounded bg-sky-500/10 text-sky-400/80">Grep</span>
+                  <div className="flex items-center gap-1.5 ml-auto">
+                    <div className="w-[50px] h-1 rounded-full bg-gray-700/30 overflow-hidden">
+                      <div className="h-full bg-amber-500/50 rounded-full" style={{ width: '53%' }} />
+                    </div>
+                    <span className="text-[8px] font-mono text-amber-500/70">53%</span>
+                  </div>
+                </div>
+                <div className="px-3 pt-0.5 pl-8 flex items-center justify-between">
+                  <span className={`text-[9px] ${colors.text.dimmed}`}>💬 Security hardening and input validation</span>
+                  <code className={`text-[8px] font-mono ${colors.text.faint}`}>task_00</code>
+                </div>
+                {/* Annotation: high-token warning */}
+                <div className="absolute -right-1 top-1/2 -translate-y-1/2 translate-x-full hidden sm:flex items-center gap-1">
+                  <span className="w-4 h-px bg-orange-500/40" />
+                  <span className="text-[7px] px-1 py-0.5 rounded bg-orange-500/15 text-orange-400 border border-orange-500/20 whitespace-nowrap">🔥 &gt;50k tokens</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Team feature callouts */}
+            <div className="px-2 py-2 bg-gradient-to-r from-indigo-500/[0.07] to-transparent border-t border-indigo-500/10">
+              <div className="grid grid-cols-2 gap-1.5">
+                <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-indigo-500/10">
+                  <span className="text-[10px]">📨</span>
+                  <span className={`text-[8px] ${colors.text.muted}`}>{lang === 'th' ? 'ส่งข้อความระหว่าง agents' : 'Inter-agent messaging'}</span>
+                </div>
+                <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-emerald-500/10">
+                  <span className="text-[10px]">📋</span>
+                  <span className={`text-[8px] ${colors.text.muted}`}>{lang === 'th' ? 'แบ่ง tasks อัตโนมัติ' : 'Auto task delegation'}</span>
+                </div>
+                <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-red-500/10">
+                  <span className="text-[10px]">⚠️</span>
+                  <span className={`text-[8px] ${colors.text.muted}`}>{lang === 'th' ? 'ตรวจจับ file conflict' : 'File conflict detection'}</span>
+                </div>
+                <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-yellow-500/10">
+                  <span className="text-[10px]">💤</span>
+                  <span className={`text-[8px] ${colors.text.muted}`}>{lang === 'th' ? 'เตือน idle + health check' : 'Idle warnings + health check'}</span>
+                </div>
+                <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-amber-500/10">
+                  <span className="text-[10px]">📊</span>
+                  <span className={`text-[8px] ${colors.text.muted}`}>{lang === 'th' ? 'Token % ต่อ member' : 'Per-member token tracking'}</span>
+                </div>
+                <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-violet-500/10">
+                  <span className="text-[10px]">🏥</span>
+                  <span className={`text-[8px] ${colors.text.muted}`}>{lang === 'th' ? 'สุขภาพทีม 🟢🟡🟠🔴' : 'Team health 🟢🟡🟠🔴'}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* ── Non-team subagent (stopped, dimmed) ── */}
+            <div className={`border-t ${colors.card.border} opacity-50 pb-2`}>
+              <div className="px-3 pt-2 flex items-center justify-between">
+                <div className="flex items-center gap-1 text-[10px]">
+                  <span className={colors.text.faint}>└</span>
+                  <span className="font-medium px-1 py-0.5 rounded bg-violet-500/15 text-violet-400">Opus 4.6</span>
+                  <span className={`px-1 py-0.5 rounded bg-pink-500/15 text-pink-400`}>Explore</span>
+                  <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-gray-500/15">
+                    <span className="text-gray-500">○</span>
+                    <span className="text-[8px] text-gray-500">Stopped</span>
+                  </span>
+                </div>
+                <div className="flex items-center gap-2 font-mono text-[10px]">
+                  <span className={colors.text.dimmed}>3m 18s</span>
+                  <span className="text-amber-500">166.8k</span>
+                </div>
+              </div>
+              <div className="px-3 pt-1 pl-8 flex items-center gap-1">
+                <span className="text-[9px] text-gray-500">🔧</span>
+                <span className="text-[8px] px-1.5 py-0.5 rounded bg-sky-500/10 text-sky-400/80">Read</span>
+                <span className="text-[8px] px-1.5 py-0.5 rounded bg-sky-500/10 text-sky-400/80">Grep</span>
+                <span className="text-[8px] px-1.5 py-0.5 rounded bg-sky-500/10 text-sky-400/80">Glob</span>
+              </div>
+              <div className="px-3 pt-0.5 pl-8 flex items-center justify-between">
+                <span className={`text-[9px] ${colors.text.dimmed}`}>💬 Research pre-existing errors</span>
+                <code className={`text-[8px] font-mono ${colors.text.faint}`}>task_00</code>
+              </div>
             </div>
           </div>
-          {/* Subagent 2 - stopped (dimmed) */}
-          <div className={`border-t ${colors.card.border} opacity-50`}>
-            <div className="px-3 pt-2 flex items-center justify-between">
-              <div className="flex items-center gap-1 text-[10px]">
-                <span className={colors.text.faint}>└</span>
-                <span className="font-medium px-1 py-0.5 rounded bg-sky-500/15 text-sky-400">Sonnet</span>
-                <span className={`px-1 py-0.5 rounded ${colors.card.bgAlt} text-pink-400`}>General-Purpose</span>
-                <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-gray-500/15">
-                  <span className="text-gray-500">○</span>
-                  <span className="text-[8px] text-gray-500">Stopped</span>
-                </span>
+
+          {/* ── Session 2: Active Sonnet (separate, no team) ── */}
+          <div className={`border-t-2 ${colors.card.border} ${colors.card.bg} bg-emerald-500/[0.02]`}>
+            <div className="px-3 pt-2.5 flex items-center justify-between">
+              <div className="flex items-center gap-1.5">
+                <span className="text-[11px] font-mono font-bold text-white w-[16px] text-right">3.</span>
+                <span className="text-[10px] font-medium px-1 py-0.5 rounded bg-sky-500/15 text-sky-400">Sonnet 4.5</span>
+                <span className="text-[10px] animate-pulse">🧠</span>
+                <span className="text-[9px] font-medium text-violet-400">Thinking</span>
               </div>
               <div className="flex items-center gap-2 font-mono text-[10px]">
-                <span className={colors.text.dimmed}>1m 6s</span>
-                <span className="text-amber-500">23.7k</span>
+                <span className={colors.text.dimmed}>8m 15s</span>
+                <span className="text-amber-500">33.7k</span>
               </div>
             </div>
-            <div className="px-3 pt-0.5 pb-1 flex items-center justify-between">
-              <span className={`text-[9px] ${colors.text.faint} truncate max-w-[220px]`}>💬 Design extended testing plan</span>
-              <code className={`text-[8px] font-mono ${colors.text.faint}`}>ae9647e</code>
+            <div className="px-3 pt-1 pl-[28px] flex items-center gap-1.5">
+              <span className="text-[10px] font-mono tracking-widest uppercase text-cyan-400/70">API-SERVER</span>
+            </div>
+            <div className="px-3 pt-1 pl-[20px] flex items-center justify-between">
+              <div className="flex items-center gap-1 text-[10px]">
+                <span className="text-orange-500">📝</span>
+                <span className="font-medium text-orange-500">Write</span>
+                <span className={colors.text.dimmed}>backend/routes/api.js</span>
+              </div>
+              <code className={`text-[8px] font-mono ${colors.text.faint}`}>sess-00</code>
+            </div>
+            <div className="px-3 pt-1 pb-2 pl-[20px] flex items-center gap-2">
+              <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold bg-emerald-500/15 text-emerald-400">1/1 running</span>
+              <div className="inline-flex items-center gap-0 rounded-md border border-gray-700/40 overflow-hidden text-[10px] font-mono">
+                <span className="flex items-center gap-1 px-1.5 py-0.5 bg-green-500/10">
+                  <span className="w-1 h-1 rounded-full bg-green-400" />
+                  <span className="text-green-400">+89</span>
+                </span>
+                <span className="flex items-center gap-1 px-1.5 py-0.5 bg-red-500/10 border-l border-gray-700/40">
+                  <span className="w-1 h-1 rounded-full bg-red-400" />
+                  <span className="text-red-400">-12</span>
+                </span>
+                <span className="px-1.5 py-0.5 text-gray-500 border-l border-gray-700/40">3 files</span>
+              </div>
+            </div>
+            {/* Non-team subagent of session 2 */}
+            <div className={`border-t ${colors.card.border} ${colors.card.bgAlt} pb-2`}>
+              <div className="px-3 pt-2 flex items-center justify-between">
+                <div className="flex items-center gap-1 text-[10px]">
+                  <span className={colors.text.faint}>└</span>
+                  <span className="font-medium px-1 py-0.5 rounded bg-teal-500/15 text-teal-400">Haiku 4.5</span>
+                  <span className={`px-1 py-0.5 rounded bg-pink-500/15 text-pink-400`}>General-Purpose</span>
+                  <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-emerald-500/15">
+                    <span className="text-emerald-400 animate-pulse">●</span>
+                    <span className="text-[8px] text-emerald-400">Active</span>
+                  </span>
+                </div>
+                <div className="flex items-center gap-2 font-mono text-[10px]">
+                  <span className={colors.text.dimmed}>1m 30s</span>
+                  <span className="text-amber-500">5.1k</span>
+                </div>
+              </div>
+              <div className="px-3 pt-1 pl-8 flex items-center gap-1">
+                <span className="text-[9px] text-gray-500">🔧</span>
+                <span className="text-[8px] px-1.5 py-0.5 rounded bg-sky-500/10 text-sky-400/80">Glob</span>
+                <span className="text-[8px] px-1.5 py-0.5 rounded bg-sky-500/10 text-sky-400/80">Read</span>
+              </div>
+              <div className="px-3 pt-0.5 pl-8 flex items-center justify-between">
+                <span className={`text-[9px] ${colors.text.dimmed}`}>💬 Search for related test files</span>
+                <code className={`text-[8px] font-mono ${colors.text.faint}`}>task_00</code>
+              </div>
+            </div>
+          </div>
+
+          {/* ── Team Comms Timeline ── */}
+          <div className={`border-t-2 ${colors.card.border} ${theme === 'light' ? 'bg-slate-50' : 'bg-gray-900/40'}`}>
+            <div className="px-2 py-1 flex items-center gap-1">
+              <span className="text-[9px]">📨</span>
+              <span className="text-[9px] font-medium text-indigo-400 uppercase tracking-wider">Team Comms</span>
+              <span className={`text-[8px] font-mono ${colors.text.muted}`}>(4)</span>
+            </div>
+            <div className="px-1 pb-1 space-y-0.5">
+              <div className="flex items-center gap-1 px-1 py-0.5 text-[9px]">
+                <span className={`font-mono ${colors.text.muted} shrink-0 w-[35px]`}>14:32</span>
+                <span className="font-medium text-cyan-400 shrink-0">researcher</span>
+                <span className={colors.text.muted}>→</span>
+                <span className="font-medium text-cyan-400 shrink-0">team-lead</span>
+                <span className={`${colors.text.muted} truncate`}>Auth module audit complete, found 3 issues</span>
+              </div>
+              <div className="flex items-center gap-1 px-1 py-0.5 text-[9px]">
+                <span className={`font-mono ${colors.text.muted} shrink-0 w-[35px]`}>14:30</span>
+                <span className="font-medium text-cyan-400 shrink-0">team-lead</span>
+                <span className={colors.text.muted}>→</span>
+                <span className="font-medium text-amber-400 shrink-0">ALL</span>
+                <span className={`${colors.text.muted} truncate`}>Starting refactor phase 2</span>
+              </div>
+              <div className="flex items-center gap-1 px-1 py-0.5 text-[9px]">
+                <span className={`font-mono ${colors.text.muted} shrink-0 w-[35px]`}>14:28</span>
+                <span className="font-medium text-cyan-400 shrink-0">implementer</span>
+                <span className={colors.text.muted}>→</span>
+                <span className="font-medium text-emerald-400 shrink-0">team-lead</span>
+                <span className={`${colors.text.muted} truncate`}>Task #3 done: auth middleware refactored</span>
+              </div>
+              <div className="flex items-center gap-1 px-1 py-0.5 text-[9px]">
+                <span className={`font-mono ${colors.text.muted} shrink-0 w-[35px]`}>14:25</span>
+                <span className="font-medium text-cyan-400 shrink-0">test-runner</span>
+                <span className={colors.text.muted}>→</span>
+                <span className="font-medium text-yellow-400 shrink-0">team-lead</span>
+                <span className={`${colors.text.muted} truncate`}>Idle — waiting for new test tasks</span>
+              </div>
+            </div>
+          </div>
+
+          {/* ── Activity Feed ── */}
+          <div className={`border-t-2 ${colors.card.border} ${theme === 'light' ? 'bg-white' : 'bg-gray-950/50'}`}>
+            <div className="p-1.5 space-y-0.5">
+              {/* User Prompt */}
+              <div className="flex items-start gap-2 py-1 px-2">
+                <div className="w-5 h-5 rounded-full bg-amber-500/20 flex items-center justify-center shrink-0 mt-0.5">
+                  <span className="text-[10px]">💬</span>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between mb-0.5">
+                    <span className="text-[10px] font-medium text-amber-500">User Prompt</span>
+                    <span className={`text-[9px] ${colors.text.muted} font-mono`}>2m ago</span>
+                  </div>
+                  <p className={`text-[11px] ${colors.text.secondary} leading-relaxed line-clamp-1`}>Refactor the authentication module to use JWT...</p>
+                </div>
+              </div>
+              {/* PreToolUse - Edit (active) */}
+              <div className="flex items-center gap-2 py-1 px-2">
+                <span className="text-[10px] shrink-0 animate-pulse">⏳</span>
+                <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-orange-500/15 text-orange-500 shrink-0">Edit</span>
+                <span className={`text-[10px] ${colors.text.muted} font-mono truncate flex-1`}>server.js</span>
+                <span className={`text-[9px] ${colors.text.muted} font-mono shrink-0`}>just now</span>
+              </div>
+              {/* PostToolUse - Read (done) */}
+              <div className="flex items-center gap-2 py-1 px-2">
+                <span className="text-[10px] shrink-0">✅</span>
+                <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-sky-500/15 text-sky-500 shrink-0">Read</span>
+                <span className={`text-[10px] ${colors.text.muted} font-mono truncate flex-1`}>auth/middleware.ts</span>
+                <span className={`text-[9px] ${colors.text.muted} font-mono shrink-0`}>30s ago</span>
+              </div>
+              {/* PostToolUse - Bash (done) */}
+              <div className="flex items-center gap-2 py-1 px-2">
+                <span className="text-[10px] shrink-0">✅</span>
+                <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-500 shrink-0">Bash</span>
+                <span className={`text-[10px] ${colors.text.muted} font-mono truncate flex-1`}>npm test -- --watch</span>
+                <span className={`text-[9px] ${colors.text.muted} font-mono shrink-0`}>1m ago</span>
+              </div>
+              {/* SubagentStart */}
+              <div className="flex items-center gap-2 py-1 px-2">
+                <div className="w-5 h-5 rounded flex items-center justify-center text-[10px] bg-violet-500/15">🤖</div>
+                <span className="text-[10px] font-medium text-violet-500 shrink-0">SubagentStart</span>
+                <span className={`text-[10px] ${colors.text.muted} truncate flex-1`}>researcher (Sonnet)</span>
+                <span className={`text-[9px] ${colors.text.muted} font-mono shrink-0`}>1m ago</span>
+              </div>
+              {/* TeamCreate */}
+              <div className="flex items-center gap-2 py-1 px-2">
+                <span className="text-[10px] shrink-0">✅</span>
+                <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-indigo-500/15 text-indigo-500 shrink-0">TeamCreate</span>
+                <span className={`text-[10px] ${colors.text.muted} font-mono truncate flex-1`}>refactor-crew</span>
+                <span className={`text-[9px] ${colors.text.muted} font-mono shrink-0`}>2m ago</span>
+              </div>
+              {/* SendMessage */}
+              <div className="flex items-center gap-2 py-1 px-2">
+                <span className="text-[10px] shrink-0">✅</span>
+                <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-cyan-500/15 text-cyan-500 shrink-0">SendMessage</span>
+                <span className={`text-[10px] ${colors.text.muted} font-mono truncate flex-1`}>→ researcher</span>
+                <span className={`text-[9px] ${colors.text.muted} font-mono shrink-0`}>2m ago</span>
+              </div>
+              {/* Stop */}
+              <div className="flex items-center gap-2 py-1 px-2">
+                <span className="text-[10px]">🛑</span>
+                <span className="text-[10px] text-red-500">Stopped</span>
+                <span className={`text-[9px] ${colors.text.muted} font-mono ml-auto`}>5m ago</span>
+              </div>
+            </div>
+          </div>
+
+          {/* ── Footer: Event Detail + Status Bar ── */}
+          <div className={`border-t-2 ${colors.card.border}`}>
+            {/* Row 1: Event Detail (expanded) */}
+            <div className={`bg-gradient-to-r from-orange-500/10 to-transparent p-2 border-b ${colors.card.border}`}>
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] px-1.5 py-0.5 rounded bg-orange-500/20 text-orange-500">⏳ PreToolUse</span>
+                <span className={`text-[10px] font-medium text-orange-400`}>Edit</span>
+                <span className={`text-[9px] ${colors.text.faint}`}>server.js</span>
+                <div className="flex-1" />
+                <span className={`text-[9px] ${colors.text.dimmed}`}>▲ collapse</span>
+              </div>
+              <div className={`mt-1.5 text-[9px] ${colors.text.muted} font-mono ${colors.code.bg} p-1.5 rounded max-h-[40px] overflow-hidden`}>
+                <div>Session: 91188c68 · just now</div>
+                <div className={colors.text.faint}>toolInput: {`{ "file_path": "server.js", "old_string": "..." }`}</div>
+              </div>
+            </div>
+            {/* Row 2: Status Bar */}
+            <div className={`${colors.card.bgAlt} px-2 py-1.5 flex items-center`}>
+              <div className="flex items-center gap-1 shrink-0">
+                <span className={`text-[9px] ${colors.text.dimmed}`}>Events <span className="font-mono">95</span></span>
+                <div className="flex items-center gap-px text-[8px]">
+                  <span className="px-0.5 py-0.5 rounded"><span className="text-[7px]">🔧</span><span className="font-mono text-cyan-400">42</span></span>
+                  <span className="px-0.5 py-0.5 rounded"><span className="text-[7px]">✅</span><span className="font-mono text-emerald-400">38</span></span>
+                  <span className="px-0.5 py-0.5 rounded"><span className="text-[7px]">❌</span><span className="font-mono text-red-400">3</span></span>
+                  <span className="px-0.5 py-0.5 rounded"><span className="text-[7px]">💬</span><span className="font-mono text-amber-400">12</span></span>
+                </div>
+              </div>
+              <div className="flex-1" />
+              <div className="flex items-center gap-1.5 shrink-0">
+                <span className={`text-[9px] ${colors.text.muted}`}>Month</span>
+                <span className="text-[9px] text-emerald-400 font-mono font-bold">$12.50</span>
+                <span className="text-[8px] text-violet-500 font-mono">◆$8</span>
+                <span className="text-[8px] text-blue-500 font-mono">●$4</span>
+                <span className="text-[8px] text-emerald-500 font-mono">▪$0</span>
+                <span className={`text-[9px] ${colors.text.muted}`}>|</span>
+                <span className={`text-[9px] ${colors.text.secondary} font-mono tabular-nums`}>14:33:07</span>
+              </div>
             </div>
           </div>
         </div>
+
         {/* Line descriptions */}
         <div className="mt-3 space-y-1">
+          <div className={`text-[10px] font-semibold ${colors.text.secondary} uppercase tracking-wider mt-2 mb-1`}>Main Agent</div>
           <div className={`text-[11px] ${colors.text.dimmed}`}><span className="text-emerald-400 font-mono">1</span> {txt.cardLine1}</div>
           <div className={`text-[11px] ${colors.text.dimmed}`}><span className="text-cyan-400 font-mono">2</span> {txt.cardLine2}</div>
           <div className={`text-[11px] ${colors.text.dimmed}`}><span className="text-amber-400 font-mono">3</span> {txt.cardLine3}</div>
-          <div className={`text-[11px] ${colors.text.faint} mt-1`}><span className="text-gray-500 font-mono">└</span> {txt.cardSubLine1}</div>
+          <div className={`text-[11px] ${colors.text.dimmed}`}><span className="text-violet-400 font-mono">4</span> {txt.cardLine4}</div>
+          <div className={`text-[10px] font-semibold ${colors.text.secondary} uppercase tracking-wider mt-3 mb-1`}>Team Header</div>
+          <div className={`text-[11px] ${colors.text.dimmed}`}><span className="text-indigo-400 font-mono">◆</span> {txt.teamHeaderDesc}</div>
+          <div className={`text-[10px] font-semibold ${colors.text.secondary} uppercase tracking-wider mt-3 mb-1`}>Team Member (Subagent)</div>
+          <div className={`text-[11px] ${colors.text.faint}`}><span className="text-gray-500 font-mono">└</span> {txt.cardSubLine1}</div>
           <div className={`text-[11px] ${colors.text.faint}`}><span className="text-gray-500 font-mono">&nbsp;</span> {txt.cardSubLine2}</div>
           <div className={`text-[11px] ${colors.text.faint}`}><span className="text-gray-500 font-mono">&nbsp;</span> {txt.cardSubLine3}</div>
+          <div className={`text-[10px] font-semibold ${colors.text.secondary} uppercase tracking-wider mt-3 mb-1`}>Non-team Subagent</div>
+          <div className={`text-[11px] ${colors.text.faint}`}><span className="text-gray-500 font-mono">└</span> {txt.cardNonTeamLine1}</div>
+          <div className={`text-[11px] ${colors.text.faint}`}><span className="text-gray-500 font-mono">&nbsp;</span> {txt.cardNonTeamLine2}</div>
+          <div className={`text-[11px] ${colors.text.faint}`}><span className="text-gray-500 font-mono">&nbsp;</span> {txt.cardNonTeamLine3}</div>
         </div>
       </div>
 
@@ -1685,13 +2177,34 @@ function MiniModeSection({ lang, theme = 'dark' }) {
       howStep2: 'Popup window opens (280x400px)',
       howStep3: 'Window stays on top while you work',
       featuresTitle: 'What it Shows',
-      feat1: 'Session gauge (5h usage %)',
-      feat2: 'Weekly gauge (7-day usage %)',
-      feat3: 'Agent list grouped by session',
-      feat4: 'Model badges (Op/So/Ha) with status dots',
-      feat5: 'Token usage per session',
-      feat6: 'Active session/task count',
-      feat7: 'Monthly cost in footer',
+      headerTitle: 'Header',
+      headerItems: [
+        'Connection indicator (green dot = live)',
+        'Extension sync icon (spinning = syncing, skull = offline)',
+        'Usage badge (Chill / Warming Up / On Fire / etc.)',
+      ],
+      gaugeTitle: 'Usage Gauges',
+      gaugeItems: [
+        'Session gauge — 5h rolling usage % with reset timer',
+        'Weekly gauge — 7-day usage % with reset timer',
+      ],
+      agentTitle: 'Agent List',
+      agentItems: [
+        'Sessions grouped by creation order, active first',
+        'Full model name (Opus 4.6, Sonnet 4.5, Haiku 4.5)',
+        'Live smart status with animated icons (Thinking, Reading, Writing, Executing, Spawning, etc.)',
+        'Token usage per session',
+        'Project name from working directory',
+        'Team badge with member count when teams are active',
+        'Subagent dots with model name + agent name',
+        'Active/total subagent count per session',
+      ],
+      footerTitle: 'Footer',
+      footerItems: [
+        'Active session count + active task count',
+        'Monthly estimated cost',
+        'Clear stopped agents button (✕)',
+      ],
       themeTitle: 'Theme Sync',
       themeDesc: 'Mini Mode automatically follows the theme of the main dashboard. Change theme in main app and the popup updates instantly.',
     },
@@ -1704,13 +2217,34 @@ function MiniModeSection({ lang, theme = 'dark' }) {
       howStep2: 'หน้าต่าง popup เปิดขึ้น (280x400px)',
       howStep3: 'หน้าต่างลอยอยู่ด้านบนขณะทำงาน',
       featuresTitle: 'แสดงอะไรบ้าง',
-      feat1: 'Session gauge (% การใช้งาน 5 ชม.)',
-      feat2: 'Weekly gauge (% การใช้งาน 7 วัน)',
-      feat3: 'รายการ agent จัดกลุ่มตาม session',
-      feat4: 'Model badges (Op/So/Ha) พร้อม status dots',
-      feat5: 'Token ที่ใช้ต่อ session',
-      feat6: 'จำนวน session/task ที่ active',
-      feat7: 'ค่าใช้จ่ายรายเดือนที่ footer',
+      headerTitle: 'Header',
+      headerItems: [
+        'ไฟสถานะการเชื่อมต่อ (จุดเขียว = เชื่อมต่อแล้ว)',
+        'ไอคอน sync extension (หมุน = กำลัง sync, หัวกระโหลก = ออฟไลน์)',
+        'Usage badge (Chill / Warming Up / On Fire / ฯลฯ)',
+      ],
+      gaugeTitle: 'Usage Gauges',
+      gaugeItems: [
+        'Session gauge — % การใช้งาน 5 ชม. พร้อมเวลา reset',
+        'Weekly gauge — % การใช้งาน 7 วัน พร้อมเวลา reset',
+      ],
+      agentTitle: 'รายการ Agent',
+      agentItems: [
+        'Session จัดกลุ่มตามเวลาสร้าง, active ขึ้นก่อน',
+        'ชื่อ model เต็ม (Opus 4.6, Sonnet 4.5, Haiku 4.5)',
+        'Smart status แบบ real-time พร้อมไอคอนเคลื่อนไหว (Thinking, Reading, Writing, Executing, Spawning ฯลฯ)',
+        'Token ที่ใช้ต่อ session',
+        'ชื่อ project จาก working directory',
+        'Team badge พร้อมจำนวนสมาชิก เมื่อมี team ทำงานอยู่',
+        'Subagent dots พร้อมชื่อ model + ชื่อ agent',
+        'จำนวน subagent active/ทั้งหมด ต่อ session',
+      ],
+      footerTitle: 'Footer',
+      footerItems: [
+        'จำนวน session active + จำนวน task active',
+        'ค่าใช้จ่ายประมาณรายเดือน',
+        'ปุ่มล้าง stopped agents (✕)',
+      ],
       themeTitle: 'Theme Sync',
       themeDesc: 'Mini Mode ซิงค์ theme กับ dashboard หลักอัตโนมัติ เปลี่ยน theme ที่ main app แล้ว popup อัปเดตทันที',
     }
@@ -1723,6 +2257,134 @@ function MiniModeSection({ lang, theme = 'dark' }) {
         <h4 className={`text-[13px] font-semibold ${colors.text.tertiary} uppercase tracking-wider mb-3`}>{txt.whatTitle}</h4>
         <div className={`p-4 rounded-xl ${colors.card.bg} border ${colors.card.border}`}>
           <p className={`text-[12px] ${colors.text.muted} leading-relaxed`}>{txt.whatDesc}</p>
+        </div>
+      </div>
+
+      {/* Visual Mockup of Mini Mode */}
+      <div className={`p-4 rounded-xl ${theme === 'light' ? 'bg-slate-100 border-slate-200' : 'bg-gradient-to-r from-gray-500/10 to-slate-500/10 border-gray-500/20'} border`}>
+        <h3 className={`text-base font-semibold ${colors.text.primary} mb-2`}>{lang === 'th' ? 'ตัวอย่างหน้าตา Mini Mode' : 'Mini Mode Preview'}</h3>
+        <p className={`text-[11px] ${colors.text.muted} mb-3`}>{lang === 'th' ? 'หน้าต่าง popup จริงจะแสดงผลคล้ายกับนี้' : 'The actual popup window will look similar to this'}</p>
+
+        {/* Mock Mini Window */}
+        <div className={`rounded-lg overflow-hidden border ${colors.card.border} max-w-[260px] mx-auto shadow-lg`}>
+          {/* Accent line */}
+          <div className="h-0.5 bg-gradient-to-r from-[#d97757] via-[#e8956f] to-[#d97757]" />
+
+          {/* Header */}
+          <div className={`h-7 flex items-center justify-between px-1.5 border-b ${colors.card.border} ${theme === 'light' ? 'bg-white' : 'bg-gray-900/80'}`}>
+            <div className="flex items-center gap-1.5">
+              <svg className="w-3 h-3 shrink-0" fill="none" viewBox="0 -.01 39.5 39.53" xmlns="http://www.w3.org/2000/svg">
+                <path d="m7.75 26.27 7.77-4.36.13-.38-.13-.21h-.38l-1.3-.08-4.44-.12-3.85-.16-3.73-.2-.94-.2-.88-1.16.09-.58.79-.53 1.13.1 2.5.17 3.75.26 2.72.16 4.03.42h.64l.09-.26-.22-.16-.17-.16-3.88-2.63-4.2-2.78-2.2-1.6-1.19-.81-.6-.76-.26-1.66 1.08-1.19 1.45.1.37.1 1.47 1.13 3.14 2.43 4.1 3.02.6.5.24-.17.03-.12-.27-.45-2.23-4.03-2.38-4.1-1.06-1.7-.28-1.02c-.1-.42-.17-.77-.17-1.2l1.23-1.67.68-.22 1.64.22.69.6 1.02 2.33 1.65 3.67 2.56 4.99.75 1.48.4 1.37.15.42h.26v-.24l.21-2.81.39-3.45.38-4.44.13-1.25.62-1.5 1.23-.81.96.46.79 1.13-.11.73-.47 3.05-.92 4.78-.6 3.2h.35l.4-.4 1.62-2.15 2.72-3.4 1.2-1.35 1.4-1.49.9-.71h1.7l1.25 1.86-.56 1.92-1.75 2.22-1.45 1.88-2.08 2.8-1.3 2.24.12.18.31-.03 4.7-1 2.54-.46 3.03-.52 1.37.64.15.65-.54 1.33-3.24.8-3.8.76-5.66 1.34-.07.05.08.1 2.55.24 1.09.06h2.67l4.97.37 1.3.86.78 1.05-.13.8-2 1.02-2.7-.64-6.3-1.5-2.16-.54h-.3v.18l1.8 1.76 3.3 2.98 4.13 3.84.21.95-.53.75-.56-.08-3.63-2.73-1.4-1.23-3.17-2.67h-.21v.28l.73 1.07 3.86 5.8.2 1.78-.28.58-1 .35-1.1-.2-2.26-3.17-2.33-3.57-1.88-3.2-.23.13-1.11 11.95-.52.61-1.2.46-1-.76-.53-1.23.53-2.43.64-3.17.52-2.52.47-3.13.28-1.04-.02-.07-.23.03-2.36 3.24-3.59 4.85-2.84 3.04-.68.27-1.18-.61.11-1.09.66-.97 3.93-5 2.37-3.1 1.53-1.79-.01-.26h-.09l-10.44 6.78-1.86.24-.8-.75.1-1.23.38-.4 3.14-2.16z" fill="#d97757"/>
+              </svg>
+              <span className={`text-[10px] font-bold ${colors.text.primary}`}>Oh My Claude<span className="text-[#d97757]">!</span></span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
+              <svg className="w-2.5 h-2.5 text-sky-400" style={{ animation: 'spin 20s linear infinite' }} fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
+                <path d="M21 2v6h-6M3 12a9 9 0 0 1 15-6.7L21 8M3 22v-6h6M21 12a9 9 0 0 1-15 6.7L3 16" />
+              </svg>
+              <div className={`px-1 h-4 flex items-center rounded text-[7px] font-semibold ${theme === 'light' ? 'bg-sky-100 text-sky-700' : 'bg-sky-500/15 text-sky-400'}`}>
+                ❄️ Chill
+              </div>
+            </div>
+          </div>
+
+          {/* Gauges */}
+          <div className={`px-2 pt-1.5 pb-2 border-b ${colors.card.border} ${theme === 'light' ? 'bg-slate-50' : 'bg-gray-900/40'}`}>
+            {/* Session gauge */}
+            <div className="space-y-0.5">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1">
+                  <span className={`text-[8px] ${colors.text.muted}`}>Session</span>
+                  <span className={`text-[7px] ${colors.text.muted} opacity-60`}>Resets in 3h 12m</span>
+                </div>
+                <span className="text-[8px] font-mono font-bold text-green-500">24%</span>
+              </div>
+              <div className={`h-1 rounded-full ${theme === 'light' ? 'bg-slate-200' : 'bg-gray-700'} overflow-hidden relative`}>
+                <div className="absolute inset-0 bg-gradient-to-r from-green-500 via-yellow-500 to-red-500 rounded-full" />
+                <div className={`absolute inset-0 ${theme === 'light' ? 'bg-slate-200' : 'bg-gray-700'} rounded-r-full`} style={{ left: '24%' }} />
+              </div>
+            </div>
+            {/* Weekly gauge */}
+            <div className="space-y-0.5 mt-1">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1">
+                  <span className={`text-[8px] ${colors.text.muted}`}>Weekly</span>
+                  <span className={`text-[7px] ${colors.text.muted} opacity-60`}>Resets in 2d 5h</span>
+                </div>
+                <span className="text-[8px] font-mono font-bold text-gray-400">41%</span>
+              </div>
+              <div className={`h-1 rounded-full ${theme === 'light' ? 'bg-slate-200' : 'bg-gray-700'} overflow-hidden relative`}>
+                <div className={`absolute inset-0 bg-gray-400 rounded-full`} />
+                <div className={`absolute inset-0 ${theme === 'light' ? 'bg-slate-200' : 'bg-gray-700'} rounded-r-full`} style={{ left: '41%' }} />
+              </div>
+            </div>
+          </div>
+
+          {/* Agent List */}
+          <div className={`${theme === 'light' ? 'bg-white' : 'bg-gray-950/50'}`}>
+            {/* Agent 1 — Active Opus */}
+            <div className={`border-b ${colors.card.border} bg-emerald-500/[0.03]`}>
+              <div className="flex items-center gap-1 px-2 pt-1 pb-0.5">
+                <span className="text-[10px] font-mono font-bold text-white shrink-0 w-[14px] text-right">1.</span>
+                <span className="text-[9px] font-bold px-1 py-0.5 rounded text-violet-400 bg-violet-500/20 shrink-0">Opus 4.6</span>
+                <span className="text-[11px] shrink-0 animate-pulse">🧠</span>
+                <span className="text-[10px] font-medium text-violet-400">Thinking</span>
+                <div className="flex-1" />
+                <span className="text-[8px] font-mono tabular-nums text-amber-500">12.4k</span>
+              </div>
+              <div className="flex items-center gap-1 px-2 pb-0.5 pl-[28px]">
+                <span className="text-[9px] font-mono tracking-widest uppercase text-cyan-400/70" style={{ fontFamily: "'Share Tech Mono', monospace", letterSpacing: '0.12em' }}>my-project</span>
+                <span className="text-[7px] px-1 py-0.5 rounded-full bg-indigo-500/15 text-indigo-400 border border-indigo-500/20 shrink-0">👥3</span>
+                <div className="flex-1" />
+                <span className={`text-[7px] ${colors.text.muted}`}>2/3</span>
+              </div>
+              {/* Subagents */}
+              <div className="flex flex-wrap items-center gap-1 px-2 pb-1 pl-[42px]">
+                <div className="flex items-center gap-0.5">
+                  <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                  <span className="text-[7px] font-bold text-sky-400">Sonnet 4.5</span>
+                  <span className="text-[6px] text-cyan-400/80">researcher</span>
+                </div>
+                <div className="flex items-center gap-0.5">
+                  <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                  <span className="text-[7px] font-bold text-teal-400">Haiku 4.5</span>
+                  <span className="text-[6px] text-cyan-400/80">test-runner</span>
+                </div>
+                <div className="flex items-center gap-0.5">
+                  <div className="w-1.5 h-1.5 rounded-full bg-gray-500" />
+                  <span className="text-[7px] font-bold text-sky-400">Sonnet 4.5</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Agent 2 — Stopped Sonnet */}
+            <div className={`border-b ${colors.card.border} opacity-50`}>
+              <div className="flex items-center gap-1 px-2 pt-1 pb-0.5">
+                <span className="text-[10px] font-mono font-bold text-white shrink-0 w-[14px] text-right">2.</span>
+                <span className="text-[9px] font-bold px-1 py-0.5 rounded text-sky-400 bg-sky-500/20 shrink-0">Sonnet 4.5</span>
+                <span className="text-[10px] shrink-0 text-gray-500">○</span>
+                <span className="text-[10px] text-gray-500">Stopped</span>
+                <div className="flex-1" />
+                <span className="text-[8px] font-mono tabular-nums text-amber-500">5.1k</span>
+              </div>
+              <div className="flex items-center gap-1 px-2 pb-1 pl-[28px]">
+                <span className="text-[9px] font-mono tracking-widest uppercase text-cyan-400/70" style={{ fontFamily: "'Share Tech Mono', monospace", letterSpacing: '0.12em' }}>api-server</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Footer */}
+          <div className={`h-6 flex items-center justify-between px-2 border-t ${colors.card.border} ${theme === 'light' ? 'bg-slate-50' : 'bg-gray-900/80'}`}>
+            <div className="flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+              <span className="text-[8px] text-emerald-400">1 session · 2 tasks</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="text-[8px] font-mono font-bold text-emerald-400">$12.50</span>
+              <span className={`text-[7px] ${colors.text.muted} opacity-40`}>✕</span>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -1741,13 +2403,55 @@ function MiniModeSection({ lang, theme = 'dark' }) {
 
       <div>
         <h4 className={`text-[13px] font-semibold ${colors.text.tertiary} uppercase tracking-wider mb-3`}>{txt.featuresTitle}</h4>
-        <div className="space-y-1.5">
-          {[txt.feat1, txt.feat2, txt.feat3, txt.feat4, txt.feat5, txt.feat6, txt.feat7].map((feat, i) => (
-            <div key={i} className={`flex items-center gap-2 px-3 py-2 rounded-lg ${colors.card.bg}`}>
-              <span className="text-emerald-400 text-[10px]">&#9679;</span>
-              <span className={`text-[12px] ${colors.text.muted}`}>{feat}</span>
+        <div className="space-y-4">
+          {/* Header */}
+          <div>
+            <div className={`text-[11px] font-semibold ${colors.text.secondary} mb-1.5`}>{txt.headerTitle}</div>
+            <div className="space-y-1">
+              {txt.headerItems.map((item, i) => (
+                <div key={i} className={`flex items-center gap-2 px-3 py-1.5 rounded-lg ${colors.card.bg}`}>
+                  <span className="text-sky-400 text-[10px]">&#9679;</span>
+                  <span className={`text-[11px] ${colors.text.muted}`}>{item}</span>
+                </div>
+              ))}
             </div>
-          ))}
+          </div>
+          {/* Gauges */}
+          <div>
+            <div className={`text-[11px] font-semibold ${colors.text.secondary} mb-1.5`}>{txt.gaugeTitle}</div>
+            <div className="space-y-1">
+              {txt.gaugeItems.map((item, i) => (
+                <div key={i} className={`flex items-center gap-2 px-3 py-1.5 rounded-lg ${colors.card.bg}`}>
+                  <span className="text-emerald-400 text-[10px]">&#9679;</span>
+                  <span className={`text-[11px] ${colors.text.muted}`}>{item}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+          {/* Agent List */}
+          <div>
+            <div className={`text-[11px] font-semibold ${colors.text.secondary} mb-1.5`}>{txt.agentTitle}</div>
+            <div className="space-y-1">
+              {txt.agentItems.map((item, i) => (
+                <div key={i} className={`flex items-center gap-2 px-3 py-1.5 rounded-lg ${colors.card.bg}`}>
+                  <span className="text-violet-400 text-[10px]">&#9679;</span>
+                  <span className={`text-[11px] ${colors.text.muted}`}>{item}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+          {/* Footer */}
+          <div>
+            <div className={`text-[11px] font-semibold ${colors.text.secondary} mb-1.5`}>{txt.footerTitle}</div>
+            <div className="space-y-1">
+              {txt.footerItems.map((item, i) => (
+                <div key={i} className={`flex items-center gap-2 px-3 py-1.5 rounded-lg ${colors.card.bg}`}>
+                  <span className="text-amber-400 text-[10px]">&#9679;</span>
+                  <span className={`text-[11px] ${colors.text.muted}`}>{item}</span>
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
       </div>
 
@@ -2274,6 +2978,310 @@ function FooterSection({ lang, theme = 'dark' }) {
             <span className={`text-[9px] ${colors.text.muted}`}>|</span>
             <span className={`text-[13px] ${colors.text.secondary} font-mono tabular-nums`}>23:02:15</span>
           </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Demo Mode Section
+function DemoSection({ lang, theme = 'dark' }) {
+  const colors = getThemeColors(theme);
+  const t = {
+    en: {
+      heroTitle: 'Demo Mode',
+      heroDesc: 'Experience the full dashboard without a live Claude Code session. Demo Mode replays real captured events with simulated data — perfect for showcasing, learning, or testing.',
+      enableTitle: 'How to Enable',
+      enableSteps: [
+        { step: '1', text: 'Open the Dashboard Guide (? button in toolbar)' },
+        { step: '2', text: 'Click the 🧪 Demo button in the guide header' },
+        { step: '3', text: 'The header changes from LIVE to DEMO with amber glow' },
+      ],
+      enableNote: 'Demo mode can be toggled on/off anytime. All live data is preserved.',
+      controlsTitle: 'Playback Controls',
+      controlsDesc: 'A retro-styled tape counter and control buttons appear next to the DEMO badge:',
+      counterLabel: 'Event Counter',
+      counterDesc: 'Digital LED counter showing current event number out of 1,006 total events. Digits spin up with animation as events play.',
+      playLabel: 'Play / Pause',
+      playDesc: 'Start replaying events. While playing, click again to pause — the counter freezes and state is preserved. Click Resume to continue from where you left off.',
+      resetLabel: 'Reset',
+      resetDesc: 'Stop playback and clear all state. Counter returns to 0000, all panels reset to empty.',
+      statesTitle: 'Playback States',
+      statesItems: [
+        { state: 'Idle', icon: '⏹', color: 'gray', desc: 'Initial state — counter shows 0000, dashboard empty' },
+        { state: 'Playing', icon: '▶', color: 'green', desc: 'Events replay at variable speed based on event type' },
+        { state: 'Paused', icon: '⏸', color: 'amber', desc: 'Frozen in place — all data visible, counter stopped' },
+        { state: 'Finished', icon: '✓', color: 'emerald', desc: 'All 1,006 events played — dashboard shows final state' },
+      ],
+      panelsTitle: 'What Gets Simulated',
+      panelsDesc: 'Demo mode populates every panel with realistic data:',
+      panelItems: [
+        { icon: '🎯', name: 'Token Usage', desc: 'Session 30%, Weekly 17%, with countdown timers. Last 12 Hours chart shows mixed Opus/Sonnet/Haiku bars.' },
+        { icon: '🤖', name: 'Agents Panel', desc: 'Main sessions spawn, subagents appear with real tool activity. Team "audit-crew" forms with 3 members working in parallel.' },
+        { icon: '👥', name: 'Team Agents', desc: 'code-reviewer, worker, and reviewer-2 — each with independent token growth, cycling tool tasks, and health indicators.' },
+        { icon: '📨', name: 'Team Comms', desc: '8 inter-agent messages flow between team lead, code-reviewer, and worker during the replay.' },
+        { icon: '📡', name: 'Activity Feed', desc: 'Events stream in real-time: Read, Write, Edit, Bash, Grep, Glob, TodoWrite, and more — with tool inputs.' },
+        { icon: '📋', name: 'Event Details', desc: 'Click any event to see Input/Output in the footer detail panel. PostToolUse events show generated tool responses.' },
+        { icon: '📈', name: 'Footer Stats', desc: 'Fixed event counts (1,000 total), monthly cost ($7,867), and per-model breakdown.' },
+        { icon: '🚦', name: 'Status Badge', desc: 'Header shows 🪴 Normal status with session percentage.' },
+      ],
+      speedTitle: 'Event Timing',
+      speedDesc: 'Different event types play at different speeds for a natural feel:',
+      speedItems: [
+        { type: 'UserPromptSubmit', speed: '600ms', desc: 'User messages — longest pause' },
+        { type: 'SubagentStart/Stop', speed: '400ms', desc: 'Agent lifecycle events' },
+        { type: 'SendMessage/TeamCreate', speed: '250ms', desc: 'Team operations' },
+        { type: 'PreToolUse/PostToolUse', speed: '80ms', desc: 'Tool calls — fastest' },
+      ],
+      dataTitle: 'Demo Data Source',
+      dataDesc: 'Events are captured from a real Claude Code session working on the CatStay Platform project — a multi-package NestJS + React app with tenant management, staff roles, and LINE LIFF integration.',
+      dataStats: [
+        { label: 'Total Events', value: '1,006' },
+        { label: 'Sessions', value: '2' },
+        { label: 'Team Members', value: '3' },
+        { label: 'Tool Types', value: '12+' },
+      ],
+      tipsTitle: 'Tips',
+      tips: [
+        'Pause anytime to explore the current state — click events, check team health, browse agents',
+        'The replay counter keeps its position when paused — Resume continues exactly where you stopped',
+        'Token Usage panel shows fixed demo data immediately, even before pressing Play',
+        'Reset clears everything — useful for restarting the demo for a fresh audience',
+      ],
+    },
+    th: {
+      heroTitle: 'Demo Mode',
+      heroDesc: 'สัมผัส dashboard เต็มรูปแบบโดยไม่ต้องมี Claude Code session จริง Demo Mode เล่นซ้ำ events จริงที่บันทึกไว้พร้อมข้อมูลจำลอง — เหมาะสำหรับ showcase, เรียนรู้, หรือทดสอบ',
+      enableTitle: 'วิธีเปิดใช้งาน',
+      enableSteps: [
+        { step: '1', text: 'เปิด Dashboard Guide (ปุ่ม ? ใน toolbar)' },
+        { step: '2', text: 'คลิกปุ่ม 🧪 Demo ที่ header ของ guide' },
+        { step: '3', text: 'Header เปลี่ยนจาก LIVE เป็น DEMO พร้อมแสงสีส้ม' },
+      ],
+      enableNote: 'เปิด/ปิด Demo mode ได้ตลอด ข้อมูล live จะยังคงอยู่',
+      controlsTitle: 'ปุ่มควบคุมการเล่น',
+      controlsDesc: 'ตัวนับสไตล์ retro และปุ่มควบคุมจะปรากฏข้าง DEMO badge:',
+      counterLabel: 'ตัวนับ Event',
+      counterDesc: 'ตัวนับ LED แบบ digital แสดงหมายเลข event ปัจจุบันจากทั้งหมด 1,006 events ตัวเลขหมุนขึ้นพร้อม animation',
+      playLabel: 'Play / Pause',
+      playDesc: 'เริ่มเล่น events ขณะเล่นคลิกอีกครั้งเพื่อหยุดชั่วคราว — ตัวนับหยุดและข้อมูลคงอยู่ คลิก Resume เพื่อเล่นต่อ',
+      resetLabel: 'Reset',
+      resetDesc: 'หยุดการเล่นและล้างข้อมูลทั้งหมด ตัวนับกลับเป็น 0000 ทุก panel รีเซ็ต',
+      statesTitle: 'สถานะการเล่น',
+      statesItems: [
+        { state: 'Idle', icon: '⏹', color: 'gray', desc: 'สถานะเริ่มต้น — ตัวนับ 0000, dashboard ว่าง' },
+        { state: 'Playing', icon: '▶', color: 'green', desc: 'เล่น events ด้วยความเร็วต่างกันตามประเภท' },
+        { state: 'Paused', icon: '⏸', color: 'amber', desc: 'หยุดชั่วคราว — ข้อมูลยังแสดง ตัวนับหยุด' },
+        { state: 'Finished', icon: '✓', color: 'emerald', desc: 'เล่นครบ 1,006 events — dashboard แสดงสถานะสุดท้าย' },
+      ],
+      panelsTitle: 'สิ่งที่จำลอง',
+      panelsDesc: 'Demo mode เติมข้อมูลทุก panel ด้วยข้อมูลสมจริง:',
+      panelItems: [
+        { icon: '🎯', name: 'Token Usage', desc: 'Session 30%, Weekly 17% พร้อมนับถอยหลัง กราฟ Last 12 Hours แสดงแท่ง Opus/Sonnet/Haiku ผสม' },
+        { icon: '🤖', name: 'Agents Panel', desc: 'Main session spawn, subagents ปรากฏพร้อม tool activity จริง ทีม "audit-crew" ก่อตัวพร้อมสมาชิก 3 คนทำงานพร้อมกัน' },
+        { icon: '👥', name: 'Team Agents', desc: 'code-reviewer, worker, reviewer-2 — แต่ละตัว token เพิ่มอิสระ, สลับ tool tasks, แสดง health indicators' },
+        { icon: '📨', name: 'Team Comms', desc: '8 ข้อความระหว่าง agent ไหลระหว่าง team lead, code-reviewer, และ worker ระหว่างเล่น' },
+        { icon: '📡', name: 'Activity Feed', desc: 'Events stream real-time: Read, Write, Edit, Bash, Grep, Glob, TodoWrite ฯลฯ — พร้อม tool inputs' },
+        { icon: '📋', name: 'Event Details', desc: 'คลิก event เพื่อดู Input/Output ใน footer PostToolUse events แสดง tool response ที่สร้างขึ้น' },
+        { icon: '📈', name: 'Footer Stats', desc: 'จำนวน event คงที่ (1,000), ค่าเดือน ($7,867), แยกตาม model' },
+        { icon: '🚦', name: 'Status Badge', desc: 'Header แสดง 🪴 Normal พร้อมเปอร์เซ็นต์ session' },
+      ],
+      speedTitle: 'ความเร็ว Event',
+      speedDesc: 'Event แต่ละประเภทเล่นด้วยความเร็วต่างกันเพื่อให้ดูเป็นธรรมชาติ:',
+      speedItems: [
+        { type: 'UserPromptSubmit', speed: '600ms', desc: 'ข้อความจาก user — หยุดนานสุด' },
+        { type: 'SubagentStart/Stop', speed: '400ms', desc: 'Agent lifecycle events' },
+        { type: 'SendMessage/TeamCreate', speed: '250ms', desc: 'Team operations' },
+        { type: 'PreToolUse/PostToolUse', speed: '80ms', desc: 'Tool calls — เร็วสุด' },
+      ],
+      dataTitle: 'แหล่งข้อมูล Demo',
+      dataDesc: 'Events ถูกบันทึกจาก Claude Code session จริงที่ทำงานบน CatStay Platform — แอป multi-package NestJS + React พร้อม tenant management, staff roles, และ LINE LIFF integration',
+      dataStats: [
+        { label: 'Events ทั้งหมด', value: '1,006' },
+        { label: 'Sessions', value: '2' },
+        { label: 'สมาชิกทีม', value: '3' },
+        { label: 'ประเภท Tool', value: '12+' },
+      ],
+      tipsTitle: 'เคล็ดลับ',
+      tips: [
+        'Pause ได้ตลอดเพื่อสำรวจสถานะ — คลิก events, ดู team health, ดู agents',
+        'ตัวนับจำตำแหน่งเมื่อ Pause — Resume เล่นต่อจากจุดเดิม',
+        'Token Usage panel แสดงข้อมูล demo ทันทีแม้ยังไม่กด Play',
+        'Reset ล้างทุกอย่าง — เหมาะสำหรับเริ่ม demo ใหม่',
+      ],
+    },
+  };
+  const txt = t[lang] || t.en;
+
+  const stateColors = { gray: 'from-gray-500/20', green: 'from-green-500/20', amber: 'from-amber-500/20', emerald: 'from-emerald-500/20' };
+  const stateTextColors = { gray: 'text-gray-400', green: 'text-green-400', amber: 'text-amber-400', emerald: 'text-emerald-400' };
+
+  return (
+    <div className="space-y-6">
+      {/* Hero Banner */}
+      <div className={`p-5 rounded-xl border ${theme === 'light' ? 'bg-gradient-to-br from-amber-50 to-orange-50 border-amber-200' : 'bg-gradient-to-br from-amber-500/10 via-orange-500/5 to-transparent border-amber-500/20'}`}>
+        <div className="flex items-start gap-4">
+          <div className={`w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0 ${theme === 'light' ? 'bg-amber-100' : 'bg-amber-500/20'}`}>
+            <span className="text-2xl">🧪</span>
+          </div>
+          <div>
+            <h3 className={`text-base font-bold ${colors.text.primary} mb-1`}>{txt.heroTitle}</h3>
+            <p className={`text-[12px] ${colors.text.muted} leading-relaxed`}>{txt.heroDesc}</p>
+          </div>
+        </div>
+      </div>
+
+      {/* How to Enable */}
+      <div>
+        <h4 className={`text-[13px] font-semibold ${colors.text.tertiary} uppercase tracking-wider mb-3`}>{txt.enableTitle}</h4>
+        <div className={`p-4 rounded-xl ${colors.card.bg} border ${colors.card.border}`}>
+          <div className="space-y-2.5">
+            {txt.enableSteps.map((s, i) => (
+              <div key={i} className="flex items-center gap-3">
+                <div className={`w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 text-[11px] font-bold ${theme === 'light' ? 'bg-amber-100 text-amber-700' : 'bg-amber-500/20 text-amber-400'}`}>
+                  {s.step}
+                </div>
+                <span className={`text-[12px] ${colors.text.secondary}`}>{s.text}</span>
+              </div>
+            ))}
+          </div>
+          <div className={`mt-3 text-[10px] ${colors.text.faint} flex items-center gap-1.5`}>
+            <span>💡</span> {txt.enableNote}
+          </div>
+        </div>
+      </div>
+
+      {/* Playback Controls */}
+      <div>
+        <h4 className={`text-[13px] font-semibold ${colors.text.tertiary} uppercase tracking-wider mb-3`}>{txt.controlsTitle}</h4>
+        <p className={`text-[11px] ${colors.text.dimmed} mb-3`}>{txt.controlsDesc}</p>
+
+        {/* Visual mockup of controls */}
+        <div className={`p-4 rounded-xl ${colors.card.bg} border ${colors.card.border} mb-4`}>
+          <div className="flex items-center justify-center gap-4 mb-4">
+            <div className="flex items-center gap-px">
+              {/* Mini counter mockup */}
+              <div className="flex items-center rounded-sm overflow-hidden" style={{
+                background: 'linear-gradient(180deg, #1a1a1a 0%, #0d0d0d 40%, #0a0a0a 60%, #1a1a1a 100%)',
+                border: '1px solid #555',
+                height: '24px',
+              }}>
+                {['0', '1', '2', '7'].map((d, i) => (
+                  <span key={i} className="inline-flex items-center justify-center" style={{
+                    fontFamily: "'Share Tech Mono', 'Courier New', monospace",
+                    fontSize: '15px', width: '15px', height: '24px', lineHeight: '24px',
+                    color: '#c8f0c8', textShadow: '0 0 4px rgba(100,255,100,0.4)',
+                    borderLeft: i > 0 ? '1px solid #555' : 'none',
+                  }}>{d}</span>
+                ))}
+              </div>
+              {/* Play button mockup */}
+              <div className="w-6 h-6 ml-1 rounded border border-green-500/50 bg-green-500/10 flex items-center justify-center">
+                <svg className="w-3 h-3 text-green-400" viewBox="0 0 10 12" fill="currentColor"><polygon points="0,0 10,6 0,12" /></svg>
+              </div>
+              {/* Reset button mockup */}
+              <div className="w-6 h-6 ml-0.5 rounded border border-red-500/50 bg-red-500/10 flex items-center justify-center">
+                <svg className="w-3 h-3 text-red-400" viewBox="0 0 10 10" fill="currentColor"><rect width="10" height="10" rx="1" /></svg>
+              </div>
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            {[
+              { label: txt.counterLabel, desc: txt.counterDesc, icon: '🔢', color: 'emerald' },
+              { label: txt.playLabel, desc: txt.playDesc, icon: '▶', color: 'green' },
+              { label: txt.resetLabel, desc: txt.resetDesc, icon: '■', color: 'red' },
+            ].map((item, i) => (
+              <div key={i} className={`flex items-start gap-3 p-2.5 rounded-lg ${colors.card.bgAlt}`}>
+                <div className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 text-[13px] bg-${item.color}-500/15 text-${item.color}-400`}>
+                  {item.icon}
+                </div>
+                <div>
+                  <div className={`text-[12px] font-medium ${colors.text.secondary}`}>{item.label}</div>
+                  <div className={`text-[10px] ${colors.text.dimmed} mt-0.5 leading-relaxed`}>{item.desc}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Playback States */}
+      <div>
+        <h4 className={`text-[13px] font-semibold ${colors.text.tertiary} uppercase tracking-wider mb-3`}>{txt.statesTitle}</h4>
+        <div className="grid grid-cols-2 gap-2">
+          {txt.statesItems.map((item, i) => (
+            <div key={i} className={`p-3 rounded-xl border ${colors.card.border} bg-gradient-to-r ${stateColors[item.color]} to-transparent`}>
+              <div className="flex items-center gap-2 mb-1">
+                <span className={`text-sm ${stateTextColors[item.color]}`}>{item.icon}</span>
+                <span className={`text-[12px] font-semibold ${stateTextColors[item.color]}`}>{item.state}</span>
+              </div>
+              <p className={`text-[10px] ${colors.text.dimmed} leading-relaxed`}>{item.desc}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* What Gets Simulated */}
+      <div>
+        <h4 className={`text-[13px] font-semibold ${colors.text.tertiary} uppercase tracking-wider mb-3`}>{txt.panelsTitle}</h4>
+        <p className={`text-[11px] ${colors.text.dimmed} mb-3`}>{txt.panelsDesc}</p>
+        <div className="grid grid-cols-2 gap-2">
+          {txt.panelItems.map((item, i) => (
+            <div key={i} className={`p-3 rounded-xl ${colors.card.bg} border ${colors.card.border}`}>
+              <div className="flex items-center gap-2 mb-1.5">
+                <span className="text-sm">{item.icon}</span>
+                <span className={`text-[11px] font-semibold ${colors.text.secondary}`}>{item.name}</span>
+              </div>
+              <p className={`text-[10px] ${colors.text.dimmed} leading-relaxed`}>{item.desc}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Event Timing */}
+      <div>
+        <h4 className={`text-[13px] font-semibold ${colors.text.tertiary} uppercase tracking-wider mb-3`}>{txt.speedTitle}</h4>
+        <p className={`text-[11px] ${colors.text.dimmed} mb-3`}>{txt.speedDesc}</p>
+        <div className={`rounded-xl overflow-hidden border ${colors.card.border}`}>
+          {txt.speedItems.map((item, i) => (
+            <div key={i} className={`flex items-center gap-3 px-4 py-2.5 ${i > 0 ? `border-t ${colors.card.border}` : ''} ${colors.card.bg}`}>
+              <code className={`text-[10px] ${theme === 'light' ? 'text-violet-600 bg-violet-50' : 'text-violet-300 bg-violet-500/10'} px-1.5 py-0.5 rounded font-mono min-w-[140px]`}>
+                {item.type}
+              </code>
+              <span className={`text-[11px] font-mono font-bold ${colors.text.secondary} min-w-[50px]`}>{item.speed}</span>
+              <span className={`text-[10px] ${colors.text.dimmed}`}>{item.desc}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Demo Data Source */}
+      <div>
+        <h4 className={`text-[13px] font-semibold ${colors.text.tertiary} uppercase tracking-wider mb-3`}>{txt.dataTitle}</h4>
+        <div className={`p-4 rounded-xl ${colors.card.bg} border ${colors.card.border}`}>
+          <p className={`text-[11px] ${colors.text.dimmed} leading-relaxed mb-3`}>{txt.dataDesc}</p>
+          <div className="grid grid-cols-4 gap-2">
+            {txt.dataStats.map((stat, i) => (
+              <div key={i} className={`text-center p-2.5 rounded-lg ${colors.card.bgAlt}`}>
+                <div className={`text-lg font-bold ${theme === 'light' ? 'text-amber-600' : 'text-amber-400'}`}>{stat.value}</div>
+                <div className={`text-[9px] ${colors.text.faint} mt-0.5`}>{stat.label}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Tips */}
+      <div>
+        <h4 className={`text-[13px] font-semibold ${colors.text.tertiary} uppercase tracking-wider mb-3`}>{txt.tipsTitle}</h4>
+        <div className="space-y-2">
+          {txt.tips.map((tip, i) => (
+            <div key={i} className={`flex items-start gap-2.5 p-3 rounded-xl ${colors.card.bg} border ${colors.card.border}`}>
+              <span className={`text-[11px] ${theme === 'light' ? 'text-amber-500' : 'text-amber-400'} mt-px`}>✦</span>
+              <span className={`text-[11px] ${colors.text.muted} leading-relaxed`}>{tip}</span>
+            </div>
+          ))}
         </div>
       </div>
     </div>

@@ -227,7 +227,7 @@ export function AgentTree({ agents = [], colors = {}, compact = false, expanded 
 
   // Compute team health summary
   const getTeamHealth = (teamInfo, teamTasks) => {
-    if (!teamInfo || teamInfo.status !== 'active') return null;
+    if (!teamInfo) return null;
     let health = 'green'; // green = healthy
     const issues = [];
 
@@ -297,6 +297,19 @@ export function AgentTree({ agents = [], colors = {}, compact = false, expanded 
           <div className="flex items-center flex-nowrap">
             <div className="flex-1 min-w-0 flex items-center gap-1 overflow-hidden">
               <span className={`${ctx.textMuted} text-[9px] shrink-0`}>└</span>
+              {task.teamName && (
+                <span className={`${ctx.expanded ? 'text-[10px]' : 'text-[9px]'} shrink-0 flex items-center justify-center w-[18px] h-[18px] rounded bg-white/15`} title={`Team: ${task.teamName}`}>
+                  <svg width="10" height="10" viewBox="0 0 16 16" fill="none" className="text-gray-100">
+                    <circle cx="8" cy="4.5" r="3" fill="currentColor"/>
+                    <path d="M2.5 15c0-3 2.5-5.5 5.5-5.5s5.5 2.5 5.5 5.5" fill="currentColor" opacity="0.7"/>
+                  </svg>
+                </span>
+              )}
+              {task.agentName && (
+                <span className={`${ctx.expanded ? 'text-[10px]' : 'text-[9px]'} font-medium px-1.5 py-0.5 rounded shrink-0 whitespace-nowrap ${task.teamName ? 'bg-white/15 text-gray-100' : 'bg-cyan-500/15 text-cyan-400'}`}>
+                  {task.agentName}
+                </span>
+              )}
               {model && (
                 <span className={`${ctx.expanded ? 'text-[10px]' : 'text-[9px]'} font-medium px-1.5 py-0.5 rounded shrink-0 whitespace-nowrap ${model.color} ${model.bg}`}>
                   {model.name}
@@ -305,11 +318,6 @@ export function AgentTree({ agents = [], colors = {}, compact = false, expanded 
               {typeInfo && (
                 <span className={`${ctx.expanded ? 'text-[10px]' : 'text-[9px]'} font-medium px-1.5 py-0.5 rounded shrink-0 whitespace-nowrap ${typeInfo.bg} ${typeInfo.text}`}>
                   {typeInfo.name}
-                </span>
-              )}
-              {task.agentName && (
-                <span className={`${ctx.expanded ? 'text-[10px]' : 'text-[9px]'} font-medium px-1.5 py-0.5 rounded shrink-0 whitespace-nowrap bg-cyan-500/15 text-cyan-400`}>
-                  {task.agentName}
                 </span>
               )}
               {/* Health warnings */}
@@ -341,31 +349,33 @@ export function AgentTree({ agents = [], colors = {}, compact = false, expanded 
             </div>
           </div>
 
-          {/* Token bar - only for team members with tokens */}
-          {!ctx.compact && tokenPct > 0 && (
-            <div className="pl-4 flex items-center gap-1.5">
-              <div className="flex-1 h-1 rounded-full bg-gray-700/30 overflow-hidden max-w-[80px]">
-                <div className="h-full rounded-full bg-amber-500/50 transition-all" style={{ width: `${Math.min(tokenPct, 100)}%` }} />
-              </div>
-              <span className="text-[8px] font-mono text-amber-500/70">{tokenPct}%</span>
-            </div>
-          )}
-
-          {/* Line 2: Tools */}
-          {!ctx.compact && task.toolsUsed && task.toolsUsed.length > 0 && (
-            <div className={`flex items-center gap-1 ${ctx.expanded ? 'pl-4 flex-wrap' : 'pl-4'}`}>
-              <span className="text-[9px] text-gray-500 shrink-0">🔧</span>
-              {task.toolsUsed.map((tool, idx) => (
-                <span key={idx} className={`${ctx.expanded ? 'text-[9px]' : 'text-[8px]'} px-1.5 py-0.5 rounded bg-sky-500/10 text-sky-400/80`}>
-                  {tool}
-                </span>
-              ))}
+          {/* Line 2: Tools + Token bar */}
+          {!ctx.compact && (task.toolsUsed?.length > 0 || tokenPct > 0) && (
+            <div className={`flex items-center gap-1 ${ctx.expanded ? 'pl-8 flex-wrap' : 'pl-8'}`}>
+              {task.toolsUsed?.length > 0 && (
+                <>
+                  <span className="text-[9px] text-gray-500 shrink-0">🔧</span>
+                  {task.toolsUsed.map((tool, idx) => (
+                    <span key={idx} className={`${ctx.expanded ? 'text-[9px]' : 'text-[8px]'} px-1.5 py-0.5 rounded bg-sky-500/10 text-sky-400/80`}>
+                      {tool}
+                    </span>
+                  ))}
+                </>
+              )}
+              {tokenPct > 0 && (
+                <div className="flex items-center gap-1.5 ml-auto shrink-0">
+                  <div className="h-1 rounded-full bg-gray-700/30 overflow-hidden w-[50px]">
+                    <div className="h-full rounded-full bg-amber-500/50 transition-all" style={{ width: `${Math.min(tokenPct, 100)}%` }} />
+                  </div>
+                  <span className="text-[8px] font-mono text-amber-500/70">{tokenPct}%</span>
+                </div>
+              )}
             </div>
           )}
 
           {/* Line 3: Description */}
           {!ctx.compact && desc && (
-            <div className="flex items-center gap-1.5 pl-4">
+            <div className="flex items-center gap-1.5 pl-8">
               <span className={`${ctx.expanded ? 'text-[10px]' : 'text-[9px]'} text-gray-400 truncate flex-1 min-w-0`}>
                 💬 {desc}
               </span>
@@ -405,9 +415,10 @@ export function AgentTree({ agents = [], colors = {}, compact = false, expanded 
           const teamInfo = teamBySession[sessionId];
           const hasConflicts = teamInfo?.fileConflicts?.length > 0;
 
-          // Separate team members from non-team tasks
-          const teamTasks = teamInfo?.status === 'active' ? tasks.filter(t => t.teamName === teamInfo.name) : [];
-          const nonTeamTasks = teamInfo?.status === 'active' ? tasks.filter(t => t.teamName !== teamInfo.name) : tasks;
+          // Separate team members from non-team tasks (show team grouping even after deletion)
+          const hasTeam = teamInfo && tasks.some(t => t.teamName === teamInfo.name);
+          const teamTasks = hasTeam ? tasks.filter(t => t.teamName === teamInfo.name) : [];
+          const nonTeamTasks = hasTeam ? tasks.filter(t => t.teamName !== teamInfo.name) : tasks;
           const teamHealth = getTeamHealth(teamInfo, teamTasks);
           const teamTotalTokens = teamTasks.reduce((sum, t) => sum + (t.tokens || (t.inputTokens || 0) + (t.outputTokens || 0) || 0), 0);
 
@@ -454,8 +465,8 @@ export function AgentTree({ agents = [], colors = {}, compact = false, expanded 
                         {main.cwd.split(/[\\/]/).pop()}
                       </span>
                     )}
-                    {teamInfo && teamInfo.status === 'active' && (
-                      <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-indigo-500/15 text-indigo-400 border border-indigo-500/20 whitespace-nowrap" title={`Team: ${teamInfo.name} (${teamInfo.memberCount} members)`}>
+                    {hasTeam && (
+                      <span className={`text-[9px] px-1.5 py-0.5 rounded-full ${teamInfo.status === 'active' ? 'bg-indigo-500/15 text-indigo-400 border-indigo-500/20' : 'bg-gray-500/15 text-gray-400 border-gray-500/20'} border whitespace-nowrap`} title={`Team: ${teamInfo.name} (${teamTasks.length} members)`}>
                         👥 {teamInfo.name}
                       </span>
                     )}
@@ -524,10 +535,17 @@ export function AgentTree({ agents = [], colors = {}, compact = false, expanded 
               {teamTasks.length > 0 && (
                 <div className={`border-t ${borderColor}`}>
                   {/* Team header */}
-                  <div className={`${expanded ? 'px-3 py-1.5' : 'px-2 py-1'} bg-indigo-500/[0.05] border-b border-indigo-500/10 flex items-center justify-between`}>
+                  <div className={`${expanded ? 'pr-3 pl-7 py-1.5' : 'pr-2 pl-5 py-1'} bg-indigo-500/[0.05] border-b border-indigo-500/10 flex items-center justify-between`}>
                     <div className="flex items-center gap-1.5">
-                      <span className="text-[10px]">👥</span>
-                      <span className="text-[10px] font-semibold text-indigo-400">{teamInfo.name}</span>
+                      <span className="shrink-0 flex items-center justify-center w-[18px] h-[18px] rounded bg-white/15">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-gray-100">
+                          <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/>
+                          <circle cx="9" cy="7" r="4"/>
+                          <path d="M22 21v-2a4 4 0 0 0-3-3.87"/>
+                          <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+                        </svg>
+                      </span>
+                      <span className="text-[10px] font-semibold text-gray-100">{teamInfo.name}</span>
                       <span className={`text-[9px] ${textMuted}`}>{teamTasks.length} member{teamTasks.length !== 1 ? 's' : ''}</span>
                       {teamHealth && (
                         <span className={`text-[8px] px-1.5 py-0.5 rounded-full border ${
@@ -546,7 +564,7 @@ export function AgentTree({ agents = [], colors = {}, compact = false, expanded 
                     </span>
                   </div>
                   {/* Team members */}
-                  <div className={tasksBg}>
+                  <div className={`${tasksBg} pb-2`}>
                     {teamTasks.map((task, i) => renderTask(task, i, teamTasks.length, { expanded, compact, textMuted, borderColor, getStatus, getModel, getTypeInfo, getDuration, formatTime, formatTokens, getHealthIndicator, agentConflicts, teamTotalTokens }))}
                   </div>
                 </div>
@@ -554,7 +572,7 @@ export function AgentTree({ agents = [], colors = {}, compact = false, expanded 
 
               {/* Non-team tasks */}
               {nonTeamTasks.length > 0 && (
-                <div className={`border-t ${borderColor} ${tasksBg}`}>
+                <div className={`border-t ${borderColor} ${tasksBg} pb-2`}>
                   {nonTeamTasks.map((task, i) => renderTask(task, i, nonTeamTasks.length, { expanded, compact, textMuted, borderColor, getStatus, getModel, getTypeInfo, getDuration, formatTime, formatTokens, getHealthIndicator, agentConflicts, teamTotalTokens: 0 }))}
                 </div>
               )}

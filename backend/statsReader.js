@@ -2,7 +2,7 @@
 // Simplified: Only calculates monthly costs from session files
 // Session/Weekly usage comes from Chrome extension (claudeUsage)
 import fs from 'fs/promises';
-import { existsSync, createReadStream } from 'fs';
+import { existsSync, createReadStream, statSync } from 'fs';
 import path from 'path';
 import { createInterface } from 'readline';
 
@@ -16,26 +16,22 @@ const PRICING = {
   'haiku': { input: 0.25, output: 1.25, cacheRead: 0.03, cacheCreation: 0.30 }
 };
 
-// Cache for session data (refresh every 15 seconds)
+// Cache for computed stats (refresh every 15 seconds)
 let cachedStats = null;
 let lastCacheTime = 0;
 const CACHE_TTL = 15000;
+
+// Incremental file cache: filePath -> { mtime, size, entries }
+// Avoids re-parsing unchanged files on every refresh
+const fileCache = new Map();
 
 // Get all project directories (async)
 async function getProjectDirs() {
   try {
     if (!existsSync(PROJECTS_DIR)) return [];
-    const items = await fs.readdir(PROJECTS_DIR);
-    const dirs = [];
-    for (const f of items) {
-      const fullPath = path.join(PROJECTS_DIR, f);
-      const stat = await fs.stat(fullPath);
-      if (stat.isDirectory()) {
-        dirs.push(fullPath);
-      }
-    }
-    return dirs;
-  } catch (err) {
+    const items = await fs.readdir(PROJECTS_DIR, { withFileTypes: true });
+    return items.filter(d => d.isDirectory()).map(d => path.join(PROJECTS_DIR, d.name));
+  } catch {
     return [];
   }
 }
@@ -43,18 +39,19 @@ async function getProjectDirs() {
 // Recursively find all .jsonl files in a directory (async)
 async function findJsonlFilesRecursive(dir, cutoff, results = []) {
   try {
-    const items = await fs.readdir(dir);
+    const items = await fs.readdir(dir, { withFileTypes: true });
     for (const item of items) {
-      const fullPath = path.join(dir, item);
-      const stat = await fs.stat(fullPath);
-
-      if (stat.isDirectory()) {
+      const fullPath = path.join(dir, item.name);
+      if (item.isDirectory()) {
         await findJsonlFilesRecursive(fullPath, cutoff, results);
-      } else if (item.endsWith('.jsonl') && stat.mtimeMs > cutoff) {
-        results.push({ path: fullPath, mtime: stat.mtimeMs, size: stat.size });
+      } else if (item.name.endsWith('.jsonl')) {
+        const stat = await fs.stat(fullPath);
+        if (stat.mtimeMs > cutoff) {
+          results.push({ path: fullPath, mtime: stat.mtimeMs, size: stat.size });
+        }
       }
     }
-  } catch (err) {
+  } catch {
     // Skip inaccessible directories
   }
   return results;
@@ -75,19 +72,11 @@ async function getSessionFiles(daysBack = 7) {
 
 // Parse a session file using STREAMING (memory efficient for large files)
 async function parseSessionFile(filePath) {
-  const results = {
-    entries: [],
-    byModel: {},
-    totalInput: 0,
-    totalOutput: 0,
-    totalCacheRead: 0,
-    totalCacheCreation: 0
-  };
+  const entries = [];
 
   try {
-    // Use readline streaming instead of loading entire file
     const rl = createInterface({
-      input: createReadStream(filePath, { highWaterMark: 64 * 1024 }), // 64KB chunks
+      input: createReadStream(filePath, { highWaterMark: 64 * 1024 }),
       crlfDelay: Infinity
     });
 
@@ -108,34 +97,16 @@ async function parseSessionFile(filePath) {
                           modelLower.includes('sonnet') ? 'sonnet' :
                           modelLower.includes('haiku') ? 'haiku' : 'other';
 
-          const inputTokens = usage.input_tokens || 0;
-          const outputTokens = usage.output_tokens || 0;
-          const cacheReadTokens = usage.cache_read_input_tokens || 0;
-          const cacheCreationTokens = usage.cache_creation_input_tokens || 0;
-
-          results.entries.push({
+          entries.push({
             timestamp: timestampMs,
             modelKey,
-            input: inputTokens,
-            output: outputTokens,
-            cacheRead: cacheReadTokens,
-            cacheCreation: cacheCreationTokens
+            input: usage.input_tokens || 0,
+            output: usage.output_tokens || 0,
+            cacheRead: usage.cache_read_input_tokens || 0,
+            cacheCreation: usage.cache_creation_input_tokens || 0
           });
-
-          if (!results.byModel[modelKey]) {
-            results.byModel[modelKey] = { input: 0, output: 0, cacheRead: 0, cacheCreation: 0 };
-          }
-          results.byModel[modelKey].input += inputTokens;
-          results.byModel[modelKey].output += outputTokens;
-          results.byModel[modelKey].cacheRead += cacheReadTokens;
-          results.byModel[modelKey].cacheCreation += cacheCreationTokens;
-
-          results.totalInput += inputTokens;
-          results.totalOutput += outputTokens;
-          results.totalCacheRead += cacheReadTokens;
-          results.totalCacheCreation += cacheCreationTokens;
         }
-      } catch (e) {
+      } catch {
         // Skip invalid lines
       }
     }
@@ -143,7 +114,20 @@ async function parseSessionFile(filePath) {
     console.error('Error parsing session file:', err.message);
   }
 
-  return results;
+  return entries;
+}
+
+// Get entries for a file, using cache if file hasn't changed
+async function getFileEntries(file) {
+  const cached = fileCache.get(file.path);
+  if (cached && cached.mtime === file.mtime && cached.size === file.size) {
+    return cached.entries;
+  }
+
+  // File changed or new — re-parse
+  const entries = await parseSessionFile(file.path);
+  fileCache.set(file.path, { mtime: file.mtime, size: file.size, entries });
+  return entries;
 }
 
 // Calculate cost for tokens
@@ -157,6 +141,50 @@ function calculateCost(model, input, output, cacheRead, cacheCreation) {
   );
 }
 
+// Aggregate entries by model for a time range
+function aggregateEntries(allEntries, startMs) {
+  let tokens = 0;
+  let cost = 0;
+  const byModel = {};
+
+  for (const entry of allEntries) {
+    if (entry.timestamp < startMs) continue;
+    tokens += entry.input + entry.output;
+
+    if (!byModel[entry.modelKey]) {
+      byModel[entry.modelKey] = { input: 0, output: 0, cacheRead: 0, cacheCreation: 0 };
+    }
+    byModel[entry.modelKey].input += entry.input;
+    byModel[entry.modelKey].output += entry.output;
+    byModel[entry.modelKey].cacheRead += entry.cacheRead;
+    byModel[entry.modelKey].cacheCreation += entry.cacheCreation;
+  }
+
+  for (const [model, data] of Object.entries(byModel)) {
+    cost += calculateCost(model, data.input, data.output, data.cacheRead, data.cacheCreation);
+  }
+
+  return { tokens, cost, byModel };
+}
+
+// Build model usage display object
+function buildModelUsage(byModel) {
+  const result = {};
+  for (const [model, data] of Object.entries(byModel)) {
+    const displayName = model.charAt(0).toUpperCase() + model.slice(1);
+    const cost = calculateCost(model, data.input, data.output, data.cacheRead, data.cacheCreation);
+    result[displayName] = {
+      inputTokens: data.input,
+      outputTokens: data.output,
+      cacheReadTokens: data.cacheRead,
+      cacheCreationTokens: data.cacheCreation,
+      totalTokens: data.input + data.output,
+      estimatedCost: Math.round(cost * 100) / 100
+    };
+  }
+  return result;
+}
+
 // Main function - only calculates monthly cost data
 // Session/Weekly usage should come from Chrome extension
 export async function readStatsCache() {
@@ -164,77 +192,46 @@ export async function readStatsCache() {
     return cachedStats;
   }
 
-  console.log('[STATS] Refreshing token stats from session files...');
+  const t0 = Date.now();
 
   const sessionFiles = await getSessionFiles(31); // Last 31 days for monthly
-  console.log(`   Found ${sessionFiles.length} session files`);
 
+  // Collect all entries using incremental file cache
+  // Only re-parses files whose mtime/size changed since last scan
   const allEntries = [];
-  const aggregatedByModel = {};
+  let cacheHits = 0;
+  let cacheMisses = 0;
 
   for (const file of sessionFiles) {
-    const stats = await parseSessionFile(file.path);
-    allEntries.push(...stats.entries);
-
-    for (const [model, data] of Object.entries(stats.byModel)) {
-      if (!aggregatedByModel[model]) {
-        aggregatedByModel[model] = { input: 0, output: 0, cacheRead: 0, cacheCreation: 0 };
-      }
-      aggregatedByModel[model].input += data.input;
-      aggregatedByModel[model].output += data.output;
-      aggregatedByModel[model].cacheRead += data.cacheRead;
-      aggregatedByModel[model].cacheCreation += data.cacheCreation;
+    const cached = fileCache.get(file.path);
+    if (cached && cached.mtime === file.mtime && cached.size === file.size) {
+      cacheHits++;
+      allEntries.push(...cached.entries);
+    } else {
+      cacheMisses++;
+      const entries = await parseSessionFile(file.path);
+      fileCache.set(file.path, { mtime: file.mtime, size: file.size, entries });
+      allEntries.push(...entries);
     }
   }
 
-  // Calculate Monthly usage (1st of current month to now)
+  // Clean stale file cache entries (files that no longer exist in scan)
+  const currentPaths = new Set(sessionFiles.map(f => f.path));
+  for (const key of fileCache.keys()) {
+    if (!currentPaths.has(key)) fileCache.delete(key);
+  }
+
+  // Monthly usage (1st of current month to now)
   const monthStart = new Date();
   monthStart.setDate(1);
   monthStart.setHours(0, 0, 0, 0);
-  const monthStartMs = monthStart.getTime();
+  const month = aggregateEntries(allEntries, monthStart.getTime());
+  const monthModelUsage = buildModelUsage(month.byModel);
 
-  let monthTokens = 0;
-  let monthCost = 0;
-  const monthByModel = {};
-
-  for (const entry of allEntries) {
-    if (entry.timestamp >= monthStartMs) {
-      monthTokens += entry.input + entry.output;
-
-      if (!monthByModel[entry.modelKey]) {
-        monthByModel[entry.modelKey] = { input: 0, output: 0, cacheRead: 0, cacheCreation: 0 };
-      }
-      monthByModel[entry.modelKey].input += entry.input;
-      monthByModel[entry.modelKey].output += entry.output;
-      monthByModel[entry.modelKey].cacheRead += entry.cacheRead;
-      monthByModel[entry.modelKey].cacheCreation += entry.cacheCreation;
-    }
-  }
-
-  // Calculate month cost by model
-  for (const [model, data] of Object.entries(monthByModel)) {
-    monthCost += calculateCost(model, data.input, data.output, data.cacheRead, data.cacheCreation);
-  }
-
-  // Build monthly model usage
-  const monthModelUsage = {};
-  for (const [model, data] of Object.entries(monthByModel)) {
-    const displayName = model.charAt(0).toUpperCase() + model.slice(1);
-    const cost = calculateCost(model, data.input, data.output, data.cacheRead, data.cacheCreation);
-    monthModelUsage[displayName] = {
-      inputTokens: data.input,
-      outputTokens: data.output,
-      cacheReadTokens: data.cacheRead,
-      cacheCreationTokens: data.cacheCreation,
-      totalTokens: data.input + data.output,
-      estimatedCost: Math.round(cost * 100) / 100
-    };
-  }
-
-  // Determine primary model (most used this month)
+  // Primary model this month
   let primaryModel = 'sonnet';
   let maxModelTokens = 0;
-  for (const [model, data] of Object.entries(monthByModel)) {
+  for (const [model, data] of Object.entries(month.byModel)) {
     const modelTokens = data.input + data.output;
     if (modelTokens > maxModelTokens) {
       maxModelTokens = modelTokens;
@@ -242,51 +239,14 @@ export async function readStatsCache() {
     }
   }
 
-  // Calculate Weekly usage (last 7 days)
+  // Weekly usage (last 7 days)
   const weekStart = new Date();
   weekStart.setDate(weekStart.getDate() - 7);
   weekStart.setHours(0, 0, 0, 0);
-  const weekStartMs = weekStart.getTime();
+  const week = aggregateEntries(allEntries, weekStart.getTime());
+  const weekModelUsage = buildModelUsage(week.byModel);
 
-  let weekTokens = 0;
-  let weekCost = 0;
-  const weekByModel = {};
-
-  for (const entry of allEntries) {
-    if (entry.timestamp >= weekStartMs) {
-      weekTokens += entry.input + entry.output;
-
-      if (!weekByModel[entry.modelKey]) {
-        weekByModel[entry.modelKey] = { input: 0, output: 0, cacheRead: 0, cacheCreation: 0 };
-      }
-      weekByModel[entry.modelKey].input += entry.input;
-      weekByModel[entry.modelKey].output += entry.output;
-      weekByModel[entry.modelKey].cacheRead += entry.cacheRead;
-      weekByModel[entry.modelKey].cacheCreation += entry.cacheCreation;
-    }
-  }
-
-  // Calculate week cost by model
-  for (const [model, data] of Object.entries(weekByModel)) {
-    weekCost += calculateCost(model, data.input, data.output, data.cacheRead, data.cacheCreation);
-  }
-
-  // Build weekly model usage
-  const weekModelUsage = {};
-  for (const [model, data] of Object.entries(weekByModel)) {
-    const displayName = model.charAt(0).toUpperCase() + model.slice(1);
-    const cost = calculateCost(model, data.input, data.output, data.cacheRead, data.cacheCreation);
-    weekModelUsage[displayName] = {
-      inputTokens: data.input,
-      outputTokens: data.output,
-      cacheReadTokens: data.cacheRead,
-      cacheCreationTokens: data.cacheCreation,
-      totalTokens: data.input + data.output,
-      estimatedCost: Math.round(cost * 100) / 100
-    };
-  }
-
-  // Generate hourly breakdown for last 12 hours (most recent first)
+  // Hourly breakdown for last 12 hours
   const now = new Date();
   const currentHour = now.getHours();
   const session_hourly = [];
@@ -301,7 +261,6 @@ export async function readStatsCache() {
     const hourStartMs = hourStart.getTime();
     const hourEndMs = hourEnd.getTime();
 
-    // Find entries in this hour
     const hourByModel = { opus: 0, sonnet: 0, haiku: 0 };
     let hourTokens = 0;
 
@@ -325,33 +284,27 @@ export async function readStatsCache() {
   }
 
   cachedStats = {
-    // Monthly totals (calculated from session files)
-    month_used: monthTokens,
-    month_cost: Math.round(monthCost * 100) / 100,
+    month_used: month.tokens,
+    month_cost: Math.round(month.cost * 100) / 100,
     month_start: monthStart.toISOString().split('T')[0],
     monthModelUsage,
 
-    // Weekly totals (last 7 days)
-    week_used: weekTokens,
-    week_cost: Math.round(weekCost * 100) / 100,
+    week_used: week.tokens,
+    week_cost: Math.round(week.cost * 100) / 100,
     weekModelUsage,
 
-    // Hourly breakdown for last 12 hours
     session_hourly,
-
-    // Primary model this month
     session_primary_model: primaryModel,
 
-    // Model usage for display (use WEEKLY data)
     modelUsage: weekModelUsage,
-    totalCost: Math.round(weekCost * 100) / 100,
+    totalCost: Math.round(week.cost * 100) / 100,
 
     last_updated: new Date().toISOString()
   };
 
   lastCacheTime = Date.now();
-  console.log(`   Month: ${monthTokens.toLocaleString()} tokens, $${cachedStats.month_cost}`);
-  console.log(`   Week: ${weekTokens.toLocaleString()} tokens, $${cachedStats.week_cost}`);
+  const elapsed = Date.now() - t0;
+  console.log(`[STATS] ${sessionFiles.length} files (${cacheHits} cached, ${cacheMisses} parsed) in ${elapsed}ms — Month: ${month.tokens.toLocaleString()} tokens $${cachedStats.month_cost}, Week: ${week.tokens.toLocaleString()} tokens $${cachedStats.week_cost}`);
 
   return cachedStats;
 }

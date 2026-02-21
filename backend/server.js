@@ -9,7 +9,9 @@ import fsPromises from 'fs/promises';
 import { fileURLToPath } from 'url';
 import { createInterface } from 'readline';
 import { readStatsCache } from './statsReader.js';
-import { execSync } from 'child_process';
+import { execSync, exec } from 'child_process';
+import { promisify } from 'util';
+const execAsync = promisify(exec);
 import { z } from 'zod';
 
 // Claude projects directory
@@ -170,6 +172,11 @@ let teams = new Map(); // teamName -> { name, description, leadSessionId, leadAg
 let teamComms = []; // { timestamp, teamName, from, to, type, summary }
 let fileOwnership = new Map(); // filePath -> [{ agentId, agentName, teamName, timestamp }]
 
+// Helper: resolve agent display name for team comms (matches demo format)
+function getAgentDisplayName(agent) {
+  return agent?.agentName || (agent?.isTeamLead ? 'team-lead' : agent?.id?.slice(0, 8) || 'unknown');
+}
+
 // Agent timeout settings (5-level status hierarchy)
 const AGENT_IDLE_MS = 3 * 60 * 1000;      // 3 minutes - mark as idle
 const AGENT_STALE_MS = 8 * 60 * 1000;     // 8 minutes - mark as stale
@@ -245,6 +252,41 @@ function findAgentTranscript(reportedPath, agentId, startTime) {
   }
 
   return null;
+}
+
+// Lightweight async token reader for active subagents (streaming, cached by mtime)
+const subagentTokenCache = new Map(); // transcriptPath -> { mtimeMs, tokens, inputTokens, outputTokens }
+
+async function readSubagentTokens(transcriptPath) {
+  try {
+    if (!existsSync(transcriptPath)) return null;
+    const stat = statSync(transcriptPath);
+    const cached = subagentTokenCache.get(transcriptPath);
+    if (cached && cached.mtimeMs === stat.mtimeMs) return cached;
+
+    let inputTokens = 0;
+    let outputTokens = 0;
+    const rl = createInterface({
+      input: createReadStream(transcriptPath, { highWaterMark: 64 * 1024 }),
+      crlfDelay: Infinity
+    });
+    for await (const line of rl) {
+      if (!line.includes('"usage"')) continue; // fast skip
+      try {
+        const entry = JSON.parse(line);
+        if (entry.message?.usage) {
+          const u = entry.message.usage;
+          inputTokens += (u.input_tokens || 0) + (u.cache_read_input_tokens || 0);
+          outputTokens += u.output_tokens || 0;
+        }
+      } catch {}
+    }
+    const result = { mtimeMs: stat.mtimeMs, tokens: inputTokens + outputTokens, inputTokens, outputTokens };
+    subagentTokenCache.set(transcriptPath, result);
+    return result;
+  } catch {
+    return null;
+  }
 }
 
 // Parse agent transcript file to extract model, tokens, task
@@ -345,7 +387,12 @@ function loadEvents() {
     if (fs.existsSync(DB_FILE)) {
       const data = JSON.parse(fs.readFileSync(DB_FILE, 'utf-8'));
       events = data.events || [];
-      console.log(`[LOAD] Loaded ${events.length} events from disk`);
+      // Strip bloated raw.tool_input from loaded events (contains full file content)
+      let stripped = 0;
+      events.forEach(e => {
+        if (e.raw?.tool_input) { delete e.raw.tool_input; stripped++; }
+      });
+      console.log(`[LOAD] Loaded ${events.length} events from disk${stripped ? ` (stripped ${stripped} bloated raw fields)` : ''}`);
     }
   } catch (err) {
     console.error('Error loading events:', err.message);
@@ -358,7 +405,7 @@ function sanitizeEventForStorage(event) {
 
   // Remove large raw data but keep essential fields
   if (sanitized.raw) {
-    const { tool_response, tool_output, ...essentialRaw } = sanitized.raw;
+    const { tool_response, tool_output, tool_input, ...essentialRaw } = sanitized.raw;
     sanitized.raw = essentialRaw;
 
     // Keep only summary of tool response if it exists
@@ -369,9 +416,23 @@ function sanitizeEventForStorage(event) {
     }
   }
 
-  // Truncate large toolInput/toolOutput
+  // Truncate large toolInput/toolOutput (preserve essential small fields)
   if (sanitized.toolInput && JSON.stringify(sanitized.toolInput).length > 500) {
-    sanitized.toolInput = { _truncated: true, keys: Object.keys(sanitized.toolInput) };
+    const preserved = {};
+    const keepFields = ['type', 'recipient', 'summary', 'team_name', 'name',
+                        'subagent_type', 'description', 'file_path', 'command',
+                        'pattern', 'status', 'task_id', 'owner', 'skill'];
+    for (const key of keepFields) {
+      if (sanitized.toolInput[key] !== undefined) {
+        const val = sanitized.toolInput[key];
+        if (typeof val === 'string' && val.length > 200) {
+          preserved[key] = val.slice(0, 200) + '...';
+        } else {
+          preserved[key] = val;
+        }
+      }
+    }
+    sanitized.toolInput = { _truncated: true, keys: Object.keys(sanitized.toolInput), ...preserved };
   }
   if (sanitized.toolOutput && JSON.stringify(sanitized.toolOutput).length > 500) {
     sanitized.toolOutput = { _truncated: true, length: JSON.stringify(sanitized.toolOutput).length };
@@ -502,10 +563,13 @@ function processEvent(event) {
     let pendingTask = null;
     if (!processEvent.pendingTasks) processEvent.pendingTasks = [];
     if (processEvent.pendingTasks.length > 0) {
-      // Find matching pending task by subagent_type
+      // Find matching pending task by subagent_type or agentName
+      // When Task tool uses `name` param (e.g. name:"scan-backend"), Claude Code
+      // sets agent_type to that name, but subagent_type stays "general-purpose"
       const agentType = event.agentType || event.raw?.subagent_type;
       pendingTask = processEvent.pendingTasks.find(t =>
         t.subagentType?.toLowerCase() === agentType?.toLowerCase() ||
+        t.agentName?.toLowerCase() === agentType?.toLowerCase() ||
         t.subagentType === 'subagent'
       );
       if (pendingTask) {
@@ -543,8 +607,18 @@ function processEvent(event) {
     // Initialize toolsUsed Set for tracking tools from events (not just transcript)
     const toolsUsedSet = new Set(existing.toolsUsed || []);
 
-    const agentTeamName = pendingTask?.teamName || existing.teamName || null;
-    const agentName = pendingTask?.agentName || existing.agentName || null;
+    const agentTeamName = pendingTask?.teamName || event.raw?.team_name || existing.teamName || null;
+    const agentName = pendingTask?.agentName || event.raw?.agent_name || existing.agentName || null;
+
+    // Derive subagent transcript path from parent's transcript_path
+    // Pattern: {parentDir}/{parentSessionId}/subagents/agent-{agentId}.jsonl
+    let subagentTranscriptPath = existing.transcriptPath || null;
+    if (!subagentTranscriptPath && event.raw?.transcript_path) {
+      const parentTranscript = event.raw.transcript_path;
+      const parentDir = path.dirname(parentTranscript);
+      const parentBase = path.basename(parentTranscript, '.jsonl');
+      subagentTranscriptPath = path.join(parentDir, parentBase, 'subagents', `agent-${agentId}.jsonl`);
+    }
 
     agents.set(agentId, {
       ...existing,
@@ -560,7 +634,8 @@ function processEvent(event) {
       description: pendingTask?.description || existing.description,
       toolsUsed: Array.from(toolsUsedSet), // Store as array but track as Set
       teamName: agentTeamName,
-      agentName: agentName
+      agentName: agentName,
+      transcriptPath: subagentTranscriptPath
     });
 
     // Add to team if team_name specified
@@ -641,19 +716,41 @@ function processEvent(event) {
     }
   }
 
-  // Track tools used by subagents from PreToolUse events
+  // Track tools used + tokens for subagents from PreToolUse events
   if (event.type === 'PreToolUse' && event.agentId && event.toolName) {
     const agentId = event.agentId;
     const existing = agents.get(agentId);
     if (existing && existing.status !== 'stopped') {
       const toolsSet = new Set(existing.toolsUsed || []);
       toolsSet.add(event.toolName);
+      const eventTokens = (event.inputTokens || 0) + (event.outputTokens || 0);
       agents.set(agentId, {
         ...existing,
         status: 'active', // Reset idle/stale back to active
         toolsUsed: Array.from(toolsSet).slice(0, 8),
-        lastSeen: event.timestamp
+        lastSeen: event.timestamp,
+        tokens: (existing.tokens || 0) + eventTokens,
+        inputTokens: (existing.inputTokens || 0) + (event.inputTokens || 0),
+        outputTokens: (existing.outputTokens || 0) + (event.outputTokens || 0)
       });
+    }
+  }
+
+  // Accumulate tokens for subagents from PostToolUse events
+  if (event.type === 'PostToolUse' && event.agentId) {
+    const agentId = event.agentId;
+    const existing = agents.get(agentId);
+    if (existing && existing.status !== 'stopped') {
+      const eventTokens = (event.inputTokens || 0) + (event.outputTokens || 0);
+      if (eventTokens > 0) {
+        agents.set(agentId, {
+          ...existing,
+          lastSeen: event.timestamp,
+          tokens: (existing.tokens || 0) + eventTokens,
+          inputTokens: (existing.inputTokens || 0) + (event.inputTokens || 0),
+          outputTokens: (existing.outputTokens || 0) + (event.outputTokens || 0)
+        });
+      }
     }
   }
 
@@ -668,7 +765,7 @@ function processEvent(event) {
         if (!owners.some(o => o.agentId === ownerAgentId)) {
           owners.push({
             agentId: ownerAgentId,
-            agentName: ownerAgent.agentName || ownerAgent.id?.slice(0, 8) || 'unknown',
+            agentName: getAgentDisplayName(ownerAgent),
             teamName: ownerAgent.teamName,
             timestamp: event.timestamp
           });
@@ -748,8 +845,8 @@ function processEvent(event) {
         teamComms.push({
           timestamp: event.timestamp,
           teamName: senderTeam || 'unknown',
-          from: senderAgent?.agentName || senderAgent?.id?.slice(0, 8) || 'unknown',
-          to: toolInput.recipient || (toolInput.type === 'broadcast' ? 'ALL' : 'unknown'),
+          from: getAgentDisplayName(senderAgent),
+          to: toolInput.recipient || (toolInput.type === 'broadcast' ? 'ALL' : (toolInput.type === 'shutdown_response' ? 'team-lead' : 'unknown')),
           type: toolInput.type || 'message',
           summary: toolInput.summary || toolInput.content?.slice(0, 80) || ''
         });
@@ -781,13 +878,13 @@ function processEvent(event) {
           teamComms.push({
             timestamp: event.timestamp,
             teamName: senderAgent.teamName,
-            from: senderAgent.agentName || senderAgent.id?.slice(0, 8) || 'unknown',
+            from: getAgentDisplayName(senderAgent),
             to: 'task-list',
             type: 'task_completed',
             summary: toolInput.description || toolInput.content || `Task ${toolInput.task_id || ''} completed`
           });
           if (teamComms.length > 200) teamComms = teamComms.slice(-200);
-          console.log(`[TEAM] Task completed by ${senderAgent.agentName || senderAgent.id?.slice(0, 8)} in team "${senderAgent.teamName}"`);
+          console.log(`[TEAM] Task completed by ${getAgentDisplayName(senderAgent)} in team "${senderAgent.teamName}"`);
         }
       }
     }
@@ -802,13 +899,13 @@ function processEvent(event) {
       teamComms.push({
         timestamp: event.timestamp,
         teamName: existing.teamName,
-        from: existing.agentName || existing.id?.slice(0, 8) || 'unknown',
+        from: getAgentDisplayName(existing),
         to: 'system',
         type: 'idle',
         summary: 'Teammate went idle'
       });
       if (teamComms.length > 200) teamComms = teamComms.slice(-200);
-      console.log(`[TEAM] Teammate ${existing.agentName || agentId?.slice(0, 8)} idle in team "${existing.teamName}"`);
+      console.log(`[TEAM] Teammate ${getAgentDisplayName(existing)} idle in team "${existing.teamName}"`);
     }
   }
 
@@ -820,13 +917,13 @@ function processEvent(event) {
       teamComms.push({
         timestamp: event.timestamp,
         teamName: existing.teamName,
-        from: existing.agentName || existing.id?.slice(0, 8) || 'unknown',
+        from: getAgentDisplayName(existing),
         to: 'task-list',
         type: 'task_completed',
         summary: event.raw?.task_description || event.raw?.content || 'Task completed'
       });
       if (teamComms.length > 200) teamComms = teamComms.slice(-200);
-      console.log(`[TEAM] TaskCompleted by ${existing.agentName || agentId?.slice(0, 8)} in team "${existing.teamName}"`);
+      console.log(`[TEAM] TaskCompleted by ${getAgentDisplayName(existing)} in team "${existing.teamName}"`);
     }
   }
 
@@ -1053,7 +1150,7 @@ async function getStats() {
 
 // Cache for session token data (refresh every 5 seconds for realtime)
 const sessionTokenCache = new Map();
-const SESSION_TOKEN_CACHE_TTL = 5000;
+const SESSION_TOKEN_CACHE_TTL = 10000;
 
 // Read tokens from a session transcript file using STREAMING
 async function readSessionTokens(sessionId) {
@@ -1122,9 +1219,9 @@ async function readSessionTokens(sessionId) {
 
 // Git diff stats cache (per cwd, TTL 5 seconds)
 const gitDiffCache = new Map();
-const GIT_DIFF_CACHE_TTL = 5000;
+const GIT_DIFF_CACHE_TTL = 10000;
 
-function getGitDiffStats(cwd, initialCommit) {
+async function getGitDiffStats(cwd, initialCommit) {
   if (!cwd) return null;
 
   // Cache key includes initialCommit to separate session-based vs HEAD-based diffs
@@ -1138,12 +1235,11 @@ function getGitDiffStats(cwd, initialCommit) {
     // If initialCommit is set, diff from session start (includes committed + uncommitted)
     // Otherwise fall back to HEAD (uncommitted only)
     const diffBase = initialCommit || 'HEAD';
-    const output = execSync(`git diff --numstat ${diffBase}`, {
+    const { stdout: output } = await execAsync(`git diff --numstat ${diffBase}`, {
       cwd,
       encoding: 'utf-8',
       timeout: 5000,
-      windowsHide: true,
-      stdio: ['pipe', 'pipe', 'pipe']
+      windowsHide: true
     });
 
     let additions = 0;
@@ -1178,18 +1274,9 @@ function getAgentsLightweight() {
         result.elapsed = elapsed;
         result.elapsedFormatted = formatDuration(elapsed);
       }
-      // Include git diff stats - persist on agent so it survives status changes
-      if (agent.type === 'main' && agent.cwd) {
-        const freshDiff = getGitDiffStats(agent.cwd, agent.initialCommit);
-        if (freshDiff) {
-          result.gitDiff = freshDiff;
-          // Persist on the stored agent for future fallback (guard against deleted agent)
-          const current = agents.get(agent.id);
-          if (current) agents.set(agent.id, { ...current, gitDiff: freshDiff });
-        } else {
-          // Use previously stored gitDiff as fallback
-          result.gitDiff = agent.gitDiff || null;
-        }
+      // Use persisted gitDiff only (no execSync here — refreshed by periodic broadcast)
+      if (agent.type === 'main') {
+        result.gitDiff = agent.gitDiff || null;
       }
       return result;
     })
@@ -1237,6 +1324,24 @@ async function getAgents() {
   const tokenResults = await Promise.all(tokenPromises);
   const sessionTokenMap = new Map(tokenResults.map(r => [r.sessionId, r.tokens]));
 
+  // Fetch tokens for active subagents with transcript paths (parallel, cached)
+  const activeSubagents = agentList.filter(a => a.type !== 'main' && a.status !== 'stopped' && a.transcriptPath);
+  const subagentTokenPromises = activeSubagents.map(async (agent) => {
+    const tokens = await readSubagentTokens(agent.transcriptPath);
+    return { id: agent.id, tokens };
+  });
+  const subagentTokenResults = await Promise.all(subagentTokenPromises);
+  const subagentTokenMap = new Map(subagentTokenResults.filter(r => r.tokens).map(r => [r.id, r.tokens]));
+
+  // Fetch git diff stats for main agents in parallel (non-blocking)
+  const mainAgentsWithCwd = agentList.filter(a => a.type === 'main' && a.cwd);
+  const gitDiffPromises = mainAgentsWithCwd.map(async (agent) => {
+    const freshDiff = await getGitDiffStats(agent.cwd, agent.initialCommit);
+    return { id: agent.id, gitDiff: freshDiff };
+  });
+  const gitDiffResults = await Promise.all(gitDiffPromises);
+  const gitDiffMap = new Map(gitDiffResults.map(r => [r.id, r.gitDiff]));
+
   return agentList
     .map(agent => {
       // Calculate elapsed time for active agents
@@ -1260,12 +1365,22 @@ async function getAgents() {
         }
       }
 
+      // Add live tokens for active subagents (from transcript reading)
+      if (agent.type !== 'main' && subagentTokenMap.has(agent.id)) {
+        const st = subagentTokenMap.get(agent.id);
+        result.tokens = st.tokens;
+        result.inputTokens = st.inputTokens;
+        result.outputTokens = st.outputTokens;
+        // Persist back so lightweight reads also have tokens
+        const current = agents.get(agent.id);
+        if (current) agents.set(agent.id, { ...current, tokens: st.tokens, inputTokens: st.inputTokens, outputTokens: st.outputTokens });
+      }
+
       // Add git diff stats - persist on agent so it survives status changes
       if (agent.type === 'main' && agent.cwd) {
-        const freshDiff = getGitDiffStats(agent.cwd, agent.initialCommit);
+        const freshDiff = gitDiffMap.get(agent.id);
         if (freshDiff) {
           result.gitDiff = freshDiff;
-          // Guard against agent deleted by checkAgentTimeouts during await
           const current = agents.get(agent.id);
           if (current) agents.set(agent.id, { ...current, gitDiff: freshDiff });
         } else {
@@ -1414,6 +1529,12 @@ app.post('/events', eventLimiter, (req, res) => {
     };
 
     processEvent(event);
+
+    // Strip large raw.tool_input after processing (contains full file content for Write/Edit)
+    if (event.raw?.tool_input) {
+      delete event.raw.tool_input;
+    }
+
     broadcast({ type: 'event', event });
 
     // Broadcast lightweight agents immediately (no I/O) for realtime UI
@@ -1605,6 +1726,9 @@ for (const sid of Object.keys(smartStatusMap)) {
   if (!agents.has(`main_${sid}`)) delete smartStatusMap[sid];
 }
 console.log(`[LOAD] Rebuilt smartStatus for ${Object.keys(smartStatusMap).length} sessions`);
+
+// Pre-warm stats cache so first WebSocket client doesn't wait for cold-cache scan
+readStatsCache().then(() => console.log('[INIT] Stats cache pre-warmed')).catch(() => {});
 
 // Periodic stats broadcast (async)
 setInterval(async () => {

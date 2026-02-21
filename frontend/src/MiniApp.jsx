@@ -441,8 +441,8 @@ export default function MiniApp({ onSwitchToFull }) {
                     <span className={`text-[11px] font-mono tracking-widest uppercase text-cyan-400/70 truncate`} style={{ fontFamily: "'Share Tech Mono', 'Fira Code', 'JetBrains Mono', monospace", letterSpacing: '0.15em' }} title={main?.cwd || ''}>
                       {projectName || '—'}
                     </span>
-                    {teamInfo && teamInfo.status === 'active' && (
-                      <span className="text-[8px] px-1 py-0.5 rounded-full bg-indigo-500/15 text-indigo-400 border border-indigo-500/20 shrink-0" title={`Team: ${teamInfo.name}`}>
+                    {teamInfo && tasks.some(t => t.teamName === teamInfo.name) && (
+                      <span className={`text-[8px] px-1 py-0.5 rounded-full ${teamInfo.status === 'active' ? 'bg-indigo-500/15 text-indigo-400 border-indigo-500/20' : 'bg-gray-500/15 text-gray-400 border-gray-500/20'} border shrink-0`} title={`Team: ${teamInfo.name}`}>
                         👥{teamInfo.memberCount}
                       </span>
                     )}
