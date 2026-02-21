@@ -14,7 +14,7 @@
 
 ---
 
-## Why I Built This
+## 💡 Why I Built This
 
 ### 🔥 Token Burnout — the real pain
 
@@ -105,6 +105,9 @@ Edit your Claude settings file:
 | macOS / Linux | `~/.claude/settings.json` |
 
 Add the `hooks` section — replace `<PATH>` with your Oh-My-Claude folder path:
+
+<details>
+<summary>📋 Click to expand hooks JSON config</summary>
 
 ```json
 {
@@ -225,6 +228,8 @@ Add the `hooks` section — replace `<PATH>` with your Oh-My-Claude folder path:
 }
 ```
 
+</details>
+
 **Path examples** (use forward slashes `/` even on Windows):
 
 | OS | Example |
@@ -232,7 +237,11 @@ Add the `hooks` section — replace `<PATH>` with your Oh-My-Claude folder path:
 | Windows | `node "D:/Projects/Oh-My-Claude/hooks/send_event.js" --event-type PreToolUse` |
 | macOS | `node "/Users/john/Oh-My-Claude/hooks/send_event.js" --event-type PreToolUse` |
 
-### Step 3: Start
+### Step 3: Install Chrome Extension
+
+> **Strongly recommended** — this is how the Token Usage panel gets session/weekly % and countdown timers. See [Chrome Extension](#-chrome-extension-strongly-recommended) section for details.
+
+### Step 4: Start
 
 **Windows:**
 
@@ -248,12 +257,102 @@ npm run dev
 
 This starts both backend (port 4824) and frontend (port 4825).
 
-### Step 4: Open Dashboard
+### Step 5: Open Dashboard
 
 Open **http://localhost:4825** — you should see:
 
 - Header shows **LIVE** (green dot)
 - Backend status shows **OK**
+
+---
+
+## 🏗️ System Architecture
+
+```mermaid
+flowchart TD
+    CC["💻 Claude Code\nTerminal / IDE"]
+    CE["🌐 Chrome Extension\nFetches from claude.ai"]
+
+    CC -->|"Hooks send events"| BS
+    CE -->|"Sync usage %"| BS
+
+    BS["🖥️ Backend Server\nExpress + WebSocket · port 4824"]
+
+    BS --- Data["Events · Agents · Sessions · Teams · Usage %"]
+
+    Data -->|"WebSocket live updates"| DB
+
+    DB["📊 Dashboard\nReact UI · port 4825"]
+
+    style CC fill:#1a1a2e,stroke:#7c3aed,color:#e2e8f0
+    style CE fill:#1a1a2e,stroke:#0ea5e9,color:#e2e8f0
+    style BS fill:#065f46,stroke:#10b981,color:#e2e8f0
+    style Data fill:none,stroke:none,color:#94a3b8
+    style DB fill:#1e293b,stroke:#3b82f6,color:#e2e8f0
+```
+
+**Data Flow:**
+
+1. **Claude Code** → Hooks fire events (PreToolUse, PostToolUse, SessionStart, SessionEnd, etc.) → Backend
+2. **Chrome Extension** → Fetches usage % from claude.ai → Backend (every 1 min)
+3. **Backend** → Aggregates all data → Broadcasts via WebSocket
+4. **Dashboard** → Receives via WebSocket → Renders in real-time
+
+---
+
+## 🌐 Chrome Extension (Strongly Recommended)
+
+> **This is how the Token Usage panel gets its data.** Without the extension, you won't see session/weekly usage percentages or countdown timers — the core feature that prevents token burnout.
+
+Syncs your Claude.ai usage percentage to the dashboard every minute, automatically.
+
+### Install
+
+1. Open `chrome://extensions/`
+2. Enable **Developer mode** (top right)
+3. Click **Load unpacked** → select the `extension/` folder
+4. Open [claude.ai](https://claude.ai) once to login (extension grabs your session)
+
+### How it works
+
+```
+Claude.ai → Extension (fetches API every 1 min) → Backend :4824 → Dashboard
+```
+
+1. Extension detects your organization and starts syncing
+2. Dashboard header shows **Sync** badge with fun status messages
+3. Token Usage panel updates with live session % and countdown timers
+
+> **Note:** First login to claude.ai is required so the extension can grab your session cookie. After that, sync works in the background — no need to keep the tab open.
+
+---
+
+## 💻 Install as Desktop App (PWA)
+
+Oh My Claude supports **Progressive Web App** — you can install it as a standalone desktop app:
+
+1. Open **http://localhost:4825** in Chrome
+2. Click the **Install app** icon (monitor with ↓ arrow) in the address bar
+3. Click **"Install"** in the popup dialog
+4. App opens in its own window — pin to taskbar!
+
+**Benefits:**
+- Runs in a clean window without browser tabs or address bar
+- Can be pinned to taskbar / dock for quick access
+- Works just like a native desktop app
+
+> **Note:** The backend server (`npm run dev`) must be running for the app to work.
+
+---
+
+## 🪟 Mini Pop-out Window
+
+A compact floating window for monitoring while you work:
+
+- Click the **Mini Pop-out** button (↗) in the header toolbar
+- Opens a **280x400px** floating window
+- Shows: connection status, token stats, agent list, and recent activity
+- Perfect for keeping on the side while coding
 
 ---
 
@@ -309,96 +408,6 @@ A retro-styled tape counter and control buttons appear next to the DEMO badge:
 ### Demo Data Source
 
 Events are captured from a real Claude Code session using `scripts/prepare-demo-data.js`. The script converts `backend/events.json` into a trimmed, reproducible dataset at `frontend/src/data/demoData.js`.
-
----
-
-## 💻 Install as Desktop App (PWA)
-
-Oh My Claude supports **Progressive Web App** — you can install it as a standalone desktop app:
-
-1. Open **http://localhost:4825** in Chrome
-2. Click the **Install app** icon (monitor with ↓ arrow) in the address bar
-3. Click **"Install"** in the popup dialog
-4. App opens in its own window — pin to taskbar!
-
-**Benefits:**
-- Runs in a clean window without browser tabs or address bar
-- Can be pinned to taskbar / dock for quick access
-- Works just like a native desktop app
-
-> **Note:** The backend server (`npm run dev`) must be running for the app to work.
-
----
-
-## 🪟 Mini Pop-out Window
-
-A compact floating window for monitoring while you work:
-
-- Click the **Mini Pop-out** button (↗) in the header toolbar
-- Opens a **280x400px** floating window
-- Shows: connection status, token stats, agent list, and recent activity
-- Perfect for keeping on the side while coding
-
----
-
-## 🌐 Chrome Extension (Strongly Recommended)
-
-> **This is how the Token Usage panel gets its data.** Without the extension, you won't see session/weekly usage percentages or countdown timers — the core feature that prevents token burnout.
-
-Syncs your Claude.ai usage percentage to the dashboard every minute, automatically.
-
-### Install
-
-1. Open `chrome://extensions/`
-2. Enable **Developer mode** (top right)
-3. Click **Load unpacked** → select the `extension/` folder
-4. Open [claude.ai](https://claude.ai) once to login (extension grabs your session)
-
-### How it works
-
-```
-Claude.ai → Extension (fetches API every 1 min) → Backend :4824 → Dashboard
-```
-
-1. Extension detects your organization and starts syncing
-2. Dashboard header shows **Sync** badge with fun status messages
-3. Token Usage panel updates with live session % and countdown timers
-
-> **Note:** First login to claude.ai is required so the extension can grab your session cookie. After that, sync works in the background — no need to keep the tab open.
-
----
-
-## 🏗️ System Architecture
-
-```mermaid
-flowchart TD
-    CC["💻 Claude Code\nTerminal / IDE"]
-    CE["🌐 Chrome Extension\nFetches from claude.ai"]
-
-    CC -->|"Hooks send events"| BS
-    CE -->|"Sync usage %"| BS
-
-    BS["🖥️ Backend Server\nExpress + WebSocket · port 4824"]
-
-    BS --- Data["Events · Agents · Sessions · Teams · Usage %"]
-
-    Data -->|"WebSocket live updates"| DB
-
-    DB["📊 Dashboard\nReact UI · port 4825"]
-
-    style CC fill:#1a1a2e,stroke:#7c3aed,color:#e2e8f0
-    style CE fill:#1a1a2e,stroke:#0ea5e9,color:#e2e8f0
-    style BS fill:#065f46,stroke:#10b981,color:#e2e8f0
-    style Data fill:none,stroke:none,color:#94a3b8
-    style DB fill:#1e293b,stroke:#3b82f6,color:#e2e8f0
-```
-
-**Data Flow:**
-
-1. **Claude Code** → Hooks fire events (PreToolUse, PostToolUse, SessionStart, SessionEnd, etc.) → Backend
-2. **Chrome Extension** → Fetches usage % from claude.ai → Backend (every 1 min)
-3. **Backend** → Aggregates all data → Broadcasts via WebSocket
-4. **Dashboard** → Receives via WebSocket → Renders in real-time
 
 ---
 
@@ -640,12 +649,6 @@ Connect: `ws://localhost:4824`
 
 ---
 
-## License
-
-MIT
-
----
-
 ## 🤝 Contributing
 
 1. Fork the repository
@@ -653,3 +656,9 @@ MIT
 3. Commit changes: `git commit -m 'Add amazing feature'`
 4. Push: `git push origin feature/amazing`
 5. Open Pull Request
+
+---
+
+## 📄 License
+
+MIT

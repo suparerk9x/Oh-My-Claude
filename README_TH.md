@@ -1,6 +1,8 @@
 # Oh My Claude
 
 > แดชบอร์ดมอนิเตอร์ Claude Code แบบเรียลไทม์ — ดู token, agent, team, ค่าใช้จ่าย และ activity แบบสดๆ
+>
+> **🇬🇧 [Read in English](README.md)**
 
 ![Version](https://img.shields.io/badge/version-2.2-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
@@ -12,7 +14,7 @@
 
 ---
 
-## ทำไมถึงสร้าง
+## 💡 ทำไมถึงสร้าง
 
 ### 🔥 Token หมด — ปัญหาที่เจ็บจริง
 
@@ -103,6 +105,9 @@ npm run install:all
 | macOS / Linux | `~/.claude/settings.json` |
 
 เพิ่มส่วน `hooks` — เปลี่ยน `<PATH>` เป็น path ของโฟลเดอร์ Oh-My-Claude:
+
+<details>
+<summary>📋 คลิกเพื่อดู hooks JSON config</summary>
 
 ```json
 {
@@ -223,6 +228,8 @@ npm run install:all
 }
 ```
 
+</details>
+
 **ตัวอย่าง path** (ใช้ forward slash `/` แม้บน Windows):
 
 | OS | ตัวอย่าง |
@@ -230,7 +237,11 @@ npm run install:all
 | Windows | `node "D:/Projects/Oh-My-Claude/hooks/send_event.js" --event-type PreToolUse` |
 | macOS | `node "/Users/john/Oh-My-Claude/hooks/send_event.js" --event-type PreToolUse` |
 
-### ขั้นตอน 3: เริ่มใช้งาน
+### ขั้นตอน 3: ติดตั้ง Chrome Extension
+
+> **แนะนำอย่างยิ่ง** — นี่คือวิธีที่ Token Usage panel ได้ข้อมูล session/weekly % และนับถอยหลัง ดูรายละเอียดที่หมวด [Chrome Extension](#-chrome-extension-แนะนำอย่างยิ่ง)
+
+### ขั้นตอน 4: เริ่มใช้งาน
 
 **Windows:**
 
@@ -246,12 +257,102 @@ npm run dev
 
 รัน backend (port 4824) และ frontend (port 4825) พร้อมกัน
 
-### ขั้นตอน 4: เปิด Dashboard
+### ขั้นตอน 5: เปิด Dashboard
 
 เปิด **http://localhost:4825** — ควรจะเห็น:
 
 - Header แสดง **LIVE** (จุดเขียว)
 - สถานะ Backend แสดง **OK**
+
+---
+
+## 🏗️ สถาปัตยกรรมระบบ
+
+```mermaid
+flowchart TD
+    CC["💻 Claude Code\nTerminal / IDE"]
+    CE["🌐 Chrome Extension\nดึงข้อมูลจาก claude.ai"]
+
+    CC -->|"Hooks ส่ง events"| BS
+    CE -->|"Sync usage %"| BS
+
+    BS["🖥️ Backend Server\nExpress + WebSocket · port 4824"]
+
+    BS --- Data["Events · Agents · Sessions · Teams · Usage %"]
+
+    Data -->|"WebSocket อัปเดตสด"| DB
+
+    DB["📊 Dashboard\nReact UI · port 4825"]
+
+    style CC fill:#1a1a2e,stroke:#7c3aed,color:#e2e8f0
+    style CE fill:#1a1a2e,stroke:#0ea5e9,color:#e2e8f0
+    style BS fill:#065f46,stroke:#10b981,color:#e2e8f0
+    style Data fill:none,stroke:none,color:#94a3b8
+    style DB fill:#1e293b,stroke:#3b82f6,color:#e2e8f0
+```
+
+**การไหลของข้อมูล:**
+
+1. **Claude Code** → Hooks ยิง events (PreToolUse, PostToolUse, SessionStart, SessionEnd ฯลฯ) → Backend
+2. **Chrome Extension** → ดึง usage % จาก claude.ai → Backend (ทุก 1 นาที)
+3. **Backend** → รวมข้อมูลทั้งหมด → กระจายผ่าน WebSocket
+4. **Dashboard** → รับผ่าน WebSocket → แสดงผลแบบเรียลไทม์
+
+---
+
+## 🌐 Chrome Extension (แนะนำอย่างยิ่ง)
+
+> **นี่คือวิธีที่ Token Usage panel ได้ข้อมูลมา** ถ้าไม่มี extension จะไม่เห็น session/weekly usage % หรือนับถอยหลัง — ซึ่งเป็นฟีเจอร์หลักที่ป้องกันไม่ให้ token หมดโดยไม่รู้ตัว
+
+Sync % การใช้งานจาก Claude.ai มาที่ dashboard ทุก 1 นาที อัตโนมัติ
+
+### ติดตั้ง
+
+1. เปิด `chrome://extensions/`
+2. เปิด **Developer mode** (มุมขวาบน)
+3. กด **Load unpacked** → เลือกโฟลเดอร์ `extension/`
+4. เปิด [claude.ai](https://claude.ai) สักครั้งเพื่อ login (extension จะจับ session ไว้)
+
+### วิธีทำงาน
+
+```
+Claude.ai → Extension (ดึง API ทุก 1 นาที) → Backend :4824 → Dashboard
+```
+
+1. Extension ตรวจจับ organization และเริ่ม sync
+2. Header ของ dashboard แสดง **Sync** badge พร้อมสถานะตลกๆ
+3. Token Usage panel อัปเดต session % พร้อมนับถอยหลังแบบสดๆ
+
+> **หมายเหตุ:** ต้อง login เข้า claude.ai ครั้งแรกเพื่อให้ extension จับ session cookie ได้ หลังจากนั้น sync ทำงานใน background ได้เลย — ไม่ต้องเปิด tab ค้างไว้
+
+---
+
+## 💻 ติดตั้งเป็นแอป Desktop (PWA)
+
+Oh My Claude รองรับ **Progressive Web App** — ติดตั้งเป็นแอป standalone บน desktop ได้:
+
+1. เปิด **http://localhost:4825** ใน Chrome
+2. กดไอคอน **Install app** (จอมอนิเตอร์มีลูกศรลง) ที่ address bar
+3. กด **"Install"** ในป๊อปอัพ
+4. แอปเปิดในหน้าต่างของตัวเอง — pin ไว้ที่ taskbar ได้เลย!
+
+**ข้อดี:**
+- ทำงานในหน้าต่างเรียบๆ ไม่มี tab หรือ address bar
+- Pin ไว้ที่ taskbar / dock เข้าถึงเร็ว
+- ใช้งานเหมือนแอป desktop จริงๆ
+
+> **หมายเหตุ:** Backend server (`npm run dev`) ต้องรันอยู่
+
+---
+
+## 🪟 Mini Pop-out Window
+
+หน้าต่างลอยขนาดกะทัดรัดสำหรับดูระหว่างทำงาน:
+
+- กดปุ่ม **Mini Pop-out** (↗) ใน toolbar
+- เปิดหน้าต่างลอย **280x400px**
+- แสดง: สถานะเชื่อมต่อ, token stats, รายชื่อ agent, activity ล่าสุด
+- เหมาะสำหรับเปิดไว้ข้างๆ ตอน code
 
 ---
 
@@ -310,96 +411,6 @@ Events จับมาจาก Claude Code session จริงโดยใช�
 
 ---
 
-## 💻 ติดตั้งเป็นแอป Desktop (PWA)
-
-Oh My Claude รองรับ **Progressive Web App** — ติดตั้งเป็นแอป standalone บน desktop ได้:
-
-1. เปิด **http://localhost:4825** ใน Chrome
-2. กดไอคอน **Install app** (จอมอนิเตอร์มีลูกศรลง) ที่ address bar
-3. กด **"Install"** ในป๊อปอัพ
-4. แอปเปิดในหน้าต่างของตัวเอง — pin ไว้ที่ taskbar ได้เลย!
-
-**ข้อดี:**
-- ทำงานในหน้าต่างเรียบๆ ไม่มี tab หรือ address bar
-- Pin ไว้ที่ taskbar / dock เข้าถึงเร็ว
-- ใช้งานเหมือนแอป desktop จริงๆ
-
-> **หมายเหตุ:** Backend server (`npm run dev`) ต้องรันอยู่
-
----
-
-## 🪟 Mini Pop-out Window
-
-หน้าต่างลอยขนาดกะทัดรัดสำหรับดูระหว่างทำงาน:
-
-- กดปุ่ม **Mini Pop-out** (↗) ใน toolbar
-- เปิดหน้าต่างลอย **280x400px**
-- แสดง: สถานะเชื่อมต่อ, token stats, รายชื่อ agent, activity ล่าสุด
-- เหมาะสำหรับเปิดไว้ข้างๆ ตอน code
-
----
-
-## 🌐 Chrome Extension (แนะนำอย่างยิ่ง)
-
-> **นี่คือวิธีที่ Token Usage panel ได้ข้อมูลมา** ถ้าไม่มี extension จะไม่เห็น session/weekly usage % หรือนับถอยหลัง — ซึ่งเป็นฟีเจอร์หลักที่ป้องกันไม่ให้ token หมดโดยไม่รู้ตัว
-
-Sync % การใช้งานจาก Claude.ai มาที่ dashboard ทุก 1 นาที อัตโนมัติ
-
-### ติดตั้ง
-
-1. เปิด `chrome://extensions/`
-2. เปิด **Developer mode** (มุมขวาบน)
-3. กด **Load unpacked** → เลือกโฟลเดอร์ `extension/`
-4. เปิด [claude.ai](https://claude.ai) สักครั้งเพื่อ login (extension จะจับ session ไว้)
-
-### วิธีทำงาน
-
-```
-Claude.ai → Extension (ดึง API ทุก 1 นาที) → Backend :4824 → Dashboard
-```
-
-1. Extension ตรวจจับ organization และเริ่ม sync
-2. Header ของ dashboard แสดง **Sync** badge พร้อมสถานะตลกๆ
-3. Token Usage panel อัปเดต session % พร้อมนับถอยหลังแบบสดๆ
-
-> **หมายเหตุ:** ต้อง login เข้า claude.ai ครั้งแรกเพื่อให้ extension จับ session cookie ได้ หลังจากนั้น sync ทำงานใน background ได้เลย — ไม่ต้องเปิด tab ค้างไว้
-
----
-
-## 🏗️ สถาปัตยกรรมระบบ
-
-```mermaid
-flowchart TD
-    CC["💻 Claude Code\nTerminal / IDE"]
-    CE["🌐 Chrome Extension\nดึงข้อมูลจาก claude.ai"]
-
-    CC -->|"Hooks ส่ง events"| BS
-    CE -->|"Sync usage %"| BS
-
-    BS["🖥️ Backend Server\nExpress + WebSocket · port 4824"]
-
-    BS --- Data["Events · Agents · Sessions · Teams · Usage %"]
-
-    Data -->|"WebSocket อัปเดตสด"| DB
-
-    DB["📊 Dashboard\nReact UI · port 4825"]
-
-    style CC fill:#1a1a2e,stroke:#7c3aed,color:#e2e8f0
-    style CE fill:#1a1a2e,stroke:#0ea5e9,color:#e2e8f0
-    style BS fill:#065f46,stroke:#10b981,color:#e2e8f0
-    style Data fill:none,stroke:none,color:#94a3b8
-    style DB fill:#1e293b,stroke:#3b82f6,color:#e2e8f0
-```
-
-**การไหลของข้อมูล:**
-
-1. **Claude Code** → Hooks ยิง events (PreToolUse, PostToolUse, SessionStart, SessionEnd ฯลฯ) → Backend
-2. **Chrome Extension** → ดึง usage % จาก claude.ai → Backend (ทุก 1 นาที)
-3. **Backend** → รวมข้อมูลทั้งหมด → กระจายผ่าน WebSocket
-4. **Dashboard** → รับผ่าน WebSocket → แสดงผลแบบเรียลไทม์
-
----
-
 ## 📁 โครงสร้างโปรเจค
 
 ```
@@ -408,7 +419,7 @@ Oh-My-Claude/
 ├── start.bat                 # Windows quick start
 ├── create-shortcut.bat       # สร้าง desktop shortcut (Windows)
 ├── README.md                 # เอกสาร (EN)
-├── README.th.md              # เอกสาร (TH)
+├── README_TH.md              # เอกสาร (TH)
 │
 ├── backend/
 │   ├── server.js             # Express + WebSocket server (port 4824)
@@ -638,12 +649,6 @@ curl http://localhost:4824/health
 
 ---
 
-## License
-
-MIT
-
----
-
 ## 🤝 Contributing
 
 1. Fork repository
@@ -651,3 +656,9 @@ MIT
 3. Commit: `git commit -m 'Add amazing feature'`
 4. Push: `git push origin feature/amazing`
 5. เปิด Pull Request
+
+---
+
+## 📄 License
+
+MIT
