@@ -21,7 +21,20 @@
       "Bash(git status:*)",
       "Bash(\"d:/Antigravity/Oh-My-Claude/docs/AUDIT-REPORT.md\":*)",
       "Bash(npx jest --passWithNoTests)",
-      "Bash(npx:*)"
+      "Bash(npx:*)",
+      "Bash(python:*)",
+      "Bash(python3:*)",
+      "Bash(du:*)",
+      "Bash(powershell -Command:*)",
+      "Bash(powershell -NoProfile -Command:*)",
+      "mcp__plugin_playwright_playwright__browser_click",
+      "mcp__plugin_playwright_playwright__browser_press_key",
+      "mcp__plugin_playwright_playwright__browser_snapshot",
+      "mcp__plugin_playwright_playwright__browser_close",
+      "mcp__plugin_playwright_playwright__browser_evaluate",
+      "Bash(git reset:*)",
+      "Bash(ls:*)",
+      "mcp__plugin_playwright_playwright__browser_resize"
     ]
   }
 }

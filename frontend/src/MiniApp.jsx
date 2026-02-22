@@ -1,6 +1,7 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { getThemeColors } from './config/theme';
 import { formatTokens, getUsageBadge } from './utils/format';
+import { useDemoReplay } from './hooks/useDemoReplay';
 
 const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:4824';
 
@@ -15,10 +16,10 @@ function GaugeBar({ label, pct, resetTime, isSession = false, colors }) {
   const redThreshold = isSession ? 85 : 90;
   const yellowThreshold = isSession ? 60 : 75;
 
-  // Session: traffic light colors, Weekly: neutral gray
+  // Session: traffic light colors, Weekly: neutral
   const pctColor = isNA ? colors.text.muted : isSession
     ? (pct >= redThreshold ? 'text-red-500' : pct >= yellowThreshold ? 'text-yellow-500' : 'text-green-500')
-    : 'text-gray-400';
+    : colors.text.muted;
 
   // Session: gradient bar, Weekly: solid gray
   const progressBarClass = isNA ? 'bg-gray-600' : isSession
@@ -55,31 +56,39 @@ export default function MiniApp({ onSwitchToFull }) {
   const [smartStatus, setSmartStatus] = useState({});
   const [teams, setTeams] = useState([]);
   const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'dark');
+  const [demoMode, setDemoMode] = useState(() => localStorage.getItem('demoMode') === 'true');
+  const demo = useDemoReplay(demoMode);
   const wsRef = useRef(null);
   const reconnectRef = useRef(null);
 
   const colors = getThemeColors(theme);
 
-  // Sync theme from localStorage (when main app changes it)
+  // Sync theme + demoMode from localStorage (when main app changes it)
   useEffect(() => {
     const onStorage = (e) => {
-      if (e.key === 'theme' && e.newValue) {
-        setTheme(e.newValue);
-      }
+      if (e.key === 'theme' && e.newValue) setTheme(e.newValue);
+      if (e.key === 'demoMode') setDemoMode(e.newValue === 'true');
     };
     window.addEventListener('storage', onStorage);
 
     // Also poll localStorage for same-origin changes
     const poll = setInterval(() => {
-      const stored = localStorage.getItem('theme');
-      if (stored && stored !== theme) setTheme(stored);
+      const storedTheme = localStorage.getItem('theme');
+      if (storedTheme && storedTheme !== theme) setTheme(storedTheme);
+      const storedDemo = localStorage.getItem('demoMode') === 'true';
+      if (storedDemo !== demoMode) setDemoMode(storedDemo);
     }, 1000);
 
     return () => {
       window.removeEventListener('storage', onStorage);
       clearInterval(poll);
     };
-  }, [theme]);
+  }, [theme, demoMode]);
+
+  // Write demoMode back to localStorage (for bidirectional sync)
+  useEffect(() => {
+    localStorage.setItem('demoMode', demoMode ? 'true' : 'false');
+  }, [demoMode]);
 
   // Update body class
   useEffect(() => {
@@ -196,17 +205,53 @@ export default function MiniApp({ onSwitchToFull }) {
     };
   }, [connect]);
 
-  // Session usage from Chrome extension
-  const hasRealUsage = claudeUsage?.five_hour != null;
+  // Demo mode overrides
+  const displayAgents = demoMode ? demo.agents : agents;
+  const displayTeams = demoMode ? demo.teams : teams;
+
+  // Derive smart status from demo events in demo mode
+  const demoSmartStatus = useMemo(() => {
+    if (!demoMode) return {};
+    const map = {};
+    const lastEventBySession = {};
+    for (const evt of demo.events) {
+      const sid = evt.sessionId;
+      if (!sid) continue;
+      if (!lastEventBySession[sid] || new Date(evt.timestamp) > new Date(lastEventBySession[sid].timestamp)) {
+        lastEventBySession[sid] = evt;
+      }
+    }
+    for (const [sid, evt] of Object.entries(lastEventBySession)) {
+      const type = evt.type;
+      const tool = evt.toolName;
+      if (type === 'UserPromptSubmit' || type === 'PostToolUse') {
+        map[sid] = { status: 'thinking', label: 'Thinking', icon: '\u{1F9E0}', color: 'text-violet-400' };
+      } else if (type === 'PreToolUse') {
+        if (tool === 'Read' || tool === 'Glob' || tool === 'Grep') map[sid] = { status: 'reading', label: 'Reading', icon: '\u{1F441}', color: 'text-sky-400' };
+        else if (tool === 'Edit' || tool === 'Write') map[sid] = { status: 'writing', label: 'Writing', icon: '\u270D\uFE0F', color: 'text-orange-400' };
+        else if (tool === 'Bash') map[sid] = { status: 'executing', label: 'Executing', icon: '\u26A1', color: 'text-amber-400' };
+        else if (tool === 'Task') map[sid] = { status: 'spawning', label: 'Spawning', icon: '\u{1F500}', color: 'text-violet-400' };
+        else map[sid] = { status: 'processing', label: 'Processing', icon: '\u2699\uFE0F', color: 'text-blue-400' };
+      } else if (type === 'Stop' || type === 'SessionEnd') {
+        map[sid] = { status: 'stopped', label: 'Stopped', icon: '\u25CB', color: 'text-gray-500' };
+      }
+    }
+    return map;
+  }, [demoMode, demo.events]);
+
+  const displaySmartStatus = demoMode ? demoSmartStatus : smartStatus;
+
+  // Session usage from Chrome extension (or demo overrides)
+  const hasRealUsage = demoMode || claudeUsage?.five_hour != null;
   const USAGE_TIMEOUT_MS = 2 * 60 * 1000;
   const lastSyncTime = claudeUsage?.lastSync ? new Date(claudeUsage.lastSync).getTime() : 0;
   const isSyncActive = hasRealUsage && lastSyncTime && (Date.now() - lastSyncTime) < USAGE_TIMEOUT_MS;
-  const sessionPct = hasRealUsage ? claudeUsage.five_hour.utilization : null;
-  const weeklyPct = claudeUsage?.seven_day?.utilization ?? null;
+  const sessionPct = demoMode ? 30 : (hasRealUsage ? claudeUsage.five_hour.utilization : null);
+  const weeklyPct = demoMode ? 17 : (claudeUsage?.seven_day?.utilization ?? null);
 
   // Dynamic page title: smart status (priority) + count + usage% + OMC!
   useEffect(() => {
-    const mainAgents = agents.filter(a => a.type === 'main');
+    const mainAgents = displayAgents.filter(a => a.type === 'main');
     const activeAgents = mainAgents.filter(a => ['active', 'idle', 'stale'].includes(a.status));
 
     let statusIcon = '';
@@ -214,7 +259,7 @@ export default function MiniApp({ onSwitchToFull }) {
     let bestPriority = -2;
     const agentsToCheck = activeAgents.length > 0 ? activeAgents : mainAgents;
     for (const agent of agentsToCheck) {
-      const smart = smartStatus[agent.sessionId];
+      const smart = displaySmartStatus[agent.sessionId];
       if (smart) {
         const p = STATUS_PRIORITY[smart.status] ?? 0;
         if (p > bestPriority) {
@@ -224,7 +269,7 @@ export default function MiniApp({ onSwitchToFull }) {
         }
       }
     }
-    if (!statusLabel) statusLabel = mainAgents.length > 0 ? 'Stopped' : 'Idle';
+    if (!statusLabel) statusLabel = demoMode ? 'DEMO' : (mainAgents.length > 0 ? 'Stopped' : 'Idle');
 
     const activeCount = activeAgents.length > 0 ? activeAgents.length : mainAgents.length;
     const countPrefix = activeCount > 1 ? `${activeCount}x ` : '';
@@ -234,47 +279,69 @@ export default function MiniApp({ onSwitchToFull }) {
       : '';
     const parts = [countPrefix + (statusIcon ? `${statusIcon} ${statusLabel}` : statusLabel), pctStr, 'OMC!'].filter(Boolean);
     document.title = parts.join(' \u00b7 ');
-  }, [agents, smartStatus, sessionPct]);
+  }, [displayAgents, displaySmartStatus, sessionPct, demoMode]);
 
   // Monthly cost
   const tokens = stats?.tokens || {};
-  const monthCost = tokens.month_cost || 0;
+  const monthCost = demoMode ? 7866.65 : (tokens.month_cost || 0);
 
-  // Agent summary
-  const activeMainCount = agents.filter(a => a.type === 'main' && a.status === 'active').length;
-  const activeTaskCount = agents.filter(a => a.type !== 'main' && a.status === 'active').length;
-  const totalAgents = agents.length;
+  // Agent summary (from displayAgents)
+  const activeMainCount = displayAgents.filter(a => a.type === 'main' && a.status === 'active').length;
+  const activeTaskCount = displayAgents.filter(a => a.type !== 'main' && a.status === 'active').length;
+  const totalAgents = displayAgents.length;
 
-  // Model helper
+  // Model helper (theme-aware)
   const getModel = (model) => {
     const v = model?.match(/(?:opus|sonnet|haiku)-(\d+)-(\d+)/i);
     const ver = v ? ` ${v[1]}.${v[2]}` : '';
-    if (model?.includes('opus')) return { name: `Opus${ver}`, base: 'Opus', short: 'Op', color: 'text-violet-400', bg: 'bg-violet-500/20' };
-    if (model?.includes('sonnet')) return { name: `Sonnet${ver}`, base: 'Sonnet', short: 'So', color: 'text-sky-400', bg: 'bg-sky-500/20' };
-    if (model?.includes('haiku')) return { name: `Haiku${ver}`, base: 'Haiku', short: 'Ha', color: 'text-teal-400', bg: 'bg-teal-500/20' };
-    return { name: '??', base: '??', short: '??', color: 'text-gray-400', bg: 'bg-gray-500/20' };
+    const mc = colors.model;
+    if (model?.includes('opus')) return { name: `Opus${ver}`, base: 'Opus', short: 'Op', color: mc.opus.text, bg: mc.opus.bg };
+    if (model?.includes('sonnet')) return { name: `Sonnet${ver}`, base: 'Sonnet', short: 'So', color: mc.sonnet.text, bg: mc.sonnet.bg };
+    if (model?.includes('haiku')) return { name: `Haiku${ver}`, base: 'Haiku', short: 'Ha', color: mc.haiku.text, bg: mc.haiku.bg };
+    return { name: '??', base: '??', short: '??', color: mc.unknown.text, bg: mc.unknown.bg };
   };
 
-  // Status helper - matches AgentTree.jsx getStatus()
+  // Status helper - theme-aware (matches AgentTree.jsx)
   const getStatus = (status) => {
+    const as = colors.agentStatus;
     switch (status) {
       case 'active': case 'running':
-        return { icon: '●', color: 'text-emerald-400', pulse: true, label: 'Active', dot: 'bg-emerald-400 animate-pulse' };
+        return { icon: '●', color: as.active.text, pulse: true, label: 'Active', dot: as.active.dot };
       case 'idle':
-        return { icon: '●', color: 'text-yellow-400', pulse: false, label: 'Idle', dot: 'bg-yellow-400' };
+        return { icon: '●', color: as.idle.text, pulse: false, label: 'Idle', dot: as.idle.dot };
       case 'stale':
-        return { icon: '●', color: 'text-orange-400', pulse: false, label: 'Stale', dot: 'bg-orange-400' };
+        return { icon: '●', color: as.stale.text, pulse: false, label: 'Stale', dot: as.stale.dot };
       case 'timeout':
-        return { icon: '●', color: 'text-amber-400', pulse: true, label: 'Timeout', dot: 'bg-amber-400 animate-pulse' };
+        return { icon: '●', color: as.timeout.text, pulse: true, label: 'Timeout', dot: as.timeout.dot };
       case 'stopped':
-        return { icon: '○', color: 'text-gray-500', pulse: false, label: 'Stopped', dot: 'bg-gray-500' };
+        return { icon: '○', color: as.stopped.text, pulse: false, label: 'Stopped', dot: as.stopped.dot };
       default:
-        return { icon: '○', color: 'text-gray-600', pulse: false, label: 'Unknown', dot: 'bg-gray-500' };
+        return { icon: '○', color: as.unknown.text, pulse: false, label: 'Unknown', dot: as.unknown.dot };
     }
+  };
+
+  // Resolve smart status color from theme (instead of hardcoded color in state)
+  const getSmartColor = (status) => {
+    const map = {
+      thinking: colors.semantic.violet.text,
+      reading: colors.tool.read.text,
+      writing: colors.tool.edit.text,
+      executing: colors.tool.bash.text,
+      spawning: colors.semantic.violet.text,
+      searching: colors.tool.web.text,
+      teaming: colors.semantic.indigo.text,
+      messaging: colors.tool.web.text,
+      processing: colors.semantic.blue.text,
+      waiting: colors.semantic.orange.text,
+      compacting: colors.text.muted,
+      stopped: colors.agentStatus.stopped.text,
+    };
+    return map[status] || colors.text.muted;
   };
 
   // Gauge bar component
   const getSessionResetTime = () => {
+    if (demoMode) return '3h 8m';
     if (!claudeUsage?.five_hour?.resets_at) return null;
     const diff = new Date(claudeUsage.five_hour.resets_at) - new Date();
     if (diff > 0) {
@@ -286,6 +353,7 @@ export default function MiniApp({ onSwitchToFull }) {
   };
 
   const getWeeklyResetTime = () => {
+    if (demoMode) return '6d 1h';
     if (!claudeUsage?.seven_day?.resets_at) return null;
     const diff = new Date(claudeUsage.seven_day.resets_at) - new Date();
     if (diff > 0) {
@@ -301,7 +369,7 @@ export default function MiniApp({ onSwitchToFull }) {
 
   // Group agents by session
   const sessionMap = {};
-  agents.forEach(agent => {
+  displayAgents.forEach(agent => {
     const sid = agent.type === 'main' ? agent.sessionId :
       (agent.parentId?.startsWith('main_') ? agent.parentId.replace('main_', '') : agent.sessionId) || 'unknown';
     if (!sessionMap[sid]) sessionMap[sid] = { main: null, tasks: [] };
@@ -322,7 +390,7 @@ export default function MiniApp({ onSwitchToFull }) {
 
   // Build team lookup: sessionId -> team info
   const teamBySession = {};
-  (teams || []).forEach(team => {
+  (displayTeams || []).forEach(team => {
     if (team.leadSessionId) teamBySession[team.leadSessionId] = team;
   });
 
@@ -346,15 +414,33 @@ export default function MiniApp({ onSwitchToFull }) {
             <path d="m7.75 26.27 7.77-4.36.13-.38-.13-.21h-.38l-1.3-.08-4.44-.12-3.85-.16-3.73-.2-.94-.2-.88-1.16.09-.58.79-.53 1.13.1 2.5.17 3.75.26 2.72.16 4.03.42h.64l.09-.26-.22-.16-.17-.16-3.88-2.63-4.2-2.78-2.2-1.6-1.19-.81-.6-.76-.26-1.66 1.08-1.19 1.45.1.37.1 1.47 1.13 3.14 2.43 4.1 3.02.6.5.24-.17.03-.12-.27-.45-2.23-4.03-2.38-4.1-1.06-1.7-.28-1.02c-.1-.42-.17-.77-.17-1.2l1.23-1.67.68-.22 1.64.22.69.6 1.02 2.33 1.65 3.67 2.56 4.99.75 1.48.4 1.37.15.42h.26v-.24l.21-2.81.39-3.45.38-4.44.13-1.25.62-1.5 1.23-.81.96.46.79 1.13-.11.73-.47 3.05-.92 4.78-.6 3.2h.35l.4-.4 1.62-2.15 2.72-3.4 1.2-1.35 1.4-1.49.9-.71h1.7l1.25 1.86-.56 1.92-1.75 2.22-1.45 1.88-2.08 2.8-1.3 2.24.12.18.31-.03 4.7-1 2.54-.46 3.03-.52 1.37.64.15.65-.54 1.33-3.24.8-3.8.76-5.66 1.34-.07.05.08.1 2.55.24 1.09.06h2.67l4.97.37 1.3.86.78 1.05-.13.8-2 1.02-2.7-.64-6.3-1.5-2.16-.54h-.3v.18l1.8 1.76 3.3 2.98 4.13 3.84.21.95-.53.75-.56-.08-3.63-2.73-1.4-1.23-3.17-2.67h-.21v.28l.73 1.07 3.86 5.8.2 1.78-.28.58-1 .35-1.1-.2-2.26-3.17-2.33-3.57-1.88-3.2-.23.13-1.11 11.95-.52.61-1.2.46-1-.76-.53-1.23.53-2.43.64-3.17.52-2.52.47-3.13.28-1.04-.02-.07-.23.03-2.36 3.24-3.59 4.85-2.84 3.04-.68.27-1.18-.61.11-1.09.66-.97 3.93-5 2.37-3.1 1.53-1.79-.01-.26h-.09l-10.44 6.78-1.86.24-.8-.75.1-1.23.38-.4 3.14-2.16z" fill="#d97757"/>
           </svg>
           <span className={`text-[12px] font-bold ${colors.text.title}`}>Oh My Claude<span className="text-[#d97757]">!</span></span>
-        </div>
-        <div className="flex items-center gap-1.5">
-          <div className={`w-1.5 h-1.5 rounded-full ${connected ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`} />
-          {isSyncActive ? (
-            <svg className="w-3 h-3 text-sky-400 animate-spin" style={{ animationDuration: '20s' }} fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24" title="Extension syncing">
-              <path d="M21 2v6h-6M3 12a9 9 0 0 1 15-6.7L21 8M3 22v-6h6M21 12a9 9 0 0 1-15 6.7L3 16" />
-            </svg>
+          {/* Status dot + label */}
+          <div className={`w-1.5 h-1.5 rounded-full ${demoMode ? 'bg-amber-400 animate-pulse' : connected ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`} />
+          {demoMode ? (
+            <span className={`text-[8px] font-bold ${colors.status.warning} uppercase tracking-wider`}>DEMO</span>
           ) : (
-            <span className="text-[8px] text-red-400" title="Extension not syncing">💀</span>
+            <>
+              {isSyncActive ? (
+                <svg className={`w-2.5 h-2.5 ${colors.status.info} animate-spin`} style={{ animationDuration: '20s' }} fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24" title="Extension syncing">
+                  <path d="M21 2v6h-6M3 12a9 9 0 0 1 15-6.7L21 8M3 22v-6h6M21 12a9 9 0 0 1-15 6.7L3 16" />
+                </svg>
+              ) : (
+                <span className={`text-[8px] ${colors.status.error}`} title="Extension not syncing">💀</span>
+              )}
+            </>
+          )}
+        </div>
+        <div className="flex items-center gap-1">
+          {!demoMode && (
+            <button
+              onClick={() => { fetch('http://localhost:4824/agents/stopped', { method: 'DELETE' }); }}
+              className={`p-0.5 rounded ${colors.text.muted} opacity-30 hover:opacity-100 hover:bg-red-500/20 hover:text-red-500 transition-all`}
+              title="Clear stopped agents"
+            >
+              <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
+                <circle cx="12" cy="12" r="10" /><line x1="8" y1="12" x2="16" y2="12" />
+              </svg>
+            </button>
           )}
           {(() => {
             const badge = getUsageBadge(sessionPct);
@@ -372,7 +458,7 @@ export default function MiniApp({ onSwitchToFull }) {
           {onSwitchToFull && (
             <button
               onClick={onSwitchToFull}
-              className={`p-0.5 rounded ${colors.button.text} hover:bg-white/10 transition-colors`}
+              className={`p-0.5 rounded ${colors.button.text} ${colors.cardHover} transition-colors`}
               title="Switch to Full Dashboard"
             >
               <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -402,23 +488,23 @@ export default function MiniApp({ onSwitchToFull }) {
             const isActive = ['active', 'idle', 'stale'].includes(main?.status) || tasks.some(t => ['active', 'idle', 'stale'].includes(t.status));
             const model = main ? getModel(main.model) : getModel(null);
             const sessionTokens = (main?.tokens || 0) + tasks.reduce((sum, t) => sum + (t.tokens || 0), 0);
-            const smart = smartStatus[sid];
+            const smart = displaySmartStatus[sid];
             const mainStatus = getStatus(main?.status);
             const projectName = main?.cwd?.split(/[\\/]/).pop() || '';
             const teamInfo = teamBySession[sid];
 
             return (
-              <div key={sid} className={`border-b ${colors.border} ${isActive ? 'bg-emerald-500/[0.03]' : 'opacity-50'}`}>
+              <div key={sid} className={`border-b ${colors.border} ${isActive ? colors.misc.activeBg : 'opacity-50'}`}>
                 {/* Main agent row */}
                 <div className="flex items-center gap-1 px-2 pt-1.5 pb-0.5">
-                  <span className="text-[12px] font-mono font-bold text-white shrink-0 w-[16px] text-right">{sessionNumber[sid]}.</span>
+                  <span className={`text-[12px] font-mono font-bold ${colors.misc.sessionNum} shrink-0 w-[16px] text-right`}>{sessionNumber[sid]}.</span>
                   <span className={`text-[11px] font-bold px-1.5 py-0.5 rounded ${model.color} ${model.bg} shrink-0`}>
                     {model.name}
                   </span>
                   {smart && (isActive || smart.status === 'stopped') ? (
                     <>
                       <span className={`text-[13px] shrink-0 ${smart.status !== 'stopped' ? 'animate-pulse' : ''}`}>{smart.icon}</span>
-                      <span className={`text-[12px] font-medium ${smart.color}`}>{smart.label}</span>
+                      <span className={`text-[12px] font-medium ${getSmartColor(smart.status)}`}>{smart.label}</span>
                     </>
                   ) : (
                     <>
@@ -431,19 +517,22 @@ export default function MiniApp({ onSwitchToFull }) {
                     </>
                   )}
                   <div className="flex-1" />
-                  <span className="text-[10px] font-mono tabular-nums text-amber-500">
+                  <span className={`text-[10px] font-mono tabular-nums ${colors.misc.tokens}`}>
                     {formatTokens(sessionTokens)}
                   </span>
                 </div>
                 {/* Project name + team badge + subagent count */}
                 {(projectName || tasks.length > 0 || teamInfo) && (
                   <div className="flex items-center gap-1 px-2 pb-0.5 pl-[30px]">
-                    <span className={`text-[11px] font-mono tracking-widest uppercase text-cyan-400/70 truncate`} style={{ fontFamily: "'Share Tech Mono', 'Fira Code', 'JetBrains Mono', monospace", letterSpacing: '0.15em' }} title={main?.cwd || ''}>
+                    <span className={`text-[11px] font-mono tracking-widest uppercase ${colors.misc.projectName} truncate`} style={{ fontFamily: "'Share Tech Mono', 'Fira Code', 'JetBrains Mono', monospace", letterSpacing: '0.15em' }} title={main?.cwd || ''}>
                       {projectName || '—'}
                     </span>
                     {teamInfo && tasks.some(t => t.teamName === teamInfo.name) && (
-                      <span className={`text-[8px] px-1 py-0.5 rounded-full ${teamInfo.status === 'active' ? 'bg-indigo-500/15 text-indigo-400 border-indigo-500/20' : 'bg-gray-500/15 text-gray-400 border-gray-500/20'} border shrink-0`} title={`Team: ${teamInfo.name}`}>
-                        👥{teamInfo.memberCount}
+                      <span className={`text-[8px] px-1 py-0.5 rounded ${teamInfo.status === 'active' ? `${colors.team.iconBg} ${colors.team.iconText}` : `${colors.agentStatus.stopped.bg} ${colors.agentStatus.stopped.text}`} shrink-0 flex items-center gap-0.5`} title={`Team: ${teamInfo.name}`}>
+                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={colors.team.iconText}>
+                          <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+                        </svg>
+                        {teamInfo.memberCount}
                       </span>
                     )}
                     <div className="flex-1" />
@@ -455,27 +544,55 @@ export default function MiniApp({ onSwitchToFull }) {
                   </div>
                 )}
 
-                {/* Subagents */}
-                {tasks.length > 0 && (
-                  <div className="flex flex-wrap items-center gap-1 px-2 pb-1 pl-[50px]">
-                    {tasks.map((task, i) => {
-                      const tm = getModel(task.model);
-                      return (
-                        <div
-                          key={task.id || i}
-                          className="flex items-center gap-0.5"
-                          title={`${task.agentName || task.type || 'task'} - ${task.status} - ${formatTokens(task.tokens || 0)}`}
-                        >
-                          <div className={`w-1.5 h-1.5 rounded-full ${getStatus(task.status).dot}`} />
-                          <span className={`text-[8px] font-bold ${tm.color}`}>{tm.name}</span>
-                          {task.agentName && (
-                            <span className="text-[7px] text-cyan-400/80">{task.agentName}</span>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
+                {/* Subagents & Team members */}
+                {tasks.length > 0 && (() => {
+                  const teamTasks = tasks.filter(t => t.teamName);
+                  const nonTeamTasks = tasks.filter(t => !t.teamName);
+                  return (
+                    <div className="flex flex-wrap items-center gap-1 px-2 pb-1 pl-[50px]">
+                      {nonTeamTasks.map((task, i) => {
+                        const tm = getModel(task.model);
+                        return (
+                          <div
+                            key={task.id || i}
+                            className="flex items-center gap-0.5"
+                            title={`${task.agentName || task.type || 'task'} - ${task.status} - ${formatTokens(task.tokens || 0)}`}
+                          >
+                            <div className={`w-1.5 h-1.5 rounded-full ${getStatus(task.status).dot}`} />
+                            <span className={`text-[8px] font-bold ${tm.color}`}>{tm.name}</span>
+                            {task.agentName && (
+                              <span className={`text-[7px] px-0.5 rounded ${colors.team.nonTeamNameBg} ${colors.team.nonTeamNameText}`}>{task.agentName}</span>
+                            )}
+                          </div>
+                        );
+                      })}
+                      {teamTasks.length > 0 && (
+                        <>
+                          {nonTeamTasks.length > 0 && <div className={`w-px h-3 ${colors.border.replace('border-', 'bg-')} mx-0.5`} />}
+                          {teamTasks.map((task, i) => {
+                            const tm = getModel(task.model);
+                            return (
+                              <div
+                                key={task.id || i}
+                                className={`flex items-center gap-0.5 px-1 py-0.5 rounded ${colors.team.headerBg} border ${colors.team.headerBorder}`}
+                                title={`Team: ${task.teamName} · ${task.agentName || task.type || 'member'} - ${task.status} - ${formatTokens(task.tokens || 0)}`}
+                              >
+                                <svg width="8" height="8" viewBox="0 0 16 16" fill="none" className={`${colors.team.iconText} shrink-0`}>
+                                  <circle cx="8" cy="4.5" r="3" fill="currentColor"/><path d="M2.5 15c0-3 2.5-5.5 5.5-5.5s5.5 2.5 5.5 5.5" fill="currentColor" opacity="0.7"/>
+                                </svg>
+                                <div className={`w-1.5 h-1.5 rounded-full ${getStatus(task.status).dot}`} />
+                                <span className={`text-[8px] leading-none font-bold ${tm.color}`}>{tm.name}</span>
+                                {task.agentName && (
+                                  <span className={`text-[7px] leading-none ${colors.team.memberNameText}`}>{task.agentName}</span>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
             );
           })
@@ -485,20 +602,97 @@ export default function MiniApp({ onSwitchToFull }) {
       {/* Footer Summary */}
       <div className={`h-7 flex items-center justify-between px-2 border-t ${colors.border} ${colors.bg.footer} flex-shrink-0`}>
         <div className="flex items-center gap-1.5">
-          <span className={`w-1.5 h-1.5 rounded-full ${activeMainCount > 0 ? 'bg-emerald-400 animate-pulse' : 'bg-gray-600'}`} />
-          <span className={`text-[9px] ${activeMainCount > 0 ? 'text-emerald-400' : colors.text.muted}`}>
+          <span className={`w-1.5 h-1.5 rounded-full ${activeMainCount > 0 ? `${colors.misc.footerDotActive} animate-pulse` : colors.misc.footerDotInactive}`} />
+          <span className={`text-[9px] ${activeMainCount > 0 ? colors.misc.footerActiveText : colors.text.muted}`}>
             {activeMainCount} session{activeMainCount !== 1 ? 's' : ''} · {activeTaskCount} task{activeTaskCount !== 1 ? 's' : ''}
           </span>
         </div>
-        <div className="flex items-center gap-1.5">
-          <span className="text-[9px] font-mono font-bold text-emerald-400">
+        <div className="flex items-center gap-1">
+          {demoMode && (
+            <div className="flex items-center gap-px">
+              <style>{`
+                @keyframes miniDigitSpin {
+                  0% { transform: translateY(60%); opacity: 0; }
+                  60% { opacity: 1; }
+                  100% { transform: translateY(0); opacity: 1; }
+                }
+              `}</style>
+              {/* Retro tape counter */}
+              <div className="flex items-center rounded-sm overflow-hidden mr-0.5" style={{
+                background: 'linear-gradient(180deg, #1a1a1a 0%, #0d0d0d 40%, #0a0a0a 60%, #1a1a1a 100%)',
+                border: '1px solid #555',
+                boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.8), 0 0 4px rgba(100,100,100,0.3)',
+                height: '16px',
+              }}>
+                {String(demo.progress.current).padStart(4, '0').split('').map((d, i) => (
+                  <span key={`${i}_${d}`} className="inline-flex items-center justify-center" style={{
+                    fontFamily: "'Share Tech Mono', 'Courier New', monospace",
+                    fontSize: '11px',
+                    fontWeight: 400,
+                    width: '10px',
+                    height: '16px',
+                    lineHeight: '16px',
+                    paddingTop: '1px',
+                    overflow: 'hidden',
+                    color: '#c8f0c8',
+                    textShadow: '0 0 4px rgba(100,255,100,0.4)',
+                    background: 'linear-gradient(180deg, rgba(255,255,255,0.06) 0%, transparent 30%, transparent 70%, rgba(255,255,255,0.04) 100%)',
+                    borderLeft: i > 0 ? '1px solid #555' : 'none',
+                    animation: 'miniDigitSpin 0.18s ease-out',
+                  }}>{d}</span>
+                ))}
+              </div>
+              <button
+                onClick={() => {
+                  if (demo.replayState === 'playing') demo.pause();
+                  else if (demo.replayState === 'paused') demo.resume();
+                  else demo.play();
+                }}
+                className="flex items-center justify-center w-4 h-4 border transition-all duration-100 active:scale-90"
+                style={{
+                  borderColor: demo.replayState === 'playing' ? '#facc15' : '#22c55e',
+                  background: demo.replayState === 'playing'
+                    ? 'rgba(250,204,21,0.15)' : 'rgba(34,197,94,0.15)',
+                  boxShadow: demo.replayState === 'playing'
+                    ? '0 0 4px rgba(250,204,21,0.3)' : '0 0 4px rgba(34,197,94,0.3)',
+                }}
+                title={demo.replayState === 'playing' ? 'Pause' : demo.replayState === 'paused' ? 'Resume' : 'Play'}
+              >
+                {demo.replayState === 'playing' ? (
+                  <svg width="6" height="7" viewBox="0 0 10 12" fill="#facc15">
+                    <rect x="1" y="0" width="3" height="12" />
+                    <rect x="6" y="0" width="3" height="12" />
+                  </svg>
+                ) : (
+                  <svg width="6" height="7" viewBox="0 0 10 12" fill="#22c55e">
+                    <polygon points="0,0 10,6 0,12" />
+                  </svg>
+                )}
+              </button>
+              <button
+                onClick={() => demo.reset()}
+                className="flex items-center justify-center w-4 h-4 border transition-all duration-100 active:scale-90"
+                style={{
+                  borderColor: '#ef4444',
+                  background: 'rgba(239,68,68,0.12)',
+                  boxShadow: '0 0 3px rgba(239,68,68,0.2)',
+                }}
+                title="Reset"
+              >
+                <svg width="5" height="5" viewBox="0 0 10 10" fill="#ef4444">
+                  <rect x="0" y="0" width="10" height="10" />
+                </svg>
+              </button>
+            </div>
+          )}
+          <button
+            onClick={() => setDemoMode(d => !d)}
+            className={`text-[8px] px-1 py-0.5 rounded transition-all ${demoMode ? `${colors.status.warning} ${colors.semantic.amber.bg}` : `${colors.text.muted} opacity-40 hover:opacity-100 hover:bg-amber-500/20 hover:text-amber-500`}`}
+            title={demoMode ? 'Exit Demo Mode' : 'Enter Demo Mode'}
+          >🧪</button>
+          <span className={`text-[9px] font-mono font-bold ${colors.status.success} leading-none translate-y-px`}>
             ${monthCost.toFixed(2)}
           </span>
-          <button
-            onClick={() => { fetch('http://localhost:4824/agents/stopped', { method: 'DELETE' }); }}
-            className={`text-[8px] px-1 py-0.5 rounded ${colors.text.muted} opacity-40 hover:opacity-100 hover:bg-red-500/20 hover:text-red-400 transition-all`}
-            title="Clear stopped agents"
-          >✕</button>
         </div>
       </div>
     </div>

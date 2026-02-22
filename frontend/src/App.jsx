@@ -61,8 +61,25 @@ export default function App() {
   const [agentViewMode, setAgentViewMode] = useState(() => localStorage.getItem('agentViewMode') || 'full');
   const [isAgentsCollapsed, setIsAgentsCollapsed] = useState(() => localStorage.getItem('agentsCollapsed') === 'true');
   const [showHelp, setShowHelp] = useState(false);
-  const [demoMode, setDemoMode] = useState(false);
+  const [demoMode, setDemoMode] = useState(() => localStorage.getItem('demoMode') === 'true');
   const demo = useDemoReplay(demoMode);
+
+  // Sync demoMode to localStorage (bidirectional with Mini Pop-out)
+  useEffect(() => {
+    localStorage.setItem('demoMode', demoMode ? 'true' : 'false');
+  }, [demoMode]);
+  useEffect(() => {
+    const onStorage = (e) => {
+      if (e.key === 'demoMode') setDemoMode(e.newValue === 'true');
+    };
+    window.addEventListener('storage', onStorage);
+    // Poll for same-origin (PWA inline mini) changes
+    const poll = setInterval(() => {
+      const stored = localStorage.getItem('demoMode') === 'true';
+      if (stored !== demoMode) setDemoMode(stored);
+    }, 1000);
+    return () => { window.removeEventListener('storage', onStorage); clearInterval(poll); };
+  }, [demoMode]);
   const wsRef = useRef(null);
   const reconnectRef = useRef(null);
   const seenEventIds = useRef(new Set()); // Deduplicate events
@@ -289,37 +306,50 @@ export default function App() {
       const type = evt.type;
       const tool = evt.toolName;
       if (type === 'UserPromptSubmit' || type === 'PostToolUse') {
-        map[sid] = { status: 'thinking', label: 'Thinking', icon: '🧠', color: 'text-violet-400', bg: 'bg-violet-500/15', animation: 'animate-pulse', since: evt.timestamp };
+        const tc = colors.semantic?.violet || {};
+        map[sid] = { status: 'thinking', label: 'Thinking', icon: '🧠', color: tc.text || 'text-violet-400', bg: tc.bg || 'bg-violet-500/15', animation: 'animate-pulse', since: evt.timestamp };
       } else if (type === 'PreToolUse') {
         if (tool === 'Read' || tool === 'Glob' || tool === 'Grep') {
-          map[sid] = { status: 'reading', label: 'Reading', icon: '👁', color: 'text-sky-400', bg: 'bg-sky-500/15', animation: 'animate-pulse', since: evt.timestamp };
+          const tc = colors.tool?.read || {};
+          map[sid] = { status: 'reading', label: 'Reading', icon: '👁', color: tc.text || 'text-sky-400', bg: tc.bg || 'bg-sky-500/15', animation: 'animate-pulse', since: evt.timestamp };
         } else if (tool === 'Edit' || tool === 'Write') {
-          map[sid] = { status: 'writing', label: 'Writing', icon: '✍️', color: 'text-orange-400', bg: 'bg-orange-500/15', animation: 'animate-pulse', since: evt.timestamp };
+          const tc = colors.tool?.edit || {};
+          map[sid] = { status: 'writing', label: 'Writing', icon: '✍️', color: tc.text || 'text-orange-400', bg: tc.bg || 'bg-orange-500/15', animation: 'animate-pulse', since: evt.timestamp };
         } else if (tool === 'Bash') {
-          map[sid] = { status: 'executing', label: 'Executing', icon: '⚡', color: 'text-amber-400', bg: 'bg-amber-500/15', animation: 'animate-bounce', since: evt.timestamp };
+          const tc = colors.tool?.bash || {};
+          map[sid] = { status: 'executing', label: 'Executing', icon: '⚡', color: tc.text || 'text-amber-400', bg: tc.bg || 'bg-amber-500/15', animation: 'animate-bounce', since: evt.timestamp };
         } else if (tool === 'Task') {
-          map[sid] = { status: 'spawning', label: 'Spawning', icon: '🔀', color: 'text-violet-400', bg: 'bg-violet-500/15', animation: 'animate-spin', since: evt.timestamp };
+          const tc = colors.tool?.task || {};
+          map[sid] = { status: 'spawning', label: 'Spawning', icon: '🔀', color: tc.text || 'text-violet-400', bg: tc.bg || 'bg-violet-500/15', animation: 'animate-spin', since: evt.timestamp };
         } else if (tool === 'WebSearch' || tool === 'WebFetch') {
-          map[sid] = { status: 'searching', label: 'Searching', icon: '🌐', color: 'text-cyan-400', bg: 'bg-cyan-500/15', animation: 'animate-pulse', since: evt.timestamp };
+          const tc = colors.tool?.web || {};
+          map[sid] = { status: 'searching', label: 'Searching', icon: '🌐', color: tc.text || 'text-cyan-400', bg: tc.bg || 'bg-cyan-500/15', animation: 'animate-pulse', since: evt.timestamp };
         } else if (tool === 'TeamCreate') {
-          map[sid] = { status: 'teaming', label: 'Creating Team', icon: '👥', color: 'text-indigo-400', bg: 'bg-indigo-500/15', animation: 'animate-pulse', since: evt.timestamp };
+          const tc = colors.tool?.team || {};
+          map[sid] = { status: 'teaming', label: 'Creating Team', icon: '👥', color: tc.text || 'text-indigo-400', bg: tc.bg || 'bg-indigo-500/15', animation: 'animate-pulse', since: evt.timestamp };
         } else if (tool === 'SendMessage') {
-          map[sid] = { status: 'messaging', label: 'Messaging', icon: '📨', color: 'text-cyan-400', bg: 'bg-cyan-500/15', animation: 'animate-pulse', since: evt.timestamp };
+          const tc = colors.tool?.web || {};
+          map[sid] = { status: 'messaging', label: 'Messaging', icon: '📨', color: tc.text || 'text-cyan-400', bg: tc.bg || 'bg-cyan-500/15', animation: 'animate-pulse', since: evt.timestamp };
         } else if (tool === 'TeamDelete') {
-          map[sid] = { status: 'teaming', label: 'Team Cleanup', icon: '🧹', color: 'text-gray-400', bg: 'bg-gray-500/15', animation: '', since: evt.timestamp };
+          const tc = colors.tool?.teamDel || {};
+          map[sid] = { status: 'teaming', label: 'Team Cleanup', icon: '🧹', color: tc.text || 'text-gray-400', bg: tc.bg || 'bg-gray-500/15', animation: '', since: evt.timestamp };
         } else {
-          map[sid] = { status: 'processing', label: 'Processing', icon: '⚙️', color: 'text-blue-400', bg: 'bg-blue-500/15', animation: 'animate-pulse', since: evt.timestamp };
+          const tc = colors.semantic?.blue || {};
+          map[sid] = { status: 'processing', label: 'Processing', icon: '⚙️', color: tc.text || 'text-blue-400', bg: tc.bg || 'bg-blue-500/15', animation: 'animate-pulse', since: evt.timestamp };
         }
       } else if (type === 'PermissionRequest') {
-        map[sid] = { status: 'waiting', label: 'Waiting', icon: '⏳', color: 'text-orange-400', bg: 'bg-orange-500/15', animation: 'animate-pulse', since: evt.timestamp };
+        const tc = colors.semantic?.orange || {};
+        map[sid] = { status: 'waiting', label: 'Waiting', icon: '⏳', color: tc.text || 'text-orange-400', bg: tc.bg || 'bg-orange-500/15', animation: 'animate-pulse', since: evt.timestamp };
       } else if (type === 'PreCompact') {
-        map[sid] = { status: 'compacting', label: 'Compacting', icon: '📦', color: 'text-slate-400', bg: 'bg-slate-500/15', animation: 'animate-pulse', since: evt.timestamp };
+        const tc = colors.semantic?.gray || {};
+        map[sid] = { status: 'compacting', label: 'Compacting', icon: '📦', color: tc.text || 'text-slate-400', bg: tc.bg || 'bg-slate-500/15', animation: 'animate-pulse', since: evt.timestamp };
       } else if (type === 'Stop' || type === 'SessionEnd') {
-        map[sid] = { status: 'stopped', label: 'Stopped', icon: '○', color: 'text-gray-500', bg: 'bg-gray-500/15', animation: '', since: evt.timestamp };
+        const tc = colors.agentStatus?.stopped || {};
+        map[sid] = { status: 'stopped', label: 'Stopped', icon: '○', color: tc.text || 'text-gray-500', bg: tc.bg || 'bg-gray-500/15', animation: '', since: evt.timestamp };
       }
     }
     return map;
-  }, [displayEvents]);
+  }, [displayEvents, colors]);
 
   // Token percentages - ONLY from Chrome extension (claudeUsage)
   // If no extension data, show N/A (null = N/A)
@@ -425,7 +455,7 @@ export default function App() {
     return (
       <MiniApp onSwitchToFull={() => {
         setMiniMode(false);
-        try { window.resizeTo(765, 870); } catch {}
+        try { window.resizeTo(965, 870); } catch {}
       }} />
     );
   }
@@ -708,7 +738,7 @@ export default function App() {
               {!demoMode && displayAgents.some(a => a.status === 'stopped' || a.status === 'timeout') && (
                 <button
                   onClick={() => fetch('http://localhost:4824/agents/stopped', { method: 'DELETE' })}
-                  className={`text-[9px] px-1.5 py-0.5 rounded ${colors.text.muted} opacity-40 hover:opacity-100 hover:bg-red-500/20 hover:text-red-400 transition-all`}
+                  className={`text-[9px] px-1.5 py-0.5 rounded ${colors.text.muted} opacity-40 hover:opacity-100 ${colors.semantic?.red?.bgHover || 'hover:bg-red-500/20'} hover:${colors.status?.error || 'text-red-400'} transition-all`}
                   title="Remove stopped agents"
                 >Clear Stopped</button>
               )}
@@ -729,20 +759,20 @@ export default function App() {
               const sessionEvents = selectedSession ? displayEvents.filter(e => e.sessionId === selectedSession) : displayEvents;
               return (
                 <div className="flex items-center flex-nowrap shrink-0 gap-px text-[8px] leading-none">
-                  <button onClick={() => setSelectedEventType(null)} className={`px-0.5 py-0.5 rounded transition-all whitespace-nowrap ${!selectedEventType ? 'bg-gray-500/20 ring-1 ring-gray-500/50' : 'hover:bg-gray-500/10'}`} title="Show all">
-                    <span className="font-mono text-gray-400">{sessionEvents.length}</span>
+                  <button onClick={() => setSelectedEventType(null)} className={`px-0.5 py-0.5 rounded transition-all whitespace-nowrap ${!selectedEventType ? `${colors.semantic?.gray?.bg || 'bg-gray-500/20'} ring-1 ${colors.semantic?.gray?.ring || 'ring-gray-500/50'}` : (colors.semantic?.gray?.bgHover || 'hover:bg-gray-500/10')}`} title="Show all">
+                    <span className={`font-mono ${colors.semantic?.gray?.text || 'text-gray-400'}`}>{sessionEvents.length}</span>
                   </button>
-                  <button onClick={() => setSelectedEventType(selectedEventType === 'tools' ? null : 'tools')} className={`px-0.5 py-0.5 rounded transition-all whitespace-nowrap ${selectedEventType === 'tools' ? 'bg-cyan-500/20 ring-1 ring-cyan-500/50' : 'hover:bg-cyan-500/10'}`} title="Tools">
-                    <span className="text-[7px]">🔧</span><span className="font-mono text-cyan-400">{sessionEvents.filter(e => e.type === 'PreToolUse').length}</span>
+                  <button onClick={() => setSelectedEventType(selectedEventType === 'tools' ? null : 'tools')} className={`px-0.5 py-0.5 rounded transition-all whitespace-nowrap ${selectedEventType === 'tools' ? `${colors.semantic?.cyan?.bg || 'bg-cyan-500/20'} ring-1 ${colors.semantic?.cyan?.ring || 'ring-cyan-500/50'}` : (colors.semantic?.cyan?.bgHover || 'hover:bg-cyan-500/10')}`} title="Tools">
+                    <span className="text-[7px]">🔧</span><span className={`font-mono ${colors.semantic?.cyan?.text || 'text-cyan-400'}`}>{sessionEvents.filter(e => e.type === 'PreToolUse').length}</span>
                   </button>
-                  <button onClick={() => setSelectedEventType(selectedEventType === 'success' ? null : 'success')} className={`px-0.5 py-0.5 rounded transition-all whitespace-nowrap ${selectedEventType === 'success' ? 'bg-emerald-500/20 ring-1 ring-emerald-500/50' : 'hover:bg-emerald-500/10'}`} title="Success">
-                    <span className="text-[7px]">✅</span><span className="font-mono text-emerald-400">{sessionEvents.filter(e => e.type === 'PostToolUse').length}</span>
+                  <button onClick={() => setSelectedEventType(selectedEventType === 'success' ? null : 'success')} className={`px-0.5 py-0.5 rounded transition-all whitespace-nowrap ${selectedEventType === 'success' ? `${colors.semantic?.emerald?.bg || 'bg-emerald-500/20'} ring-1 ${colors.semantic?.emerald?.ring || 'ring-emerald-500/50'}` : (colors.semantic?.emerald?.bgHover || 'hover:bg-emerald-500/10')}`} title="Success">
+                    <span className="text-[7px]">✅</span><span className={`font-mono ${colors.semantic?.emerald?.text || 'text-emerald-400'}`}>{sessionEvents.filter(e => e.type === 'PostToolUse').length}</span>
                   </button>
-                  <button onClick={() => setSelectedEventType(selectedEventType === 'errors' ? null : 'errors')} className={`px-0.5 py-0.5 rounded transition-all whitespace-nowrap ${selectedEventType === 'errors' ? 'bg-red-500/20 ring-1 ring-red-500/50' : 'hover:bg-red-500/10'}`} title="Errors">
-                    <span className="text-[7px]">❌</span><span className="font-mono text-red-400">{sessionEvents.filter(e => e.type === 'PostToolUseFailure').length}</span>
+                  <button onClick={() => setSelectedEventType(selectedEventType === 'errors' ? null : 'errors')} className={`px-0.5 py-0.5 rounded transition-all whitespace-nowrap ${selectedEventType === 'errors' ? `${colors.semantic?.red?.bg || 'bg-red-500/20'} ring-1 ${colors.semantic?.red?.ring || 'ring-red-500/50'}` : (colors.semantic?.red?.bgHover || 'hover:bg-red-500/10')}`} title="Errors">
+                    <span className="text-[7px]">❌</span><span className={`font-mono ${colors.semantic?.red?.text || 'text-red-400'}`}>{sessionEvents.filter(e => e.type === 'PostToolUseFailure').length}</span>
                   </button>
-                  <button onClick={() => setSelectedEventType(selectedEventType === 'prompts' ? null : 'prompts')} className={`px-0.5 py-0.5 rounded transition-all whitespace-nowrap ${selectedEventType === 'prompts' ? 'bg-amber-500/20 ring-1 ring-amber-500/50' : 'hover:bg-amber-500/10'}`} title="Prompts">
-                    <span className="text-[7px]">💬</span><span className="font-mono text-amber-400">{sessionEvents.filter(e => e.type === 'UserPromptSubmit').length}</span>
+                  <button onClick={() => setSelectedEventType(selectedEventType === 'prompts' ? null : 'prompts')} className={`px-0.5 py-0.5 rounded transition-all whitespace-nowrap ${selectedEventType === 'prompts' ? `${colors.semantic?.amber?.bg || 'bg-amber-500/20'} ring-1 ${colors.semantic?.amber?.ring || 'ring-amber-500/50'}` : (colors.semantic?.amber?.bgHover || 'hover:bg-amber-500/10')}`} title="Prompts">
+                    <span className="text-[7px]">💬</span><span className={`font-mono ${colors.semantic?.amber?.text || 'text-amber-400'}`}>{sessionEvents.filter(e => e.type === 'UserPromptSubmit').length}</span>
                   </button>
                 </div>
               );
@@ -753,27 +783,20 @@ export default function App() {
             <div className={`border-b ${colors.border} ${colors.bg.secondary}`}>
               <div className={`px-2 py-1 flex items-center gap-1`}>
                 <span className="text-[9px]">📨</span>
-                <span className={`text-[9px] font-medium text-indigo-400 uppercase tracking-wider`}>Team Comms</span>
+                <span className={`text-[9px] font-medium ${colors.semantic?.indigo?.text || 'text-indigo-400'} uppercase tracking-wider`}>Team Comms</span>
                 <span className={`text-[8px] font-mono ${colors.text.muted}`}>({displayTeamComms.length})</span>
               </div>
               <div className="max-h-[200px] overflow-y-auto px-1 pb-1 space-y-0.5">
                 {displayTeamComms.slice(0, 30).map((comm, i) => {
-                  const typeColors = {
-                    message: 'text-cyan-400',
-                    broadcast: 'text-amber-400',
-                    shutdown_request: 'text-red-400',
-                    shutdown_response: 'text-orange-400',
-                    idle: 'text-yellow-400',
-                    task_completed: 'text-emerald-400',
-                  };
+                  const ct = colors.commType || {};
                   return (
                     <div key={i} className="flex items-center gap-1.5 px-1 py-0.5 text-[11px]">
                       <span className={`font-mono ${colors.text.muted} shrink-0 w-[38px]`}>
                         {new Date(comm.timestamp).toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' })}
                       </span>
-                      <span className={`font-medium text-cyan-400 shrink-0`}>{comm.from}</span>
+                      <span className={`font-medium ${ct.message || 'text-cyan-400'} shrink-0`}>{comm.from}</span>
                       <span className={colors.text.muted}>→</span>
-                      <span className={`font-medium ${typeColors[comm.type] || 'text-gray-400'} shrink-0`}>{comm.to}</span>
+                      <span className={`font-medium ${ct[comm.type] || ct.fallback || 'text-gray-400'} shrink-0`}>{comm.to}</span>
                       <span className={`${colors.text.muted} truncate flex-1 min-w-0`}>{comm.summary}</span>
                     </div>
                   );
@@ -837,17 +860,17 @@ export default function App() {
           <div className="flex items-center flex-nowrap shrink-0 gap-1">
             <span className={`${colors.text.muted} text-[9px] whitespace-nowrap`}>Events <span className={`font-mono ${colors.text.tertiary}`}>{totalEvents}</span></span>
             <div className="flex items-center gap-px text-[9px]">
-              <button onClick={() => setSelectedEventType(selectedEventType === 'tools' ? null : 'tools')} className={`px-0.5 py-0.5 rounded transition-all whitespace-nowrap ${selectedEventType === 'tools' ? 'bg-cyan-500/20 ring-1 ring-cyan-500/50' : 'hover:bg-cyan-500/10'}`} title="Tools">
-                <span className="text-[7px]">🔧</span><span className="font-mono text-cyan-400">{eventCounts.PreToolUse || 0}</span>
+              <button onClick={() => setSelectedEventType(selectedEventType === 'tools' ? null : 'tools')} className={`px-0.5 py-0.5 rounded transition-all whitespace-nowrap ${selectedEventType === 'tools' ? `${colors.semantic?.cyan?.bg || 'bg-cyan-500/20'} ring-1 ${colors.semantic?.cyan?.ring || 'ring-cyan-500/50'}` : (colors.semantic?.cyan?.bgHover || 'hover:bg-cyan-500/10')}`} title="Tools">
+                <span className="text-[7px]">🔧</span><span className={`font-mono ${colors.semantic?.cyan?.text || 'text-cyan-400'}`}>{eventCounts.PreToolUse || 0}</span>
               </button>
-              <button onClick={() => setSelectedEventType(selectedEventType === 'success' ? null : 'success')} className={`px-0.5 py-0.5 rounded transition-all whitespace-nowrap ${selectedEventType === 'success' ? 'bg-emerald-500/20 ring-1 ring-emerald-500/50' : 'hover:bg-emerald-500/10'}`} title="Success">
-                <span className="text-[7px]">✅</span><span className="font-mono text-emerald-400">{eventCounts.PostToolUse || 0}</span>
+              <button onClick={() => setSelectedEventType(selectedEventType === 'success' ? null : 'success')} className={`px-0.5 py-0.5 rounded transition-all whitespace-nowrap ${selectedEventType === 'success' ? `${colors.semantic?.emerald?.bg || 'bg-emerald-500/20'} ring-1 ${colors.semantic?.emerald?.ring || 'ring-emerald-500/50'}` : (colors.semantic?.emerald?.bgHover || 'hover:bg-emerald-500/10')}`} title="Success">
+                <span className="text-[7px]">✅</span><span className={`font-mono ${colors.semantic?.emerald?.text || 'text-emerald-400'}`}>{eventCounts.PostToolUse || 0}</span>
               </button>
-              <button onClick={() => setSelectedEventType(selectedEventType === 'errors' ? null : 'errors')} className={`px-0.5 py-0.5 rounded transition-all whitespace-nowrap ${selectedEventType === 'errors' ? 'bg-red-500/20 ring-1 ring-red-500/50' : 'hover:bg-red-500/10'}`} title="Errors">
-                <span className="text-[7px]">❌</span><span className="font-mono text-red-400">{eventCounts.PostToolUseFailure || 0}</span>
+              <button onClick={() => setSelectedEventType(selectedEventType === 'errors' ? null : 'errors')} className={`px-0.5 py-0.5 rounded transition-all whitespace-nowrap ${selectedEventType === 'errors' ? `${colors.semantic?.red?.bg || 'bg-red-500/20'} ring-1 ${colors.semantic?.red?.ring || 'ring-red-500/50'}` : (colors.semantic?.red?.bgHover || 'hover:bg-red-500/10')}`} title="Errors">
+                <span className="text-[7px]">❌</span><span className={`font-mono ${colors.semantic?.red?.text || 'text-red-400'}`}>{eventCounts.PostToolUseFailure || 0}</span>
               </button>
-              <button onClick={() => setSelectedEventType(selectedEventType === 'prompts' ? null : 'prompts')} className={`px-0.5 py-0.5 rounded transition-all whitespace-nowrap ${selectedEventType === 'prompts' ? 'bg-amber-500/20 ring-1 ring-amber-500/50' : 'hover:bg-amber-500/10'}`} title="Prompts">
-                <span className="text-[7px]">💬</span><span className="font-mono text-amber-400">{eventCounts.UserPromptSubmit || 0}</span>
+              <button onClick={() => setSelectedEventType(selectedEventType === 'prompts' ? null : 'prompts')} className={`px-0.5 py-0.5 rounded transition-all whitespace-nowrap ${selectedEventType === 'prompts' ? `${colors.semantic?.amber?.bg || 'bg-amber-500/20'} ring-1 ${colors.semantic?.amber?.ring || 'ring-amber-500/50'}` : (colors.semantic?.amber?.bgHover || 'hover:bg-amber-500/10')}`} title="Prompts">
+                <span className="text-[7px]">💬</span><span className={`font-mono ${colors.semantic?.amber?.text || 'text-amber-400'}`}>{eventCounts.UserPromptSubmit || 0}</span>
               </button>
             </div>
           </div>
@@ -856,10 +879,10 @@ export default function App() {
           {/* Right: Monthly Cost + Clock */}
           <div className="flex items-center flex-nowrap shrink-0 gap-1.5 text-[9px]">
             <span className={colors.text.muted}>Month</span>
-            <span className="font-mono font-bold text-emerald-400">${(tokens.month_cost || 0).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>
-            <span className="flex items-center gap-0.5" title="Opus"><span className="text-violet-400">◆</span><span className="font-mono text-violet-400">${(tokens.monthModelUsage?.Opus?.estimatedCost || 0).toLocaleString('en-US', {maximumFractionDigits: 0})}</span></span>
-            <span className="flex items-center gap-0.5" title="Sonnet"><span className="text-blue-400">●</span><span className="font-mono text-blue-400">${(tokens.monthModelUsage?.Sonnet?.estimatedCost || 0).toLocaleString('en-US', {maximumFractionDigits: 0})}</span></span>
-            <span className="flex items-center gap-0.5" title="Haiku"><span className="text-emerald-400">▪</span><span className="font-mono text-emerald-400">${(tokens.monthModelUsage?.Haiku?.estimatedCost || 0).toLocaleString('en-US', {maximumFractionDigits: 0})}</span></span>
+            <span className={`font-mono font-bold ${colors.status.success}`}>${(tokens.month_cost || 0).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>
+            <span className="flex items-center gap-0.5" title="Opus"><span className={colors.model?.opus?.text || 'text-violet-400'}>◆</span><span className={`font-mono ${colors.model?.opus?.text || 'text-violet-400'}`}>${(tokens.monthModelUsage?.Opus?.estimatedCost || 0).toLocaleString('en-US', {maximumFractionDigits: 0})}</span></span>
+            <span className="flex items-center gap-0.5" title="Sonnet"><span className={colors.model?.sonnet?.text || 'text-blue-400'}>●</span><span className={`font-mono ${colors.model?.sonnet?.text || 'text-blue-400'}`}>${(tokens.monthModelUsage?.Sonnet?.estimatedCost || 0).toLocaleString('en-US', {maximumFractionDigits: 0})}</span></span>
+            <span className="flex items-center gap-0.5" title="Haiku"><span className={colors.model?.haiku?.text || 'text-emerald-400'}>▪</span><span className={`font-mono ${colors.model?.haiku?.text || 'text-emerald-400'}`}>${(tokens.monthModelUsage?.Haiku?.estimatedCost || 0).toLocaleString('en-US', {maximumFractionDigits: 0})}</span></span>
             <span className={`${colors.text.muted}`}>|</span>
             <LiveClock colors={colors} />
           </div>
@@ -893,15 +916,16 @@ function EventDetailPanel({ event, colors, isCollapsed, onToggleCollapse }) {
   const permissionMode = raw.permission_mode;
   const toolResponse = raw.tool_response;
 
-  // Event type styling
+  // Event type styling (theme-aware text)
+  const sm = colors.semantic || {};
   const typeStyles = {
-    PostToolUse: { gradient: 'from-emerald-500/20 via-emerald-500/10 to-transparent', gradientSub: 'from-emerald-500/10 via-emerald-500/5 to-transparent', accent: 'bg-emerald-500', text: 'text-emerald-400', icon: '✓' },
-    PreToolUse: { gradient: 'from-cyan-500/20 via-cyan-500/10 to-transparent', gradientSub: 'from-cyan-500/10 via-cyan-500/5 to-transparent', accent: 'bg-cyan-500', text: 'text-cyan-400', icon: '◈' },
-    UserPromptSubmit: { gradient: 'from-amber-500/20 via-amber-500/10 to-transparent', gradientSub: 'from-amber-500/10 via-amber-500/5 to-transparent', accent: 'bg-amber-500', text: 'text-amber-400', icon: '▸' },
-    Stop: { gradient: 'from-red-500/20 via-red-500/10 to-transparent', gradientSub: 'from-red-500/10 via-red-500/5 to-transparent', accent: 'bg-red-500', text: 'text-red-400', icon: '■' },
-    SessionStart: { gradient: 'from-violet-500/20 via-violet-500/10 to-transparent', gradientSub: 'from-violet-500/10 via-violet-500/5 to-transparent', accent: 'bg-violet-500', text: 'text-violet-400', icon: '●' },
-    SubagentStart: { gradient: 'from-blue-500/20 via-blue-500/10 to-transparent', gradientSub: 'from-blue-500/10 via-blue-500/5 to-transparent', accent: 'bg-blue-500', text: 'text-blue-400', icon: '◆' },
-    SubagentStop: { gradient: 'from-orange-500/20 via-orange-500/10 to-transparent', gradientSub: 'from-orange-500/10 via-orange-500/5 to-transparent', accent: 'bg-orange-500', text: 'text-orange-400', icon: '◇' },
+    PostToolUse: { gradient: 'from-emerald-500/20 via-emerald-500/10 to-transparent', gradientSub: 'from-emerald-500/10 via-emerald-500/5 to-transparent', accent: 'bg-emerald-500', text: sm.emerald?.text || 'text-emerald-400', icon: '✓' },
+    PreToolUse: { gradient: 'from-cyan-500/20 via-cyan-500/10 to-transparent', gradientSub: 'from-cyan-500/10 via-cyan-500/5 to-transparent', accent: 'bg-cyan-500', text: sm.cyan?.text || 'text-cyan-400', icon: '◈' },
+    UserPromptSubmit: { gradient: 'from-amber-500/20 via-amber-500/10 to-transparent', gradientSub: 'from-amber-500/10 via-amber-500/5 to-transparent', accent: 'bg-amber-500', text: sm.amber?.text || 'text-amber-400', icon: '▸' },
+    Stop: { gradient: 'from-red-500/20 via-red-500/10 to-transparent', gradientSub: 'from-red-500/10 via-red-500/5 to-transparent', accent: 'bg-red-500', text: sm.red?.text || 'text-red-400', icon: '■' },
+    SessionStart: { gradient: 'from-violet-500/20 via-violet-500/10 to-transparent', gradientSub: 'from-violet-500/10 via-violet-500/5 to-transparent', accent: 'bg-violet-500', text: sm.violet?.text || 'text-violet-400', icon: '●' },
+    SubagentStart: { gradient: 'from-blue-500/20 via-blue-500/10 to-transparent', gradientSub: 'from-blue-500/10 via-blue-500/5 to-transparent', accent: 'bg-blue-500', text: sm.blue?.text || 'text-blue-400', icon: '◆' },
+    SubagentStop: { gradient: 'from-orange-500/20 via-orange-500/10 to-transparent', gradientSub: 'from-orange-500/10 via-orange-500/5 to-transparent', accent: 'bg-orange-500', text: sm.orange?.text || 'text-orange-400', icon: '◇' },
   };
   const style = typeStyles[event.type] || typeStyles.PreToolUse;
 
@@ -948,7 +972,7 @@ function EventDetailPanel({ event, colors, isCollapsed, onToggleCollapse }) {
               <span className={`text-[10px] font-semibold ${style.text}`}>{event.type}</span>
               {event.toolName && <span className={`text-[10px] ${colors.text.muted}`}>{event.toolName}</span>}
               {permissionMode && (
-                <span className="text-[8px] px-1.5 py-0.5 rounded-full bg-violet-500/15 text-violet-400 border border-violet-500/20">
+                <span className={`text-[8px] px-1.5 py-0.5 rounded-full ${colors.model?.opus?.bg || 'bg-violet-500/15'} ${colors.model?.opus?.text || 'text-violet-400'} border ${colors.border}`}>
                   {permissionMode}
                 </span>
               )}

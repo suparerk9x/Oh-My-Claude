@@ -15,9 +15,9 @@ export function TokenGauge({ label, pct = null, resetTime = null, resetType = 'r
   const yellowThreshold = isSession ? 60 : 75;
 
   // Session uses traffic light colors, Weekly uses neutral gray
-  const color = isNA ? 'text-gray-500' : isSession
+  const color = isNA ? (colors?.text?.muted || 'text-gray-500') : isSession
     ? (pct >= redThreshold ? 'text-red-500' : pct >= yellowThreshold ? 'text-yellow-500' : 'text-green-500')
-    : 'text-gray-400';
+    : (colors?.text?.secondary || 'text-gray-400');
   const textSecondary = colors?.text?.secondary || 'text-gray-300';
 
   // Session uses gradient, Weekly uses solid gray

@@ -7,16 +7,24 @@ import { formatTokens } from '../utils/format';
 export function TokenStats({ tokens = {}, colors = {} }) {
   const modelUsage = tokens.modelUsage || {};
   const textMuted = colors?.text?.muted || 'text-gray-500';
+  const mc = colors?.model || {};
 
   // Calculate total weekly cost
   const totalWeeklyCost = Object.values(modelUsage).reduce((sum, m) => sum + (m.estimatedCost || 0), 0);
+
+  // Theme-aware model colors
+  const getModelStyle = (model) => {
+    if (model === 'Opus')   return { icon: '◆', color: mc.opus?.text   || 'text-violet-400',  bg: mc.opus?.bg   || 'bg-violet-500/10' };
+    if (model === 'Sonnet') return { icon: '●', color: mc.sonnet?.text || 'text-blue-400',    bg: mc.sonnet?.bg || 'bg-blue-500/10' };
+    return                         { icon: '▪', color: mc.haiku?.text  || 'text-emerald-400',  bg: mc.haiku?.bg  || 'bg-emerald-500/10' };
+  };
 
   return (
     <div>
       {/* Header */}
       <div className="flex items-center justify-between py-1">
         <span className={`text-[10px] ${textMuted} uppercase tracking-wider font-medium`}>This Week</span>
-        <span className="text-[11px] font-mono font-bold text-emerald-400">${totalWeeklyCost.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>
+        <span className={`text-[11px] font-mono font-bold ${colors?.status?.success || 'text-emerald-400'}`}>${totalWeeklyCost.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>
       </div>
 
       {/* Model Details - Always Visible */}
@@ -24,20 +32,16 @@ export function TokenStats({ tokens = {}, colors = {} }) {
         {Object.entries(modelUsage)
           .filter(([_, usage]) => usage.totalTokens > 0)
           .map(([model, usage]) => {
-            const modelIcon = model === 'Opus' ? '◆' : model === 'Sonnet' ? '●' : '▪';
-            const modelColor = model === 'Opus' ? 'text-violet-400' :
-                               model === 'Sonnet' ? 'text-blue-400' : 'text-emerald-400';
-            const modelBg = model === 'Opus' ? 'bg-violet-500/10' :
-                            model === 'Sonnet' ? 'bg-blue-500/10' : 'bg-emerald-500/10';
+            const ms = getModelStyle(model);
 
             return (
-              <div key={model} className={`rounded p-1.5 ${modelBg}`}>
+              <div key={model} className={`rounded p-1.5 ${ms.bg}`}>
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-1">
-                    <span className={`${modelColor} text-[10px]`}>{modelIcon}</span>
-                    <span className={`${modelColor} text-[9px] font-semibold uppercase`}>{model}</span>
+                    <span className={`${ms.color} text-[10px]`}>{ms.icon}</span>
+                    <span className={`${ms.color} text-[9px] font-semibold uppercase`}>{model}</span>
                   </div>
-                  <span className={`${modelColor} font-mono text-[10px] font-bold`}>
+                  <span className={`${ms.color} font-mono text-[10px] font-bold`}>
                     ${(usage.estimatedCost || 0).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}
                   </span>
                 </div>
@@ -47,7 +51,7 @@ export function TokenStats({ tokens = {}, colors = {} }) {
                     <span className={textMuted}>Out: <span className="font-mono">{formatTokens(usage.outputTokens)}</span></span>
                   </div>
                   {usage.cacheReadTokens > 0 && (
-                    <span className="text-sky-400">Cache: <span className="font-mono">{formatTokens(usage.cacheReadTokens)}</span></span>
+                    <span className={colors?.semantic?.sky?.text || 'text-sky-400'}>Cache: <span className="font-mono">{formatTokens(usage.cacheReadTokens)}</span></span>
                   )}
                 </div>
               </div>

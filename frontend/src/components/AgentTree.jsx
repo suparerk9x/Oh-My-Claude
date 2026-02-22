@@ -77,77 +77,88 @@ export function AgentTree({ agents = [], colors = {}, compact = false, expanded 
   const sessionNumber = {};
   sessionsByCreation.forEach((s, idx) => { sessionNumber[s.id] = idx + 1; });
 
-  // Status config (5-level: active → idle → stale → timeout → stopped)
+  // Theme-aware helper: agent status
+  const as = colors.agentStatus || {};
   const getStatus = (status) => {
     switch (status) {
       case 'active':
-      case 'running':
-        return { icon: '●', color: 'text-emerald-400', bg: 'bg-emerald-500/15', pulse: true, label: 'Active' };
-      case 'idle':
-        return { icon: '●', color: 'text-yellow-400', bg: 'bg-yellow-500/15', pulse: false, label: 'Idle' };
-      case 'stale':
-        return { icon: '●', color: 'text-orange-400', bg: 'bg-orange-500/15', pulse: false, label: 'Stale' };
-      case 'timeout':
-        return { icon: '●', color: 'text-amber-400', bg: 'bg-amber-500/15', pulse: true, label: 'Timeout' };
-      case 'stopped':
-        return { icon: '○', color: 'text-gray-500', bg: 'bg-gray-500/15', pulse: false, label: 'Stopped' };
-      default:
-        return { icon: '○', color: 'text-gray-600', bg: 'bg-gray-500/15', pulse: false, label: 'Unknown' };
+      case 'running': {
+        const s = as.active || {};
+        return { icon: '●', color: s.text || 'text-emerald-400', bg: s.bg || 'bg-emerald-500/15', dot: s.dot || 'bg-emerald-500 animate-pulse', pulse: true, label: 'Active' };
+      }
+      case 'idle': {
+        const s = as.idle || {};
+        return { icon: '●', color: s.text || 'text-yellow-400', bg: s.bg || 'bg-yellow-500/15', dot: s.dot || 'bg-yellow-400', pulse: false, label: 'Idle' };
+      }
+      case 'stale': {
+        const s = as.stale || {};
+        return { icon: '●', color: s.text || 'text-orange-400', bg: s.bg || 'bg-orange-500/15', dot: s.dot || 'bg-orange-400 animate-pulse', pulse: false, label: 'Stale' };
+      }
+      case 'timeout': {
+        const s = as.timeout || {};
+        return { icon: '●', color: s.text || 'text-amber-400', bg: s.bg || 'bg-amber-500/15', dot: s.dot || 'bg-amber-500 animate-ping', pulse: true, label: 'Timeout' };
+      }
+      case 'stopped': {
+        const s = as.stopped || {};
+        return { icon: '○', color: s.text || 'text-gray-500', bg: s.bg || 'bg-gray-500/15', dot: s.dot || 'bg-gray-600', pulse: false, label: 'Stopped' };
+      }
+      default: {
+        const s = as.unknown || {};
+        return { icon: '○', color: s.text || 'text-gray-600', bg: s.bg || 'bg-gray-500/15', dot: s.dot || 'bg-gray-700', pulse: false, label: 'Unknown' };
+      }
     }
   };
 
-  // Model display - FULL names with version
+  // Theme-aware helper: model badge
+  const mc = colors.model || {};
   const getModel = (model) => {
-    // Extract version: "claude-opus-4-6" or "claude-opus-4-5-20251101" -> "4.6" / "4.5"
     const versionMatch = model?.match(/(?:opus|sonnet|haiku)-(\d+)-(\d+)/i);
     const version = versionMatch ? ` ${versionMatch[1]}.${versionMatch[2]}` : '';
 
-    if (model?.includes('opus')) return { name: `Opus${version}`, color: 'text-violet-400', bg: 'bg-violet-500/15' };
-    if (model?.includes('sonnet')) return { name: `Sonnet${version}`, color: 'text-sky-400', bg: 'bg-sky-500/15' };
-    if (model?.includes('haiku')) return { name: `Haiku${version}`, color: 'text-teal-400', bg: 'bg-teal-500/15' };
-    return null; // Don't show if unknown
+    if (model?.includes('opus'))   { const m = mc.opus || {};   return { name: `Opus${version}`,   color: m.text || 'text-violet-400', bg: m.bg || 'bg-violet-500/15' }; }
+    if (model?.includes('sonnet')) { const m = mc.sonnet || {}; return { name: `Sonnet${version}`, color: m.text || 'text-sky-400',    bg: m.bg || 'bg-sky-500/15' }; }
+    if (model?.includes('haiku'))  { const m = mc.haiku || {};  return { name: `Haiku${version}`,  color: m.text || 'text-teal-400',   bg: m.bg || 'bg-teal-500/15' }; }
+    return null;
   };
 
-  // Type display - FULL names with distinct colors
+  // Theme-aware helper: agent type
+  const at = colors.agentType || {};
   const getTypeInfo = (type) => {
     if (!type || type === 'main') return null;
     const name = type.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join('-');
-
-    // Agent type colors - Distinct from model colors (Opus=violet, Sonnet=sky, Haiku=teal)
-    // Use PINK/ROSE for all agent types - clearly different from models
-    const typeColors = {
-      'explore': { bg: 'bg-pink-500/15', text: 'text-pink-400' },
-      'plan': { bg: 'bg-pink-500/15', text: 'text-pink-400' },
-      'bash': { bg: 'bg-pink-500/15', text: 'text-pink-400' },
-      'general-purpose': { bg: 'bg-pink-500/15', text: 'text-pink-400' },
-      'code-reviewer': { bg: 'bg-pink-500/15', text: 'text-pink-400' },
-      'subagent': { bg: 'bg-pink-500/15', text: 'text-pink-400' },
+    const fb = at.fallback || {};
+    const typeMap = {
+      'explore': at.explore || fb,
+      'plan': at.plan || fb,
+      'bash': at.bash || fb,
+      'general-purpose': at.general || fb,
+      'code-reviewer': at.code || fb,
+      'subagent': at.fallback || fb,
     };
-
-    const colors = typeColors[type.toLowerCase()] || { bg: 'bg-pink-500/15', text: 'text-pink-400' };
-    return { name, ...colors };
+    const tc = typeMap[type.toLowerCase()] || fb;
+    return { name, bg: tc.bg || 'bg-pink-500/15', text: tc.text || 'text-pink-400' };
   };
 
   const getDuration = (agent) => agent.elapsedFormatted || agent.durationFormatted || null;
 
-  // Parse lastTask into tool + detail for better display
+  // Theme-aware helper: tool style
+  const tl = colors.tool || {};
   const parseLastTask = (lastTask) => {
     if (!lastTask || lastTask === 'Main Session') return null;
 
-    // Tool colors - MATCH Activity Feed exactly (ActivityItem.jsx)
     const toolConfig = {
-      'Read': { icon: '📖', color: 'text-sky-500', bg: 'bg-sky-500/15' },
-      'Glob': { icon: '📂', color: 'text-sky-500', bg: 'bg-sky-500/15' },
-      'Grep': { icon: '🔍', color: 'text-sky-500', bg: 'bg-sky-500/15' },
-      'Edit': { icon: '✏️', color: 'text-orange-500', bg: 'bg-orange-500/15' },
-      'Write': { icon: '📝', color: 'text-orange-500', bg: 'bg-orange-500/15' },
-      'Bash': { icon: '⚡', color: 'text-amber-500', bg: 'bg-amber-500/15' },
-      'Task': { icon: '🔀', color: 'text-violet-500', bg: 'bg-violet-500/15' },
-      'WebFetch': { icon: '🌐', color: 'text-cyan-500', bg: 'bg-cyan-500/15' },
-      'WebSearch': { icon: '🔎', color: 'text-cyan-500', bg: 'bg-cyan-500/15' },
-      'TeamCreate': { icon: '👥', color: 'text-indigo-500', bg: 'bg-indigo-500/15' },
-      'SendMessage': { icon: '📨', color: 'text-cyan-500', bg: 'bg-cyan-500/15' },
-      'TeamDelete': { icon: '🧹', color: 'text-gray-500', bg: 'bg-gray-500/15' },
+      'Read':        { icon: '📖', ...(tl.read    || { color: 'text-sky-500',    bg: 'bg-sky-500/15' }) },
+      'Glob':        { icon: '📂', ...(tl.read    || { color: 'text-sky-500',    bg: 'bg-sky-500/15' }) },
+      'Grep':        { icon: '🔍', ...(tl.read    || { color: 'text-sky-500',    bg: 'bg-sky-500/15' }) },
+      'Edit':        { icon: '✏️', ...(tl.edit    || { color: 'text-orange-500', bg: 'bg-orange-500/15' }) },
+      'Write':       { icon: '📝', ...(tl.edit    || { color: 'text-orange-500', bg: 'bg-orange-500/15' }) },
+      'Bash':        { icon: '⚡', ...(tl.bash    || { color: 'text-amber-500',  bg: 'bg-amber-500/15' }) },
+      'Task':        { icon: '🔀', ...(tl.task    || { color: 'text-violet-500', bg: 'bg-violet-500/15' }) },
+      'WebFetch':    { icon: '🌐', ...(tl.web     || { color: 'text-cyan-500',   bg: 'bg-cyan-500/15' }) },
+      'WebSearch':   { icon: '🔎', ...(tl.web     || { color: 'text-cyan-500',   bg: 'bg-cyan-500/15' }) },
+      'TeamCreate':  { icon: '👥', ...(tl.team    || { color: 'text-indigo-500', bg: 'bg-indigo-500/15' }) },
+      'SendMessage': { icon: '📨', ...(tl.web     || { color: 'text-cyan-500',   bg: 'bg-cyan-500/15' }) },
+      'TeamDelete':  { icon: '🧹', ...(tl.teamDel || { color: 'text-gray-500',   bg: 'bg-gray-500/15' }) },
     };
 
     // Try to extract tool name from start of lastTask
@@ -156,12 +167,13 @@ export function AgentTree({ agents = [], colors = {}, compact = false, expanded 
       const [, tool, detail] = match;
       const config = toolConfig[tool];
       if (config) {
-        return { tool, detail, ...config };
+        // Normalize: tool config has 'text' for text color, but parseLastTask expects 'color'
+        return { tool, detail, icon: config.icon, color: config.text || config.color, bg: config.bg };
       }
     }
 
     // No tool detected - treat as user prompt
-    return { tool: null, detail: lastTask, icon: '💬', color: 'text-gray-400' };
+    return { tool: null, detail: lastTask, icon: '💬', color: colors?.text?.muted || 'text-gray-400' };
   };
 
   // Format timestamp to HH:MM
@@ -256,10 +268,14 @@ export function AgentTree({ agents = [], colors = {}, compact = false, expanded 
     return { health, issues };
   };
 
-  // Theme-aware colors
+  // Theme-aware common colors
   const textMuted = colors?.text?.muted || 'text-gray-500';
   const borderColor = colors?.border || 'border-gray-800/40';
   const tasksBg = colors?.bg?.tasks || 'bg-black/10';
+  const hl = colors.health || {};
+  const tm = colors.team || {};
+  const mi = colors.misc || {};
+  const gi = colors.git || {};
 
   // Render a single task/agent row
   const renderTask = (task, i, totalCount, ctx) => {
@@ -290,7 +306,7 @@ export function AgentTree({ agents = [], colors = {}, compact = false, expanded 
     return (
       <div
         key={task.id || i}
-        className={`${ctx.expanded ? 'px-3 pt-3 pb-0' : 'px-2 pt-2 pb-0'} ${i < totalCount - 1 ? 'border-b border-gray-800/20' : ''} ${task.status === 'stopped' ? 'opacity-50' : ''}`}
+        className={`${ctx.expanded ? 'px-3 pt-3 pb-0' : 'px-2 pt-2 pb-0'} ${i < totalCount - 1 ? `border-b ${mi.separator || 'border-gray-800/20'}` : ''} ${task.status === 'stopped' ? 'opacity-50' : ''}`}
       >
         <div className={`${ctx.expanded ? 'pl-4 space-y-1.5' : 'pl-3 space-y-1'}`}>
           {/* Line 1: Status (fixed) + Model + Type + Name + Health + Duration + Tokens */}
@@ -298,15 +314,15 @@ export function AgentTree({ agents = [], colors = {}, compact = false, expanded 
             <div className="flex-1 min-w-0 flex items-center gap-1 overflow-hidden">
               <span className={`${ctx.textMuted} text-[9px] shrink-0`}>└</span>
               {task.teamName && (
-                <span className={`${ctx.expanded ? 'text-[10px]' : 'text-[9px]'} shrink-0 flex items-center justify-center w-[18px] h-[18px] rounded bg-white/15`} title={`Team: ${task.teamName}`}>
-                  <svg width="10" height="10" viewBox="0 0 16 16" fill="none" className="text-gray-100">
+                <span className={`${ctx.expanded ? 'text-[10px]' : 'text-[9px]'} shrink-0 flex items-center justify-center w-[18px] h-[18px] rounded ${tm.iconBg || 'bg-white/15'}`} title={`Team: ${task.teamName}`}>
+                  <svg width="10" height="10" viewBox="0 0 16 16" fill="none" className={tm.iconText || 'text-gray-100'}>
                     <circle cx="8" cy="4.5" r="3" fill="currentColor"/>
                     <path d="M2.5 15c0-3 2.5-5.5 5.5-5.5s5.5 2.5 5.5 5.5" fill="currentColor" opacity="0.7"/>
                   </svg>
                 </span>
               )}
               {task.agentName && (
-                <span className={`${ctx.expanded ? 'text-[10px]' : 'text-[9px]'} font-medium px-1.5 py-0.5 rounded shrink-0 whitespace-nowrap ${task.teamName ? 'bg-white/15 text-gray-100' : 'bg-cyan-500/15 text-cyan-400'}`}>
+                <span className={`${ctx.expanded ? 'text-[10px]' : 'text-[9px]'} font-medium px-1.5 py-0.5 rounded shrink-0 whitespace-nowrap ${task.teamName ? `${tm.memberNameBg || 'bg-white/15'} ${tm.memberNameText || 'text-gray-100'}` : `${tm.nonTeamNameBg || 'bg-cyan-500/15'} ${tm.nonTeamNameText || 'text-cyan-400'}`}`}>
                   {task.agentName}
                 </span>
               )}
@@ -321,15 +337,14 @@ export function AgentTree({ agents = [], colors = {}, compact = false, expanded 
                 </span>
               )}
               {/* Health warnings */}
-              {healthWarnings.map((w, idx) => (
-                <span key={idx} className={`${ctx.expanded ? 'text-[8px]' : 'text-[7px]'} px-1 py-0.5 rounded-full shrink-0 ${
-                  w.level === 'red' ? 'bg-red-500/15 text-red-400' :
-                  w.level === 'orange' ? 'bg-orange-500/15 text-orange-400' :
-                  'bg-yellow-500/15 text-yellow-400'
-                }`} title={w.title}>
-                  {w.icon}
-                </span>
-              ))}
+              {healthWarnings.map((w, idx) => {
+                const hc = hl[w.level] || {};
+                return (
+                  <span key={idx} className={`${ctx.expanded ? 'text-[8px]' : 'text-[7px]'} px-1 py-0.5 rounded-full shrink-0 ${hc.bg || 'bg-yellow-500/15'} ${hc.text || 'text-yellow-400'}`} title={w.title}>
+                    {w.icon}
+                  </span>
+                );
+              })}
               <span className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded shrink-0 ${status.bg}`}>
                 <span className={`${ctx.expanded ? 'text-[10px]' : 'text-[9px]'} shrink-0 ${status.color} ${status.pulse ? 'animate-pulse' : ''}`}>
                   {status.icon}
@@ -340,10 +355,10 @@ export function AgentTree({ agents = [], colors = {}, compact = false, expanded 
               </span>
             </div>
             <div className="shrink-0 flex items-center gap-1 pl-1">
-              <span className={`font-mono ${ctx.expanded ? 'text-[10px]' : 'text-[9px]'} tabular-nums w-[48px] text-right whitespace-nowrap ${displayDuration ? 'text-gray-400' : 'text-gray-500'}`}>
+              <span className={`font-mono ${ctx.expanded ? 'text-[10px]' : 'text-[9px]'} tabular-nums w-[48px] text-right whitespace-nowrap ${displayDuration ? (mi.duration || 'text-gray-400') : (mi.durationFallback || 'text-gray-500')}`}>
                 {displayDuration || (task.stoppedAt || task.lastSeen ? ctx.formatTime(task.stoppedAt || task.lastSeen) : '')}
               </span>
-              <span className={`font-mono ${ctx.expanded ? 'text-[10px]' : 'text-[9px]'} tabular-nums text-amber-500 w-[45px] text-right`}>
+              <span className={`font-mono ${ctx.expanded ? 'text-[10px]' : 'text-[9px]'} tabular-nums ${mi.tokens || 'text-amber-500'} w-[45px] text-right`}>
                 {tokens > 0 ? ctx.formatTokens(tokens) : ''}
               </span>
             </div>
@@ -354,9 +369,9 @@ export function AgentTree({ agents = [], colors = {}, compact = false, expanded 
             <div className={`flex items-center gap-1 ${ctx.expanded ? 'pl-8 flex-wrap' : 'pl-8'}`}>
               {task.toolsUsed?.length > 0 && (
                 <>
-                  <span className="text-[9px] text-gray-500 shrink-0">🔧</span>
+                  <span className={`text-[9px] ${mi.durationFallback || 'text-gray-500'} shrink-0`}>🔧</span>
                   {task.toolsUsed.map((tool, idx) => (
-                    <span key={idx} className={`${ctx.expanded ? 'text-[9px]' : 'text-[8px]'} px-1.5 py-0.5 rounded bg-sky-500/10 text-sky-400/80`}>
+                    <span key={idx} className={`${ctx.expanded ? 'text-[9px]' : 'text-[8px]'} px-1.5 py-0.5 rounded ${mi.toolBadgeBg || 'bg-sky-500/10'} ${mi.toolBadgeText || 'text-sky-400/80'}`}>
                       {tool}
                     </span>
                   ))}
@@ -364,10 +379,10 @@ export function AgentTree({ agents = [], colors = {}, compact = false, expanded 
               )}
               {tokenPct > 0 && (
                 <div className="flex items-center gap-1.5 ml-auto shrink-0">
-                  <div className="h-1 rounded-full bg-gray-700/30 overflow-hidden w-[50px]">
-                    <div className="h-full rounded-full bg-amber-500/50 transition-all" style={{ width: `${Math.min(tokenPct, 100)}%` }} />
+                  <div className={`h-1 rounded-full ${mi.tokenBarTrack || 'bg-gray-700/30'} overflow-hidden w-[50px]`}>
+                    <div className={`h-full rounded-full ${mi.tokenBarFill || 'bg-amber-500/50'} transition-all`} style={{ width: `${Math.min(tokenPct, 100)}%` }} />
                   </div>
-                  <span className="text-[8px] font-mono text-amber-500/70">{tokenPct}%</span>
+                  <span className={`text-[8px] font-mono ${mi.tokenPct || 'text-amber-500/70'}`}>{tokenPct}%</span>
                 </div>
               )}
             </div>
@@ -376,11 +391,11 @@ export function AgentTree({ agents = [], colors = {}, compact = false, expanded 
           {/* Line 3: Description */}
           {!ctx.compact && desc && (
             <div className="flex items-center gap-1.5 pl-8">
-              <span className={`${ctx.expanded ? 'text-[10px]' : 'text-[9px]'} text-gray-400 truncate flex-1 min-w-0`}>
+              <span className={`${ctx.expanded ? 'text-[10px]' : 'text-[9px]'} ${mi.description || 'text-gray-400'} truncate flex-1 min-w-0`}>
                 💬 {desc}
               </span>
               {task.id && (
-                <code className="text-gray-600 font-mono text-[8px] shrink-0">{task.id.slice(0, 7)}</code>
+                <code className={`${mi.sessionId || 'text-gray-600'} font-mono text-[8px] shrink-0`}>{task.id.slice(0, 7)}</code>
               )}
             </div>
           )}
@@ -423,13 +438,13 @@ export function AgentTree({ agents = [], colors = {}, compact = false, expanded 
           const teamTotalTokens = teamTasks.reduce((sum, t) => sum + (t.tokens || (t.inputTokens || 0) + (t.outputTokens || 0) || 0), 0);
 
           return (
-            <div key={sessionId} className={`${expanded ? `flex flex-col rounded-lg border ${borderColor}` : `border-b ${borderColor}`} ${isActive ? 'bg-emerald-500/[0.03]' : 'opacity-50'}`}>
+            <div key={sessionId} className={`${expanded ? `flex flex-col rounded-lg border ${borderColor}` : `border-b ${borderColor}`} ${isActive ? (mi.activeBg || 'bg-emerald-500/[0.03]') : 'opacity-50'}`}>
               {/* Session Header */}
               <div className={`${expanded ? 'px-3 py-2' : 'px-2 py-1.5'} shrink-0`}>
                 {/* Line 1: Number + Model + Status + Duration + Tokens */}
                 <div className="flex items-center flex-nowrap">
                   <div className="flex-1 min-w-0 flex items-center gap-1 overflow-hidden">
-                    <span className="text-[11px] font-mono font-bold text-white shrink-0 w-[16px] text-right">{sessionNumber[sessionId]}.</span>
+                    <span className={`text-[11px] font-mono font-bold ${mi.sessionNum || 'text-white'} shrink-0 w-[16px] text-right`}>{sessionNumber[sessionId]}.</span>
                     {mainModel && (
                       <span className={`text-[10px] font-medium px-1 py-0.5 rounded shrink-0 whitespace-nowrap ${mainModel.color} ${mainModel.bg}`}>
                         {mainModel.name}
@@ -448,10 +463,10 @@ export function AgentTree({ agents = [], colors = {}, compact = false, expanded 
                     )}
                   </div>
                   <div className="shrink-0 flex items-center gap-1 pl-1">
-                    <span className="font-mono text-[10px] tabular-nums text-gray-400 w-[48px] text-right whitespace-nowrap">
+                    <span className={`font-mono text-[10px] tabular-nums ${mi.duration || 'text-gray-400'} w-[48px] text-right whitespace-nowrap`}>
                       {main && getDuration(main) ? getDuration(main) : ''}
                     </span>
-                    <span className="font-mono text-[10px] tabular-nums text-amber-500 w-[45px] text-right">
+                    <span className={`font-mono text-[10px] tabular-nums ${mi.tokens || 'text-amber-500'} w-[45px] text-right`}>
                       {formatTokens(sessionTokens)}
                     </span>
                   </div>
@@ -461,17 +476,17 @@ export function AgentTree({ agents = [], colors = {}, compact = false, expanded 
                 {(main?.cwd || teamInfo) && (
                   <div className="mt-0.5 pl-[22px] flex items-center gap-1.5">
                     {main?.cwd && (
-                      <span className="text-[10px] font-mono tracking-widest uppercase text-cyan-400/70" style={{ fontFamily: "'Share Tech Mono', 'Fira Code', 'JetBrains Mono', monospace", letterSpacing: '0.15em' }} title={main.cwd}>
+                      <span className={`text-[10px] font-mono tracking-widest uppercase ${mi.projectName || 'text-cyan-400/70'}`} style={{ fontFamily: "'Share Tech Mono', 'Fira Code', 'JetBrains Mono', monospace", letterSpacing: '0.15em' }} title={main.cwd}>
                         {main.cwd.split(/[\\/]/).pop()}
                       </span>
                     )}
                     {hasTeam && (
-                      <span className={`text-[9px] px-1.5 py-0.5 rounded-full ${teamInfo.status === 'active' ? 'bg-indigo-500/15 text-indigo-400 border-indigo-500/20' : 'bg-gray-500/15 text-gray-400 border-gray-500/20'} border whitespace-nowrap`} title={`Team: ${teamInfo.name} (${teamTasks.length} members)`}>
+                      <span className={`text-[9px] px-1.5 py-0.5 rounded-full ${teamInfo.status === 'active' ? (tm.badgeActive || 'bg-indigo-500/15 text-indigo-400 border-indigo-500/20') : (tm.badgeInactive || 'bg-gray-500/15 text-gray-400 border-gray-500/20')} border whitespace-nowrap`} title={`Team: ${teamInfo.name} (${teamTasks.length} members)`}>
                         👥 {teamInfo.name}
                       </span>
                     )}
                     {hasConflicts && (
-                      <span className="text-[9px] px-1 py-0.5 rounded-full bg-red-500/15 text-red-400 border border-red-500/20 whitespace-nowrap" title={`${teamInfo.fileConflicts.length} file conflict(s)`}>
+                      <span className={`text-[9px] px-1 py-0.5 rounded-full ${mi.fileConflict || 'bg-red-500/15 text-red-400 border-red-500/20'} border whitespace-nowrap`} title={`${teamInfo.fileConflicts.length} file conflict(s)`}>
                         ⚠ {teamInfo.fileConflicts.length} conflict{teamInfo.fileConflicts.length > 1 ? 's' : ''}
                       </span>
                     )}
@@ -490,10 +505,10 @@ export function AgentTree({ agents = [], colors = {}, compact = false, expanded 
                           {parsed.tool}
                         </span>
                       )}
-                      <span className={`text-[10px] text-gray-400 ${expanded ? '' : 'truncate'} flex-1 min-w-0`}>
+                      <span className={`text-[10px] ${mi.description || 'text-gray-400'} ${expanded ? '' : 'truncate'} flex-1 min-w-0`}>
                         {parsed.detail}
                       </span>
-                      <code className="text-gray-600 font-mono text-[8px] shrink-0">{sessionId.slice(0, 7)}</code>
+                      <code className={`${mi.sessionId || 'text-gray-600'} font-mono text-[8px] shrink-0`}>{sessionId.slice(0, 7)}</code>
                     </div>
                   );
                 })()}
@@ -504,24 +519,24 @@ export function AgentTree({ agents = [], colors = {}, compact = false, expanded 
                     {tasks.length > 0 && (
                       <span className={`text-[9px] px-1.5 py-0.5 rounded-full whitespace-nowrap ${
                         activeTaskCount > 0
-                          ? 'bg-emerald-500/15 text-emerald-400'
-                          : 'bg-gray-500/15 text-gray-500'
+                          ? `${(as.active || {}).bg || 'bg-emerald-500/15'} ${(as.active || {}).text || 'text-emerald-400'}`
+                          : `${(as.stopped || {}).bg || 'bg-gray-500/15'} ${(as.stopped || {}).text || 'text-gray-500'}`
                       }`}>
                         {activeTaskCount > 0 ? `${activeTaskCount}/${tasks.length} running` : `${tasks.length} done`}
                       </span>
                     )}
                     {main?.gitDiff && (
-                      <div className={`inline-flex items-center gap-0 rounded-md border border-gray-700/40 overflow-hidden ${expanded ? 'text-[10px]' : 'text-[9px]'} font-mono tabular-nums`}>
-                        <span className="flex items-center gap-1 px-1.5 py-0.5 bg-green-500/8">
-                          <span className="w-1 h-1 rounded-full bg-green-400" />
-                          <span className="text-green-400">+{main.gitDiff.additions.toLocaleString()}</span>
+                      <div className={`inline-flex items-center gap-0 rounded-md border ${gi.fileBorder || 'border-gray-700/40'} overflow-hidden ${expanded ? 'text-[10px]' : 'text-[9px]'} font-mono tabular-nums`}>
+                        <span className={`flex items-center gap-1 px-1.5 py-0.5 ${gi.addBg || 'bg-green-500/8'}`}>
+                          <span className={`w-1 h-1 rounded-full ${gi.addDot || 'bg-green-400'}`} />
+                          <span className={gi.addText || 'text-green-400'}>+{main.gitDiff.additions.toLocaleString()}</span>
                         </span>
-                        <span className="flex items-center gap-1 px-1.5 py-0.5 bg-red-500/8 border-l border-gray-700/40">
-                          <span className="w-1 h-1 rounded-full bg-red-400" />
-                          <span className="text-red-400">-{main.gitDiff.deletions.toLocaleString()}</span>
+                        <span className={`flex items-center gap-1 px-1.5 py-0.5 ${gi.delBg || 'bg-red-500/8'} border-l ${gi.fileBorder || 'border-gray-700/40'}`}>
+                          <span className={`w-1 h-1 rounded-full ${gi.delDot || 'bg-red-400'}`} />
+                          <span className={gi.delText || 'text-red-400'}>-{main.gitDiff.deletions.toLocaleString()}</span>
                         </span>
                         {main.gitDiff.files > 0 && (
-                          <span className="px-1.5 py-0.5 text-gray-500 border-l border-gray-700/40">
+                          <span className={`px-1.5 py-0.5 ${gi.fileText || 'text-gray-500'} border-l ${gi.fileBorder || 'border-gray-700/40'}`}>
                             {main.gitDiff.files} files
                           </span>
                         )}
@@ -535,31 +550,31 @@ export function AgentTree({ agents = [], colors = {}, compact = false, expanded 
               {teamTasks.length > 0 && (
                 <div className={`border-t ${borderColor}`}>
                   {/* Team header */}
-                  <div className={`${expanded ? 'pr-3 pl-7 py-1.5' : 'pr-2 pl-5 py-1'} bg-indigo-500/[0.05] border-b border-indigo-500/10 flex items-center justify-between`}>
+                  <div className={`${expanded ? 'pr-3 pl-7 py-1.5' : 'pr-2 pl-5 py-1'} ${tm.headerBg || 'bg-indigo-500/[0.05]'} border-b ${tm.headerBorder || 'border-indigo-500/10'} flex items-center justify-between`}>
                     <div className="flex items-center gap-1.5">
-                      <span className="shrink-0 flex items-center justify-center w-[18px] h-[18px] rounded bg-white/15">
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-gray-100">
+                      <span className={`shrink-0 flex items-center justify-center w-[18px] h-[18px] rounded ${tm.iconBg || 'bg-white/15'}`}>
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={tm.iconText || 'text-gray-100'}>
                           <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/>
                           <circle cx="9" cy="7" r="4"/>
                           <path d="M22 21v-2a4 4 0 0 0-3-3.87"/>
                           <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
                         </svg>
                       </span>
-                      <span className="text-[10px] font-semibold text-gray-100">{teamInfo.name}</span>
+                      <span className={`text-[10px] font-semibold ${tm.nameText || 'text-gray-100'}`}>{teamInfo.name}</span>
                       <span className={`text-[9px] ${textMuted}`}>{teamTasks.length} member{teamTasks.length !== 1 ? 's' : ''}</span>
                       {teamHealth && (
                         <span className={`text-[8px] px-1.5 py-0.5 rounded-full border ${
-                          teamHealth.health === 'red' ? 'bg-red-500/15 text-red-400 border-red-500/20' :
-                          teamHealth.health === 'orange' ? 'bg-orange-500/15 text-orange-400 border-orange-500/20' :
-                          teamHealth.health === 'yellow' ? 'bg-yellow-500/15 text-yellow-400 border-yellow-500/20' :
-                          'bg-emerald-500/15 text-emerald-400 border-emerald-500/20'
+                          teamHealth.health === 'red' ? `${(hl.red || {}).bg || 'bg-red-500/15'} ${(hl.red || {}).text || 'text-red-400'} ${(hl.red || {}).border || 'border-red-500/20'}` :
+                          teamHealth.health === 'orange' ? `${(hl.orange || {}).bg || 'bg-orange-500/15'} ${(hl.orange || {}).text || 'text-orange-400'} ${(hl.orange || {}).border || 'border-orange-500/20'}` :
+                          teamHealth.health === 'yellow' ? `${(hl.yellow || {}).bg || 'bg-yellow-500/15'} ${(hl.yellow || {}).text || 'text-yellow-400'} ${(hl.yellow || {}).border || 'border-yellow-500/20'}` :
+                          `${(hl.green || {}).bg || 'bg-emerald-500/15'} ${(hl.green || {}).text || 'text-emerald-400'} ${(hl.green || {}).border || 'border-emerald-500/20'}`
                         }`} title={teamHealth.issues.length > 0 ? teamHealth.issues.join(', ') : 'Healthy'}>
                           {teamHealth.health === 'red' ? '🔴' : teamHealth.health === 'orange' ? '🟠' : teamHealth.health === 'yellow' ? '🟡' : '🟢'}
                           {teamHealth.issues.length > 0 ? ` ${teamHealth.issues.join(' · ')}` : ' Healthy'}
                         </span>
                       )}
                     </div>
-                    <span className="font-mono text-[9px] tabular-nums text-amber-500">
+                    <span className={`font-mono text-[9px] tabular-nums ${mi.tokens || 'text-amber-500'}`}>
                       {teamTotalTokens > 0 ? formatTokens(teamTotalTokens) : ''}
                     </span>
                   </div>
@@ -586,26 +601,26 @@ export function AgentTree({ agents = [], colors = {}, compact = false, expanded 
         <div className="flex items-center gap-2">
           {/* Sessions */}
           <span className="flex items-center gap-1">
-            <span className={`w-1.5 h-1.5 rounded-full ${activeMainCount > 0 ? 'bg-emerald-400 animate-pulse' : 'bg-gray-600'}`} />
-            <span className={activeMainCount > 0 ? 'text-emerald-400' : 'text-gray-500'}>
+            <span className={`w-1.5 h-1.5 rounded-full ${activeMainCount > 0 ? (mi.footerDotActive || 'bg-emerald-400') + ' animate-pulse' : (mi.footerDotInactive || 'bg-gray-600')}`} />
+            <span className={activeMainCount > 0 ? (mi.footerActiveText || 'text-emerald-400') : (mi.footerDoneText || 'text-gray-500')}>
               {activeMainCount} session{activeMainCount !== 1 ? 's' : ''}
             </span>
           </span>
           {/* Tasks breakdown */}
           {(activeTaskCount > 0 || stoppedTaskCount > 0) && (
-            <span className="text-gray-500">
+            <span className={mi.footerDoneText || 'text-gray-500'}>
               {activeTaskCount > 0 && (
-                <span className="text-emerald-400">{activeTaskCount} running</span>
+                <span className={mi.footerActiveText || 'text-emerald-400'}>{activeTaskCount} running</span>
               )}
               {activeTaskCount > 0 && stoppedTaskCount > 0 && ' · '}
               {stoppedTaskCount > 0 && (
-                <span className="text-gray-500">{stoppedTaskCount} done</span>
+                <span className={mi.footerDoneText || 'text-gray-500'}>{stoppedTaskCount} done</span>
               )}
             </span>
           )}
         </div>
         {totalTokens > 0 && (
-          <span className="font-mono tabular-nums text-amber-500">{formatTokens(totalTokens)}</span>
+          <span className={`font-mono tabular-nums ${mi.tokens || 'text-amber-500'}`}>{formatTokens(totalTokens)}</span>
         )}
       </div>
     </div>
@@ -652,5 +667,3 @@ AgentTree.propTypes = {
     status: PropTypes.string
   }))
 };
-
-export default AgentTree;

@@ -37,7 +37,7 @@ export function HourlyBreakdown({ hourly = [], colors = {} }) {
             <div key={hour.hour} className="flex items-center gap-1 h-3">
               <span className={`text-[8px] ${textMuted} shrink-0 tabular-nums flex items-center h-full`}>
                 {hour.timeLabel}
-                <svg className={`ml-1 w-2.5 h-2.5 ${isCurrentHour ? 'text-blue-400' : 'opacity-0'}`} fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
+                <svg className={`ml-1 w-2.5 h-2.5 ${isCurrentHour ? (colors?.semantic?.blue?.text || 'text-blue-400') : 'opacity-0'}`} fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
                   <path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09zM12 15l-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/><path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"/>
                 </svg>
               </span>
@@ -74,9 +74,9 @@ export function HourlyBreakdown({ hourly = [], colors = {} }) {
 
       {/* Legend - Inline */}
       <div className="flex items-center justify-center gap-3 text-[9px] pt-0.5">
-        <span className="text-violet-400">◆ Opus</span>
-        <span className="text-blue-400">● Sonnet</span>
-        <span className="text-emerald-400">▪ Haiku</span>
+        <span className={colors?.model?.opus?.text || 'text-violet-400'}>◆ Opus</span>
+        <span className={colors?.model?.sonnet?.text || 'text-blue-400'}>● Sonnet</span>
+        <span className={colors?.model?.haiku?.text || 'text-emerald-400'}>▪ Haiku</span>
       </div>
     </div>
   );

@@ -89,6 +89,9 @@ function buildTeamCommsSchedule() {
 const tokenSchedule = buildTokenSchedule();
 const teamCommsSchedule = buildTeamCommsSchedule();
 
+// Unique ID per hook instance (per window)
+let _instanceCounter = 0;
+
 export function useDemoReplay(demoMode) {
   const [replayState, setReplayState] = useState('idle'); // idle | playing | paused | finished
   const [progress, setProgress] = useState({ current: 0, total: DEMO_EVENTS.length, pct: 0 });
@@ -98,6 +101,8 @@ export function useDemoReplay(demoMode) {
   const [teamComms, setTeamComms] = useState([]);
 
   const timerRef = useRef(null);
+  const instanceId = useRef(`inst_${Date.now()}_${++_instanceCounter}`);
+  const isDriver = useRef(false); // true = this instance runs the replay timer
   const stateRef = useRef({
     agentsMap: new Map(), // id -> agent object
     eventsBuffer: [],     // newest-first, max 100
@@ -106,12 +111,57 @@ export function useDemoReplay(demoMode) {
     currentIdx: 0,
   });
 
-  // Cleanup when demo mode disabled
+  // Cleanup when demo mode disabled; auto-restore snapshot when enabled
   useEffect(() => {
     if (!demoMode) {
-      stop();
+      if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; }
+      isDriver.current = false;
       resetState();
+    } else {
+      // Restore full snapshot from another window if available
+      restoreFromSnapshot();
     }
+  }, [demoMode]);
+
+  // Poll localStorage — both driver and follower react to changes from the other window
+  useEffect(() => {
+    if (!demoMode) return;
+    const interval = setInterval(() => {
+      try {
+        const snap = JSON.parse(localStorage.getItem('demoReplaySync') || '{}');
+        if (!snap.instanceId || snap.instanceId === instanceId.current) return;
+
+        const age = Date.now() - (snap.ts || 0);
+
+        if (isDriver.current) {
+          // Driver: react to commands from the other window (only fresh)
+          if (age < 5000) {
+            if (snap.state === 'paused' || snap.state === 'idle') {
+              if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; }
+              isDriver.current = false;
+              adoptSnapshot(snap);
+            } else if (snap.state === 'playing' && snap.idx > stateRef.current.currentIdx) {
+              if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; }
+              isDriver.current = false;
+              adoptSnapshot(snap);
+            }
+          }
+        } else {
+          // Follower mode
+          if (age < 5000) {
+            // Fresh snapshot from active driver → adopt
+            adoptSnapshot(snap);
+          } else if (snap.state === 'playing' && age >= 3000 && stateRef.current.currentIdx > 0) {
+            // Driver went stale (unmounted/crashed) → take over as driver
+            isDriver.current = true;
+            setReplayState('playing');
+            saveSnapshot('playing');
+            stepRef.current();
+          }
+        }
+      } catch {}
+    }, 500);
+    return () => clearInterval(interval);
   }, [demoMode]);
 
   function resetState() {
@@ -397,13 +447,122 @@ export function useDemoReplay(demoMode) {
     setTeamComms([...s.teamCommsBuffer]);
   }
 
+  // Command channel — separate from data snapshots so driver can't overwrite them
+  function sendCommand(cmd) {
+    try {
+      localStorage.setItem('demoReplayCmd', JSON.stringify({
+        cmd, instanceId: instanceId.current, ts: Date.now(),
+      }));
+    } catch {}
+  }
+
+  function consumeCommand() {
+    try {
+      const raw = localStorage.getItem('demoReplayCmd');
+      if (!raw) return null;
+      const cmd = JSON.parse(raw);
+      if (cmd.instanceId === instanceId.current) return null;
+      if ((Date.now() - cmd.ts) > 3000) return null; // stale
+      localStorage.removeItem('demoReplayCmd');
+      return cmd.cmd;
+    } catch { return null; }
+  }
+
+  // Save full snapshot to localStorage (driver writes this)
+  function saveSnapshot(replaySt) {
+    try {
+      const s = stateRef.current;
+      localStorage.setItem('demoReplaySync', JSON.stringify({
+        instanceId: instanceId.current,
+        idx: s.currentIdx,
+        state: replaySt,
+        ts: Date.now(),
+        agents: Array.from(s.agentsMap.values()),
+        teams: Array.from(s.teamsMap.values()),
+        teamComms: s.teamCommsBuffer.slice(-20),
+        events: s.eventsBuffer.slice(0, 30),
+      }));
+    } catch {}
+  }
+
+  // Adopt a snapshot from another instance (follower reads this)
+  function adoptSnapshot(snap) {
+    const s = stateRef.current;
+    // Rebuild agentsMap from array
+    s.agentsMap = new Map((snap.agents || []).map(a => [a.id, a]));
+    s.teamsMap = new Map((snap.teams || []).map(t => [t.name, t]));
+    s.eventsBuffer = snap.events || [];
+    s.teamCommsBuffer = snap.teamComms || [];
+    s.currentIdx = snap.idx || 0;
+    // Flush to React state
+    setAgents(snap.agents || []);
+    setEvents(snap.events || []);
+    setTeams(snap.teams || []);
+    setTeamComms(snap.teamComms || []);
+    setProgress({ current: snap.idx || 0, total: DEMO_EVENTS.length, pct: Math.round(((snap.idx || 0) / DEMO_EVENTS.length) * 100) });
+    setReplayState(snap.state || 'idle');
+  }
+
+  // Restore from snapshot on demoMode enable — always take over if playing
+  function restoreFromSnapshot() {
+    try {
+      const snap = JSON.parse(localStorage.getItem('demoReplaySync') || '{}');
+      if (snap.idx > 0 && snap.state !== 'idle' && (Date.now() - snap.ts) < 300000) {
+        adoptSnapshot(snap);
+        if (snap.state === 'playing') {
+          // Always take over as driver — if the old driver is still alive,
+          // the poll will resolve the conflict (old driver becomes follower)
+          isDriver.current = true;
+          setTimeout(() => stepRef.current(), 100);
+        } else {
+          isDriver.current = false;
+        }
+      }
+    } catch {}
+  }
+
+  // Fast-forward: process events 0..targetIdx without delays (rebuild state)
+  function fastForward(targetIdx) {
+    resetState();
+    const s = stateRef.current;
+    for (let i = 0; i < targetIdx && i < DEMO_EVENTS.length; i++) {
+      processEventDemo(DEMO_EVENTS[i], i);
+    }
+    s.currentIdx = targetIdx;
+    const pct = Math.round((targetIdx / DEMO_EVENTS.length) * 100);
+    setProgress({ current: targetIdx, total: DEMO_EVENTS.length, pct });
+    flushState();
+  }
+
   // Internal step function (reusable for play & resume)
   const stepRef = useRef(null);
   stepRef.current = function step() {
+    // Check for commands from other instances before each step
+    const cmd = consumeCommand();
+    if (cmd === 'pause') {
+      if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; }
+      isDriver.current = false;
+      setReplayState('paused');
+      saveSnapshot('paused');
+      return;
+    }
+    if (cmd === 'reset') {
+      if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; }
+      isDriver.current = false;
+      resetState();
+      setReplayState('idle');
+      setProgress({ current: 0, total: DEMO_EVENTS.length, pct: 0 });
+      setAgents([]); setEvents([]); setTeams([]); setTeamComms([]);
+      saveSnapshot('idle');
+      return;
+    }
+
     const s = stateRef.current;
     const idx = s.currentIdx;
     if (idx >= DEMO_EVENTS.length) {
       setReplayState('finished');
+      isDriver.current = false;
+      saveSnapshot('finished');
       flushState();
       return;
     }
@@ -416,39 +575,71 @@ export function useDemoReplay(demoMode) {
     setProgress({ current: idx + 1, total: DEMO_EVENTS.length, pct });
     flushState();
 
+    // Save full snapshot every 3 events (smooth sync for follower)
+    if (idx % 3 === 0) saveSnapshot('playing');
+
     const delay = getDelay(event);
     timerRef.current = setTimeout(() => stepRef.current(), delay);
   };
 
-  // Play from beginning
+  // Play: take over as driver. Resume from snapshot if available.
   const play = useCallback(() => {
-    resetState();
+    // Stop any existing timer first
+    if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; }
+
+    let startIdx = 0;
+    try {
+      const snap = JSON.parse(localStorage.getItem('demoReplaySync') || '{}');
+      if (snap.idx > 0 && snap.state !== 'idle' && (Date.now() - snap.ts) < 300000) {
+        // Adopt snapshot state directly (has full agents/teams)
+        if (snap.agents) {
+          adoptSnapshot(snap);
+          startIdx = snap.idx;
+        } else {
+          startIdx = snap.idx;
+          fastForward(startIdx);
+        }
+      }
+    } catch {}
+
+    if (startIdx === 0) {
+      resetState();
+      stateRef.current.currentIdx = 0;
+    }
+    isDriver.current = true;
     setReplayState('playing');
-    stateRef.current.currentIdx = 0;
+    saveSnapshot('playing');
     stepRef.current();
   }, []);
 
-  // Pause (freeze in place, keep state)
+  // Pause: keep state, send command to other instances
   const pause = useCallback(() => {
     if (timerRef.current) {
       clearTimeout(timerRef.current);
       timerRef.current = null;
     }
+    isDriver.current = false;
     setReplayState('paused');
+    saveSnapshot('paused');
+    sendCommand('pause');
   }, []);
 
-  // Resume from paused position
+  // Resume from paused position (become driver)
   const resume = useCallback(() => {
+    isDriver.current = true;
     setReplayState('playing');
+    saveSnapshot('playing');
+    sendCommand('resume');
     stepRef.current();
   }, []);
 
-  // Reset to idle (clear everything)
+  // Reset to idle (clear everything, send command to other instances)
   const reset = useCallback(() => {
     if (timerRef.current) {
       clearTimeout(timerRef.current);
       timerRef.current = null;
     }
+    isDriver.current = false;
     resetState();
     setReplayState('idle');
     setProgress({ current: 0, total: DEMO_EVENTS.length, pct: 0 });
@@ -456,6 +647,8 @@ export function useDemoReplay(demoMode) {
     setEvents([]);
     setTeams([]);
     setTeamComms([]);
+    saveSnapshot('idle');
+    sendCommand('reset');
   }, []);
 
   // Cleanup on unmount
