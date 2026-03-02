@@ -57,6 +57,7 @@ export default function App() {
   const [selectedEventType, setSelectedEventType] = useState(null); // null = show all, 'tools' | 'success' | 'errors' | 'prompts'
   const [selectedEvent, setSelectedEvent] = useState(null); // For viewing event details
   const [isDetailCollapsed, setIsDetailCollapsed] = useState(false); // Collapse event detail panel
+  const [isTeamCommsCollapsed, setIsTeamCommsCollapsed] = useState(() => localStorage.getItem('teamCommsCollapsed') === 'true');
   const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'dark');
   const [agentViewMode, setAgentViewMode] = useState(() => localStorage.getItem('agentViewMode') || 'full');
   const [isAgentsCollapsed, setIsAgentsCollapsed] = useState(() => localStorage.getItem('agentsCollapsed') === 'true');
@@ -80,6 +81,12 @@ export default function App() {
     }, 1000);
     return () => { window.removeEventListener('storage', onStorage); clearInterval(poll); };
   }, [demoMode]);
+  // Team Comms collapse: persist + auto-collapse/expand
+  useEffect(() => {
+    localStorage.setItem('teamCommsCollapsed', isTeamCommsCollapsed ? 'true' : 'false');
+  }, [isTeamCommsCollapsed]);
+  const prevTeamCommsCount = useRef(0);
+
   const wsRef = useRef(null);
   const reconnectRef = useRef(null);
   const seenEventIds = useRef(new Set()); // Deduplicate events
@@ -107,6 +114,8 @@ export default function App() {
     setTheme(newTheme);
     localStorage.setItem('theme', newTheme);
   };
+
+  const clearTeamComms = () => setTeamComms([]);
 
   // Toggle agent view mode: full -> compact -> compact-expanded -> expanded -> collapsed -> full
   const toggleAgentViewMode = () => {
@@ -183,6 +192,11 @@ export default function App() {
                 merged.outputTokens = old.outputTokens;
                 merged.cacheReadTokens = old.cacheReadTokens;
               }
+              // Preserve context window data from full refresh
+              if (merged.contextPct == null && old.contextPct != null) {
+                merged.contextPct = old.contextPct;
+                merged.lastInputTokens = old.lastInputTokens;
+              }
               return merged;
             });
           });
@@ -250,6 +264,20 @@ export default function App() {
   const displayEvents = demoMode ? demo.events : events;
   const displayTeams = demoMode ? demo.teams : teams;
   const displayTeamComms = demoMode ? demo.teamComms : teamComms;
+
+  // Auto-collapse Team Comms when no active teams, auto-expand on new messages
+  useEffect(() => {
+    const hasActiveTeam = displayTeams?.some(t => t.status === 'active');
+    if (!hasActiveTeam && displayTeamComms.length > 0) {
+      setIsTeamCommsCollapsed(true);
+    }
+  }, [displayTeams]);
+  useEffect(() => {
+    if (displayTeamComms.length > prevTeamCommsCount.current) {
+      setIsTeamCommsCollapsed(false);
+    }
+    prevTeamCommsCount.current = displayTeamComms.length;
+  }, [displayTeamComms.length]);
 
   // Fixed demo data for Token Usage panel & footer
   const DEMO_TOKENS = demoMode ? {
@@ -780,28 +808,48 @@ export default function App() {
           </div>
           {/* Team Comms Timeline */}
           {displayTeamComms.length > 0 && (
-            <div className={`border-b ${colors.border} ${colors.bg.secondary}`}>
-              <div className={`px-2 py-1 flex items-center gap-1`}>
+            <div className={`group border-b ${colors.border} ${colors.bg.secondary}`}>
+              {/* Header Row - clickable to toggle */}
+              <div
+                className={`px-2 py-1 flex items-center gap-1 cursor-pointer select-none ${colors.cardHover}`}
+                onClick={() => setIsTeamCommsCollapsed(!isTeamCommsCollapsed)}
+              >
+                <svg className={`w-3 h-3 ${colors.text.muted} transition-transform ${isTeamCommsCollapsed ? '' : 'rotate-90'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                </svg>
                 <span className="text-[9px]">📨</span>
                 <span className={`text-[9px] font-medium ${colors.semantic?.indigo?.text || 'text-indigo-400'} uppercase tracking-wider`}>Team Comms</span>
                 <span className={`text-[8px] font-mono ${colors.text.muted}`}>({displayTeamComms.length})</span>
+                <div className="flex-1" />
+                <button
+                  onClick={(e) => { e.stopPropagation(); clearTeamComms(); }}
+                  className={`p-0.5 rounded ${colors.text.muted} opacity-0 group-hover:opacity-100 hover:bg-red-500/20 hover:text-red-500 transition-all`}
+                  title="Clear team comms"
+                >
+                  <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
               </div>
-              <div className="max-h-[200px] overflow-y-auto px-1 pb-1 space-y-0.5">
-                {displayTeamComms.slice(0, 30).map((comm, i) => {
-                  const ct = colors.commType || {};
-                  return (
-                    <div key={i} className="flex items-center gap-1.5 px-1 py-0.5 text-[11px]">
-                      <span className={`font-mono ${colors.text.muted} shrink-0 w-[38px]`}>
-                        {new Date(comm.timestamp).toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' })}
-                      </span>
-                      <span className={`font-medium ${ct.message || 'text-cyan-400'} shrink-0`}>{comm.from}</span>
-                      <span className={colors.text.muted}>→</span>
-                      <span className={`font-medium ${ct[comm.type] || ct.fallback || 'text-gray-400'} shrink-0`}>{comm.to}</span>
-                      <span className={`${colors.text.muted} truncate flex-1 min-w-0`}>{comm.summary}</span>
-                    </div>
-                  );
-                })}
-              </div>
+              {/* Collapsible content */}
+              {!isTeamCommsCollapsed && (
+                <div className="max-h-[200px] overflow-y-auto px-1 pb-1 space-y-0.5">
+                  {displayTeamComms.slice(0, 30).map((comm, i) => {
+                    const ct = colors.commType || {};
+                    return (
+                      <div key={i} className="flex items-center gap-1.5 px-1 py-0.5 text-[11px]">
+                        <span className={`font-mono ${colors.text.muted} shrink-0 w-[38px]`}>
+                          {new Date(comm.timestamp).toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                        <span className={`font-medium ${ct.message || 'text-cyan-400'} shrink-0`}>{comm.from}</span>
+                        <span className={colors.text.muted}>→</span>
+                        <span className={`font-medium ${ct[comm.type] || ct.fallback || 'text-gray-400'} shrink-0`}>{comm.to}</span>
+                        <span className={`${colors.text.muted} truncate flex-1 min-w-0`}>{comm.summary}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           )}
           {/* Activity Feed */}
@@ -809,7 +857,7 @@ export default function App() {
             <ActivityFeed
               events={filteredEvents}
               colors={colors}
-              selectedEvent={selectedEvent || filteredEvents[0]}
+              selectedEvent={selectedEvent || (filteredEvents.length > 0 ? filteredEvents[0] : null)}
               onSelectEvent={setSelectedEvent}
             />
           </div>
@@ -849,13 +897,13 @@ export default function App() {
       <footer className={`${colors.bg.footer} border-t ${colors.border} flex-shrink-0 ${theme === 'light' ? 'shadow-[0_-2px_10px_rgba(0,0,0,0.03)]' : ''}`}>
         {/* Row 1: Event Detail Panel */}
         <EventDetailPanel
-          event={selectedEvent || filteredEvents[0]}
+          event={selectedEvent || (filteredEvents.length > 0 ? filteredEvents[0] : null)}
           colors={colors}
           isCollapsed={isDetailCollapsed}
           onToggleCollapse={() => setIsDetailCollapsed(!isDetailCollapsed)}
         />
         {/* Row 2: Status Bar */}
-        <div className={`h-8 flex items-center justify-between px-2 text-[10px] border-t ${colors.border}`}>
+        <div className={`h-5 flex items-center justify-between px-2 text-[10px] border-t ${colors.border}`}>
           {/* Left: Events Summary */}
           <div className="flex items-center flex-nowrap shrink-0 gap-1">
             <span className={`${colors.text.muted} text-[9px] whitespace-nowrap`}>Events <span className={`font-mono ${colors.text.tertiary}`}>{totalEvents}</span></span>

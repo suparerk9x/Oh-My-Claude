@@ -58,7 +58,7 @@
 | **Event Details** | คลิก event ดู Input/Output ใน footer detail panel |
 | **Mini Pop-out** | หน้าต่างลอย 280x400px สำหรับดูระหว่างทำงาน |
 | **Install as App** | PWA — ติดตั้งเป็นแอปบน desktop ได้เลย |
-| **Dark / Light Theme** | สลับธีมมืด / สว่าง |
+| **Dark / Light Theme** | ระบบธีมครบวงจรพร้อม semantic color tokens — อ่านง่ายทั้งโหมดมืดและสว่าง |
 | **Notifications** | แจ้งเตือน desktop สำหรับ events |
 | **Bilingual Guide** | คู่มือใน app EN/TH (11 หมวด) |
 | **Chrome Extension** | Sync usage % จาก Claude.ai อัตโนมัติ — **แนะนำอย่างยิ่ง** |
@@ -223,6 +223,26 @@ npm run install:all
           }
         ]
       }
+    ],
+    "TeammateIdle": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"<PATH>/Oh-My-Claude/hooks/send_event.js\" --event-type TeammateIdle"
+          }
+        ]
+      }
+    ],
+    "TaskCompleted": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"<PATH>/Oh-My-Claude/hooks/send_event.js\" --event-type TaskCompleted"
+          }
+        ]
+      }
     ]
   }
 }
@@ -351,7 +371,8 @@ Oh My Claude รองรับ **Progressive Web App** — ติดตั้�
 
 - กดปุ่ม **Mini Pop-out** (↗) ใน toolbar
 - เปิดหน้าต่างลอย **280x400px**
-- แสดง: สถานะเชื่อมต่อ, token stats, รายชื่อ agent, activity ล่าสุด
+- แสดง: สถานะเชื่อมต่อ, token gauges, รายชื่อ agent พร้อมสมาชิก team, smart status
+- Sync ธีม (dark/light) และ demo mode แบบสองทางกับหน้าหลัก
 - เหมาะสำหรับเปิดไว้ข้างๆ ตอน code
 
 ---
@@ -445,8 +466,8 @@ Oh-My-Claude/
 │       ├── mini-main.jsx     # Entry mini + PWA registration
 │       ├── index.css          # Global styles (Tailwind imports)
 │       ├── config/
-│       │   ├── theme.js      # สีธีม Dark/Light
-│       │   └── eventTypes.js # นิยาม event type
+│       │   ├── theme.js      # ระบบธีม (11 หมวดสี: status, model, tool, event, semantic ฯลฯ)
+│       │   └── eventTypes.js # นิยาม event type (สีปรับตามธีม)
 │       ├── data/
 │       │   └── demoData.js   # ชุดข้อมูล demo (1,006 events)
 │       ├── hooks/

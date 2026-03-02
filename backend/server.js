@@ -14,6 +14,13 @@ import { promisify } from 'util';
 const execAsync = promisify(exec);
 import { z } from 'zod';
 
+// Model context window limits (tokens)
+const MODEL_CONTEXT_LIMITS = {
+  'opus': 200000, 'sonnet': 200000, 'haiku': 200000,
+  'claude-opus-4-6': 200000, 'claude-sonnet-4-5-20250929': 200000, 'claude-haiku-4-5-20251001': 200000,
+};
+const DEFAULT_CONTEXT_LIMIT = 200000;
+
 // Claude projects directory
 const CLAUDE_PROJECTS_DIR = path.join(process.env.USERPROFILE || process.env.HOME, '.claude', 'projects');
 
@@ -259,29 +266,32 @@ const subagentTokenCache = new Map(); // transcriptPath -> { mtimeMs, tokens, in
 
 async function readSubagentTokens(transcriptPath) {
   try {
-    if (!existsSync(transcriptPath)) return null;
-    const stat = statSync(transcriptPath);
+    if (!fs.existsSync(transcriptPath)) return null;
+    const stat = fs.statSync(transcriptPath);
     const cached = subagentTokenCache.get(transcriptPath);
     if (cached && cached.mtimeMs === stat.mtimeMs) return cached;
 
     let inputTokens = 0;
     let outputTokens = 0;
+    let lastInputTokens = 0; // last API call's input_tokens = current context window fill
     const rl = createInterface({
-      input: createReadStream(transcriptPath, { highWaterMark: 64 * 1024 }),
+      input: fs.createReadStream(transcriptPath, { highWaterMark: 64 * 1024 }),
       crlfDelay: Infinity
     });
     for await (const line of rl) {
       if (!line.includes('"usage"')) continue; // fast skip
       try {
         const entry = JSON.parse(line);
-        if (entry.message?.usage) {
+        if (entry.type === 'assistant' && entry.message?.usage && entry.message.model !== '<synthetic>') {
           const u = entry.message.usage;
           inputTokens += (u.input_tokens || 0) + (u.cache_read_input_tokens || 0);
           outputTokens += u.output_tokens || 0;
+          // Context window fill = input only (matches Claude Code's formula, no output_tokens)
+          lastInputTokens = (u.input_tokens || 0) + (u.cache_read_input_tokens || 0) + (u.cache_creation_input_tokens || 0);
         }
       } catch {}
     }
-    const result = { mtimeMs: stat.mtimeMs, tokens: inputTokens + outputTokens, inputTokens, outputTokens };
+    const result = { mtimeMs: stat.mtimeMs, tokens: inputTokens + outputTokens, inputTokens, outputTokens, lastInputTokens };
     subagentTokenCache.set(transcriptPath, result);
     return result;
   } catch {
@@ -780,8 +790,9 @@ function processEvent(event) {
     }
   }
 
-  // Detect Task tool usage as subagent spawn (backup detection)
-  if (event.toolName === 'Task' && event.type === 'PreToolUse') {
+  // Detect Agent/Task tool usage as subagent spawn (backup detection)
+  // Claude Code renamed "Task" to "Agent" — support both
+  if ((event.toolName === 'Agent' || event.toolName === 'Task') && event.type === 'PreToolUse') {
     const taskInput = event.toolInput || {};
     // Don't create duplicate - SubagentStart will handle it
     // But store the task description for later correlation
@@ -1004,6 +1015,7 @@ function processEvent(event) {
             }
             break;
           case 'Task':
+          case 'Agent':
             // Show description
             if (input.description) {
               detail = input.description;
@@ -1096,7 +1108,7 @@ function processEvent(event) {
         smartStatusMap[sid] = { status: 'writing', label: 'Writing', icon: '✍️', color: 'text-orange-400' };
       } else if (tool === 'Bash') {
         smartStatusMap[sid] = { status: 'executing', label: 'Executing', icon: '⚡', color: 'text-amber-400' };
-      } else if (tool === 'Task') {
+      } else if (tool === 'Task' || tool === 'Agent') {
         smartStatusMap[sid] = { status: 'spawning', label: 'Spawning', icon: '🔀', color: 'text-violet-400' };
       } else if (tool === 'WebSearch' || tool === 'WebFetch') {
         smartStatusMap[sid] = { status: 'searching', label: 'Searching', icon: '🌐', color: 'text-cyan-400' };
@@ -1148,11 +1160,68 @@ async function getStats() {
   };
 }
 
-// Cache for session token data (refresh every 5 seconds for realtime)
+// Cache for session token cumulative data (refresh every 10 seconds)
 const sessionTokenCache = new Map();
 const SESSION_TOKEN_CACHE_TTL = 10000;
 
-// Read tokens from a session transcript file using STREAMING
+// Cache for session context % (fast tail-read, refresh every 2 seconds)
+const sessionContextCache = new Map();
+const SESSION_CONTEXT_CACHE_TTL = 2000;
+
+// Resolve session ID to transcript file path (cached indefinitely per session)
+const sessionPathCache = new Map();
+async function resolveSessionPath(sessionId) {
+  const cached = sessionPathCache.get(sessionId);
+  if (cached) return cached;
+  let allEntries;
+  try {
+    allEntries = await fs.promises.readdir(CLAUDE_PROJECTS_DIR, { withFileTypes: true });
+  } catch { return null; }
+  for (const d of allEntries.filter(d => d.isDirectory())) {
+    const p = path.join(CLAUDE_PROJECTS_DIR, d.name, `${sessionId}.jsonl`);
+    try { await fs.promises.access(p); sessionPathCache.set(sessionId, p); return p; } catch { continue; }
+  }
+  return null;
+}
+
+// Fast tail-read: read last 64KB of transcript to get the latest context window fill
+// Matches Claude Code's exact formula: (input_tokens + cache_creation + cache_read) / contextWindow
+async function readSessionContext(sessionId) {
+  const cached = sessionContextCache.get(sessionId);
+  if (cached && (Date.now() - cached.timestamp) < SESSION_CONTEXT_CACHE_TTL) {
+    return cached.lastInputTokens;
+  }
+  const transcriptPath = await resolveSessionPath(sessionId);
+  if (!transcriptPath) return 0;
+  try {
+    const fd = await fs.promises.open(transcriptPath, 'r');
+    const stats = await fd.stat();
+    const tailSize = Math.min(stats.size, 65536); // Read last 64KB
+    const buffer = Buffer.alloc(tailSize);
+    const { bytesRead } = await fd.read(buffer, 0, tailSize, stats.size - tailSize);
+    await fd.close();
+    const tail = buffer.toString('utf-8', 0, bytesRead);
+    const lines = tail.split('\n');
+    // Scan from end to find last real assistant usage (skip synthetic/compact messages)
+    for (let i = lines.length - 1; i >= 0; i--) {
+      const line = lines[i].trim();
+      if (!line || !line.includes('"usage"')) continue;
+      try {
+        const parsed = JSON.parse(line);
+        if (parsed.type === 'assistant' && parsed.message?.usage && parsed.message.model !== '<synthetic>') {
+          const u = parsed.message.usage;
+          const lastInputTokens = (u.input_tokens || 0) + (u.cache_read_input_tokens || 0) + (u.cache_creation_input_tokens || 0);
+          sessionContextCache.set(sessionId, { lastInputTokens, timestamp: Date.now() });
+          return lastInputTokens;
+        }
+      } catch {}
+    }
+    sessionContextCache.set(sessionId, { lastInputTokens: 0, timestamp: Date.now() });
+    return 0;
+  } catch { return 0; }
+}
+
+// Read cumulative tokens from a session transcript file using STREAMING
 async function readSessionTokens(sessionId) {
   // Check cache first
   const cached = sessionTokenCache.get(sessionId);
@@ -1160,58 +1229,50 @@ async function readSessionTokens(sessionId) {
     return cached.data;
   }
 
-  // Find the session transcript file
-  let allEntries;
+  const transcriptPath = await resolveSessionPath(sessionId);
+  if (!transcriptPath) return null;
+
   try {
-    allEntries = await fs.promises.readdir(CLAUDE_PROJECTS_DIR, { withFileTypes: true });
-  } catch { return null; }
-  const projectDirs = allEntries.filter(d => d.isDirectory()).map(d => d.name);
+    // Use readline streaming instead of loading entire file
+    const rl = createInterface({
+      input: fs.createReadStream(transcriptPath, { highWaterMark: 64 * 1024 }),
+      crlfDelay: Infinity
+    });
 
-  for (const projectDir of projectDirs) {
-    const transcriptPath = path.join(CLAUDE_PROJECTS_DIR, projectDir, `${sessionId}.jsonl`);
-    try { await fs.promises.access(transcriptPath); } catch { continue; }
-    try {
-      // Use readline streaming instead of loading entire file
-      const rl = createInterface({
-        input: fs.createReadStream(transcriptPath, { highWaterMark: 64 * 1024 }),
-        crlfDelay: Infinity
-      });
+    let inputTokens = 0;
+    let outputTokens = 0;
+    let cacheReadTokens = 0;
+    let cacheCreationTokens = 0;
 
-      let inputTokens = 0;
-      let outputTokens = 0;
-      let cacheReadTokens = 0;
-      let cacheCreationTokens = 0;
-
-      for await (const line of rl) {
-        if (!line.trim()) continue;
-        try {
-          const parsed = JSON.parse(line);
-          if (parsed.message?.usage) {
-            const usage = parsed.message.usage;
-            inputTokens += usage.input_tokens || 0;
-            outputTokens += usage.output_tokens || 0;
-            cacheReadTokens += usage.cache_read_input_tokens || 0;
-            cacheCreationTokens += usage.cache_creation_input_tokens || 0;
-          }
-        } catch {
-          // Skip invalid lines
+    for await (const line of rl) {
+      if (!line.trim()) continue;
+      try {
+        const parsed = JSON.parse(line);
+        if (parsed.message?.usage) {
+          const usage = parsed.message.usage;
+          inputTokens += usage.input_tokens || 0;
+          outputTokens += usage.output_tokens || 0;
+          cacheReadTokens += usage.cache_read_input_tokens || 0;
+          cacheCreationTokens += usage.cache_creation_input_tokens || 0;
         }
+      } catch {
+        // Skip invalid lines
       }
-
-      const data = {
-        inputTokens,
-        outputTokens,
-        cacheReadTokens,
-        cacheCreationTokens,
-        totalTokens: inputTokens + outputTokens
-      };
-
-      // Cache the result
-      sessionTokenCache.set(sessionId, { data, timestamp: Date.now() });
-      return data;
-    } catch (err) {
-      console.error(`Error reading session tokens for ${sessionId}:`, err.message);
     }
+
+    const data = {
+      inputTokens,
+      outputTokens,
+      cacheReadTokens,
+      cacheCreationTokens,
+      totalTokens: inputTokens + outputTokens
+    };
+
+    // Cache the result
+    sessionTokenCache.set(sessionId, { data, timestamp: Date.now() });
+    return data;
+  } catch (err) {
+    console.error(`Error reading session tokens for ${sessionId}:`, err.message);
   }
 
   return null;
@@ -1314,18 +1375,22 @@ async function getAgents() {
   // Get all agents and fetch token data for main agents
   const agentList = Array.from(agents.values());
 
-  // Fetch session tokens for all main agents in parallel
+  // Fetch session tokens + context % for all main agents in parallel
   const mainAgents = agentList.filter(a => a.type === 'main' && a.sessionId);
   const tokenPromises = mainAgents.map(async (agent) => {
-    const sessionTokens = await readSessionTokens(agent.sessionId);
-    return { sessionId: agent.sessionId, tokens: sessionTokens };
+    const [sessionTokens, lastInputTokens] = await Promise.all([
+      readSessionTokens(agent.sessionId),
+      readSessionContext(agent.sessionId), // fast tail-read (3s cache)
+    ]);
+    return { sessionId: agent.sessionId, tokens: sessionTokens, lastInputTokens };
   });
 
   const tokenResults = await Promise.all(tokenPromises);
   const sessionTokenMap = new Map(tokenResults.map(r => [r.sessionId, r.tokens]));
+  const sessionContextMap = new Map(tokenResults.map(r => [r.sessionId, r.lastInputTokens]));
 
-  // Fetch tokens for active subagents with transcript paths (parallel, cached)
-  const activeSubagents = agentList.filter(a => a.type !== 'main' && a.status !== 'stopped' && a.transcriptPath);
+  // Fetch tokens for subagents with transcript paths (including stopped — for contextPct)
+  const activeSubagents = agentList.filter(a => a.type !== 'main' && a.transcriptPath && (a.status !== 'stopped' || !a.contextPct));
   const subagentTokenPromises = activeSubagents.map(async (agent) => {
     const tokens = await readSubagentTokens(agent.transcriptPath);
     return { id: agent.id, tokens };
@@ -1363,6 +1428,9 @@ async function getAgents() {
           result.outputTokens = sessionTokens.outputTokens;
           result.cacheReadTokens = sessionTokens.cacheReadTokens;
         }
+        // Use fast tail-read context % (3s cache, reads last 64KB only)
+        const lastInput = sessionContextMap.get(agent.sessionId) || 0;
+        if (lastInput > 0) result.lastInputTokens = lastInput;
       }
 
       // Add live tokens for active subagents (from transcript reading)
@@ -1371,9 +1439,34 @@ async function getAgents() {
         result.tokens = st.tokens;
         result.inputTokens = st.inputTokens;
         result.outputTokens = st.outputTokens;
+        result.lastInputTokens = st.lastInputTokens;
         // Persist back so lightweight reads also have tokens
         const current = agents.get(agent.id);
-        if (current) agents.set(agent.id, { ...current, tokens: st.tokens, inputTokens: st.inputTokens, outputTokens: st.outputTokens });
+        if (current) agents.set(agent.id, { ...current, tokens: st.tokens, inputTokens: st.inputTokens, outputTokens: st.outputTokens, lastInputTokens: st.lastInputTokens });
+      }
+
+      // Calculate context window usage %
+      // Prefer real-time statusLine data (from Claude Code's in-memory state) over transcript tail-read
+      if (agent.type === 'main' && agent.sessionId) {
+        const statusLine = statusLineContextCache.get(agent.sessionId);
+        if (statusLine && (Date.now() - statusLine.timestamp) < STATUSLINE_CONTEXT_TTL) {
+          // Use real-time value from statusLine — this matches Claude Code exactly
+          result.contextPct = statusLine.contextPct;
+          const current = agents.get(agent.id);
+          if (current) agents.set(agent.id, { ...current, contextPct: result.contextPct });
+        } else if (result.lastInputTokens > 0) {
+          // Fallback: calculate from transcript data
+          const limit = MODEL_CONTEXT_LIMITS[result.model] || DEFAULT_CONTEXT_LIMIT;
+          result.contextPct = Math.round((result.lastInputTokens / limit) * 100);
+          const current = agents.get(agent.id);
+          if (current) agents.set(agent.id, { ...current, lastInputTokens: result.lastInputTokens, contextPct: result.contextPct });
+        }
+      } else if (result.lastInputTokens > 0) {
+        // Subagents: always calculate from transcript (no statusLine for subagents)
+        const limit = MODEL_CONTEXT_LIMITS[result.model] || DEFAULT_CONTEXT_LIMIT;
+        result.contextPct = Math.round((result.lastInputTokens / limit) * 100);
+        const current = agents.get(agent.id);
+        if (current) agents.set(agent.id, { ...current, lastInputTokens: result.lastInputTokens, contextPct: result.contextPct });
       }
 
       // Add git diff stats - persist on agent so it survives status changes
@@ -1496,6 +1589,41 @@ setInterval(() => {
     }
   }
 }, 10000);
+
+// Cache for real-time context data from statusLine wrapper
+// Key: sessionId, Value: { contextPct, timestamp }
+const statusLineContextCache = new Map();
+const STATUSLINE_CONTEXT_TTL = 10000; // Trust statusLine data for 10 seconds
+
+// Receive real-time context window updates from statusLine wrapper
+app.post('/context-update', (req, res) => {
+  try {
+    const { sessionId, contextWindow } = req.body;
+    if (!sessionId || !contextWindow) return res.status(400).json({ error: 'Missing sessionId or contextWindow' });
+
+    const usedPct = contextWindow.used_percentage;
+    if (usedPct == null) return res.json({ success: true });
+
+    // Cache the real-time context % from Claude Code's in-memory state
+    statusLineContextCache.set(sessionId, { contextPct: usedPct, timestamp: Date.now() });
+
+    // Find main agent with this sessionId and update context data
+    for (const [id, agent] of agents.entries()) {
+      if (agent.type === 'main' && agent.sessionId === sessionId) {
+        agents.set(id, {
+          ...agent,
+          contextPct: usedPct,
+          lastSeen: new Date().toISOString()
+        });
+        break;
+      }
+    }
+
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 // Receive events from hook scripts (with stricter rate limiting)
 app.post('/events', eventLimiter, (req, res) => {
@@ -1689,6 +1817,70 @@ app.get('/usage', (req, res) => {
 loadEvents();
 loadAgents();
 
+// Rebuild teams from loaded agents (teams Map is in-memory only, not persisted to disk)
+(function rebuildTeams() {
+  // Collect all teamNames from agents
+  const teamNames = new Set();
+  for (const [, agent] of agents.entries()) {
+    if (agent.teamName) teamNames.add(agent.teamName);
+  }
+
+  for (const teamName of teamNames) {
+    // Find the team lead (main agent with isTeamLead)
+    let leadId = null;
+    let leadSessionId = null;
+    let createdAt = null;
+
+    for (const [id, agent] of agents.entries()) {
+      if (agent.teamName === teamName && agent.isTeamLead) {
+        leadId = id;
+        leadSessionId = agent.sessionId;
+        createdAt = agent.startedAt;
+        break;
+      }
+    }
+
+    // If no explicit lead found, infer from subagents' parent session
+    if (!leadId) {
+      for (const [, agent] of agents.entries()) {
+        if (agent.teamName === teamName && agent.type !== 'main' && agent.sessionId) {
+          leadSessionId = agent.sessionId;
+          leadId = `main_${agent.sessionId}`;
+          createdAt = agent.startedAt;
+          // Also mark the main agent as team lead
+          const mainAgent = agents.get(leadId);
+          if (mainAgent) {
+            agents.set(leadId, { ...mainAgent, teamName, isTeamLead: true });
+          }
+          break;
+        }
+      }
+    }
+
+    // Create the team entry
+    const members = new Set();
+    for (const [id, agent] of agents.entries()) {
+      if (agent.teamName === teamName && agent.type !== 'main') {
+        members.add(id);
+      }
+    }
+
+    teams.set(teamName, {
+      name: teamName,
+      description: '',
+      leadSessionId,
+      leadAgentId: leadId,
+      createdAt,
+      members,
+      status: 'active'
+    });
+  }
+
+  if (teams.size > 0) {
+    console.log(`[LOAD] Rebuilt ${teams.size} team(s): ${Array.from(teamNames).join(', ')}`);
+  }
+})();
+
 // Rebuild smartStatusMap from loaded events (so MiniApp isn't empty after server restart)
 for (const event of events) {
   const sid = event.sessionId;
@@ -1704,7 +1896,7 @@ for (const event of events) {
       smartStatusMap[sid] = { status: 'writing', label: 'Writing', icon: '✍️', color: 'text-orange-400' };
     } else if (tool === 'Bash') {
       smartStatusMap[sid] = { status: 'executing', label: 'Executing', icon: '⚡', color: 'text-amber-400' };
-    } else if (tool === 'Task') {
+    } else if (tool === 'Task' || tool === 'Agent') {
       smartStatusMap[sid] = { status: 'spawning', label: 'Spawning', icon: '🔀', color: 'text-violet-400' };
     } else if (tool === 'WebSearch' || tool === 'WebFetch') {
       smartStatusMap[sid] = { status: 'searching', label: 'Searching', icon: '🌐', color: 'text-cyan-400' };

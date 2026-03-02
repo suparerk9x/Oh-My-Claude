@@ -559,7 +559,7 @@ function SetupSection({ lang, theme = 'dark' }) {
       step2File: '~/.claude/settings.json',
       step2FileWin: 'C:\\Users\\<username>\\.claude\\settings.json',
       step2Note: 'Replace <PATH> with your oh-my-claude folder path',
-      step2Hooks: ['PreToolUse', 'PostToolUse', 'SubagentStart', 'SubagentStop', 'UserPromptSubmit', 'PermissionRequest', 'Stop', 'PreCompact', 'Notification', 'TeammateIdle', 'TaskCompleted'],
+      step2Hooks: ['PreToolUse', 'PostToolUse', 'SubagentStart', 'SubagentStop', 'UserPromptSubmit', 'PermissionRequest', 'Stop', 'PreCompact', 'Notification', 'SessionStart', 'SessionEnd', 'TeammateIdle', 'TaskCompleted'],
       step3: 'Install Chrome Extension',
       step3For: 'Strongly Recommended - for Token Usage tracking',
       step3Desc: 'Pull Session % and Weekly % directly from Claude.ai:',
@@ -593,7 +593,7 @@ function SetupSection({ lang, theme = 'dark' }) {
       step2File: '~/.claude/settings.json',
       step2FileWin: 'C:\\Users\\<username>\\.claude\\settings.json',
       step2Note: 'แทนที่ <PATH> ด้วย path ไปยัง folder oh-my-claude ของคุณ',
-      step2Hooks: ['PreToolUse', 'PostToolUse', 'SubagentStart', 'SubagentStop', 'UserPromptSubmit', 'PermissionRequest', 'Stop', 'PreCompact', 'Notification', 'TeammateIdle', 'TaskCompleted'],
+      step2Hooks: ['PreToolUse', 'PostToolUse', 'SubagentStart', 'SubagentStop', 'UserPromptSubmit', 'PermissionRequest', 'Stop', 'PreCompact', 'Notification', 'SessionStart', 'SessionEnd', 'TeammateIdle', 'TaskCompleted'],
       step3: 'ติดตั้ง Chrome Extension',
       step3For: 'แนะนำอย่างยิ่ง - สำหรับดู Token Usage',
       step3Desc: 'ดึง Session % และ Weekly % จาก Claude.ai โดยตรง:',
@@ -1377,14 +1377,14 @@ function AgentsSection({ lang, theme = 'dark' }) {
       smartProcessing: 'Other tool in progress',
       cardLayoutTitle: 'Card Layout (Full Mode)',
       cardLayoutDesc: 'Each main agent displays up to 4 lines. Team members show 3 lines indented. Non-team subagents show 3 lines. Stopped sessions/subagents are dimmed (opacity 50%).',
-      cardLine1: 'Main Line 1: Session number + Model badge (with version) + Smart Status (icon + label) or Status badge + Duration + Tokens',
-      cardLine2: 'Main Line 2: Project name (monospace cyan uppercase) + Team badge (👥 team-name, if team lead)',
+      cardLine1: 'Main Line 1: Session number + Model badge (with version) + Smart Status (icon + label) or Status badge + Duration + Tokens + Context % badge',
+      cardLine2: 'Main Line 2: Project name (monospace cyan uppercase) + Team badge (👥 team-name, if team lead) + Context gauge bar (right-aligned)',
       cardLine3: 'Main Line 3: Last activity (tool icon + tool name + file path) + Session ID',
       cardLine4: 'Main Line 4: Task count badge (active/total running) + Git diff chip (+adds -dels files)',
       teamHeaderTitle: 'Team Header',
       teamHeaderDesc: 'Users SVG icon (2-person stroke) + Team name + Member count + Health badge (🟢 Healthy / 🟡 idle / 🟠 high-token / 🔴 conflict) + Total team tokens',
-      cardSubLine1: 'Team Member Line 1: └ + Person icon + Agent name badge + Model + Type + Health warnings (🔥 high tokens / 💤 idle >5m / ⚠ file conflict) + Status + Duration + Tokens',
-      cardSubLine2: 'Team Member Line 2: 🔧 Tools used (left) + Token bar with % of team total (right-aligned)',
+      cardSubLine1: 'Team Member Line 1: └ + Person icon + Agent name badge + Model + Type + Health warnings (🔥 high tokens / 💤 idle >5m / ⚠ file conflict / 📦 ctx ≥80%) + Status + Duration + Tokens + Context % badge',
+      cardSubLine2: 'Team Member Line 2: 🔧 Tools used (left) + Token % bar + Context bar (right-aligned)',
       cardSubLine3: 'Team Member Line 3: 💬 Description + Agent ID',
       cardNonTeamLine1: 'Non-team Subagent Line 1: └ + Model + Type + Status + Duration + Tokens',
       cardNonTeamLine2: 'Non-team Subagent Line 2: 🔧 Tools used',
@@ -1394,6 +1394,13 @@ function AgentsSection({ lang, theme = 'dark' }) {
       gitDiffAdd: 'Lines added (insertions) — green',
       gitDiffDel: 'Lines deleted (removals) — red',
       gitDiffFiles: 'Number of changed files — gray',
+      contextTitle: 'Context Window %',
+      contextDesc: 'Shows how full each agent\'s context window is (last API call input tokens / 200k limit). Displayed on main agents and team members.',
+      contextBadge: 'Badge — "ctx 52%" with fixed width, color-coded: green (<50%), amber (50-79%), red (≥80%)',
+      contextGauge: 'Gauge bar — thin progress bar on the project name row with tick marks at 50% and 80%',
+      contextBar: 'Team bar — context fill bar on Line 2 alongside token % bar',
+      contextWarning: 'Health warning — 📦 icon appears when context ≥80% (compaction imminent)',
+      contextSource: 'Data source: reads last input_tokens + cache_read + cache_creation from session transcript (.jsonl)',
       stableOrderTitle: 'Stable Ordering',
       stableOrderDesc: 'Agent cards maintain their position. Re-sorting only happens when sessions are added/removed or active status changes. No jumping on data-only updates.',
       subagentCountTitle: 'Subagent Count',
@@ -1436,14 +1443,14 @@ function AgentsSection({ lang, theme = 'dark' }) {
       smartProcessing: 'Tool อื่นกำลังทำงาน',
       cardLayoutTitle: 'Card Layout (Full Mode)',
       cardLayoutDesc: 'Main agent แสดง 4 บรรทัด, Team member แสดง 3 บรรทัดย่อย, Non-team subagent แสดง 3 บรรทัด Session/subagent ที่ stopped จะจางลง (opacity 50%)',
-      cardLine1: 'Main บรรทัด 1: ลำดับ session + Model badge (พร้อมเวอร์ชัน) + Smart Status (icon + label) หรือ Status badge + Duration + Tokens',
-      cardLine2: 'Main บรรทัด 2: ชื่อ project (monospace สีฟ้า ตัวพิมพ์ใหญ่) + Team badge (👥 ชื่อทีม, ถ้าเป็น team lead)',
+      cardLine1: 'Main บรรทัด 1: ลำดับ session + Model badge (พร้อมเวอร์ชัน) + Smart Status (icon + label) หรือ Status badge + Duration + Tokens + Context % badge',
+      cardLine2: 'Main บรรทัด 2: ชื่อ project (monospace สีฟ้า ตัวพิมพ์ใหญ่) + Team badge (👥 ชื่อทีม, ถ้าเป็น team lead) + Context gauge bar (ชิดขวา)',
       cardLine3: 'Main บรรทัด 3: Activity ล่าสุด (ไอคอน tool + ชื่อ + path ไฟล์) + Session ID',
       cardLine4: 'Main บรรทัด 4: Task count badge (active/total running) + Git diff chip (+เพิ่ม -ลบ ไฟล์)',
       teamHeaderTitle: 'Team Header',
       teamHeaderDesc: 'SVG ไอคอน Users (2 คน stroke) + ชื่อทีม + จำนวน members + Health badge (🟢 Healthy / 🟡 idle / 🟠 high-token / 🔴 conflict) + Total tokens ของทีม',
-      cardSubLine1: 'Team Member บรรทัด 1: └ + ไอคอนคน + ชื่อ Agent badge + Model + Type + Health warnings (🔥 tokens สูง / 💤 idle >5m / ⚠ file conflict) + Status + Duration + Tokens',
-      cardSubLine2: 'Team Member บรรทัด 2: 🔧 Tools ที่ใช้ (ซ้าย) + Token bar พร้อม % ของทีม (ชิดขวา)',
+      cardSubLine1: 'Team Member บรรทัด 1: └ + ไอคอนคน + ชื่อ Agent badge + Model + Type + Health warnings (🔥 tokens สูง / 💤 idle >5m / ⚠ file conflict / 📦 ctx ≥80%) + Status + Duration + Tokens + Context % badge',
+      cardSubLine2: 'Team Member บรรทัด 2: 🔧 Tools ที่ใช้ (ซ้าย) + Token % bar + Context bar (ชิดขวา)',
       cardSubLine3: 'Team Member บรรทัด 3: 💬 Description + Agent ID',
       cardNonTeamLine1: 'Non-team Subagent บรรทัด 1: └ + Model + Type + Status + Duration + Tokens',
       cardNonTeamLine2: 'Non-team Subagent บรรทัด 2: 🔧 Tools ที่ใช้',
@@ -1453,6 +1460,13 @@ function AgentsSection({ lang, theme = 'dark' }) {
       gitDiffAdd: 'บรรทัดที่เพิ่ม (insertions) — เขียว',
       gitDiffDel: 'บรรทัดที่ลบ (removals) — แดง',
       gitDiffFiles: 'จำนวนไฟล์ที่เปลี่ยนแปลง — เทา',
+      contextTitle: 'Context Window %',
+      contextDesc: 'แสดง % การใช้ context window ของแต่ละ agent (input tokens ล่าสุด / 200k limit) แสดงบน main agent และ team member',
+      contextBadge: 'Badge — "ctx 52%" ขนาดคงที่ เปลี่ยนสีตามระดับ: เขียว (<50%), เหลือง (50-79%), แดง (≥80%)',
+      contextGauge: 'Gauge bar — แถบบางที่แถว project name มีขีดแบ่งที่ 50% และ 80%',
+      contextBar: 'Team bar — แถบ context บนบรรทัด 2 คู่กับ token % bar',
+      contextWarning: 'Health warning — ไอคอน 📦 ปรากฏเมื่อ context ≥80% (ใกล้ compact)',
+      contextSource: 'แหล่งข้อมูล: อ่าน input_tokens + cache_read + cache_creation ล่าสุดจาก session transcript (.jsonl)',
       stableOrderTitle: 'Stable Ordering',
       stableOrderDesc: 'การ์ด agent จะอยู่ตำแหน่งเดิม จัดเรียงใหม่เฉพาะเมื่อ session เพิ่ม/ลบ หรือ active status เปลี่ยน ไม่กระโดดเมื่อข้อมูลอัปเดต',
       subagentCountTitle: 'Subagent Count',
@@ -2137,6 +2151,52 @@ function AgentsSection({ lang, theme = 'dark' }) {
         </div>
       </div>
 
+      {/* Context Window % */}
+      <div>
+        <h4 className={`text-[13px] font-semibold ${colors.text.tertiary} uppercase tracking-wider mb-3`}>{txt.contextTitle}</h4>
+        <div className={`p-4 rounded-xl ${colors.card.bg} border ${colors.card.border}`}>
+          <p className={`text-[12px] ${colors.text.muted} leading-relaxed mb-3`}>{txt.contextDesc}</p>
+          {/* Visual example */}
+          <div className="flex items-center gap-3 mb-3">
+            <span className="font-mono text-[9px] tabular-nums px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-400 w-[42px] text-right">ctx 32%</span>
+            <span className="font-mono text-[9px] tabular-nums px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400 w-[42px] text-right">ctx 65%</span>
+            <span className="font-mono text-[9px] tabular-nums px-1.5 py-0.5 rounded bg-red-500/15 text-red-400 w-[42px] text-right">ctx 91%</span>
+          </div>
+          <div className="flex items-center gap-2 mb-3">
+            <span className={`text-[9px] ${colors.text.dimmed}`}>Gauge:</span>
+            <div className="relative h-[6px] w-[60px] rounded-full bg-gray-700/40 overflow-hidden">
+              <div className="absolute inset-y-0 left-0 rounded-full bg-amber-500 w-[65%]" />
+              <div className="absolute inset-y-0 left-[50%] w-px bg-white/10" />
+              <div className="absolute inset-y-0 left-[80%] w-px bg-white/15" />
+            </div>
+            <span className={`text-[8px] ${colors.text.dimmed}`}>50%</span>
+            <span className={`text-[8px] ${colors.text.dimmed}`}>80%</span>
+          </div>
+          <div className="space-y-1.5">
+            <div className="flex items-start gap-2 text-[11px]">
+              <span className="shrink-0 mt-0.5">🏷</span>
+              <span className={colors.text.dimmed}>{txt.contextBadge}</span>
+            </div>
+            <div className="flex items-start gap-2 text-[11px]">
+              <span className="shrink-0 mt-0.5">📊</span>
+              <span className={colors.text.dimmed}>{txt.contextGauge}</span>
+            </div>
+            <div className="flex items-start gap-2 text-[11px]">
+              <span className="shrink-0 mt-0.5">👥</span>
+              <span className={colors.text.dimmed}>{txt.contextBar}</span>
+            </div>
+            <div className="flex items-start gap-2 text-[11px]">
+              <span className="shrink-0 mt-0.5">📦</span>
+              <span className={colors.text.dimmed}>{txt.contextWarning}</span>
+            </div>
+            <div className="flex items-start gap-2 text-[11px]">
+              <span className="shrink-0 mt-0.5">📂</span>
+              <span className={colors.text.dimmed}>{txt.contextSource}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
       {/* Stable Ordering */}
       <div>
         <h4 className={`text-[13px] font-semibold ${colors.text.tertiary} uppercase tracking-wider mb-3`}>{txt.stableOrderTitle}</h4>
@@ -2607,14 +2667,6 @@ function EventsSection({ lang, theme = 'dark' }) {
       data: ['toolName', 'toolOutput', 'sessionId']
     },
     {
-      icon: '❌',
-      name: 'Tool Failed',
-      color: 'text-red-400',
-      hook: 'PostToolUseFailure',
-      desc: lang === 'th' ? 'เมื่อ tool ทำงานล้มเหลว - จับ error message' : 'When tool fails - captures error message',
-      data: ['toolName', 'error', 'sessionId']
-    },
-    {
       icon: '💬',
       name: 'UserPromptSubmit',
       color: 'text-amber-400',
@@ -2678,6 +2730,30 @@ function EventsSection({ lang, theme = 'dark' }) {
       desc: lang === 'th' ? 'เมื่อ session จบลง' : 'When a session ends',
       data: ['sessionId', 'timestamp']
     },
+    {
+      icon: '🔔',
+      name: 'Notification',
+      color: 'text-yellow-400',
+      hook: 'Notification',
+      desc: lang === 'th' ? 'แจ้งเตือนจาก Claude - เช่น task เสร็จ, ต้องการ input' : 'Claude notification - e.g. task done, needs input',
+      data: ['sessionId', 'timestamp']
+    },
+    {
+      icon: '💤',
+      name: 'TeammateIdle',
+      color: 'text-slate-400',
+      hook: 'TeammateIdle',
+      desc: lang === 'th' ? 'เมื่อ teammate ในทีมหยุดทำงานชั่วคราว' : 'When a team member goes idle between turns',
+      data: ['agentId', 'sessionId', 'timestamp']
+    },
+    {
+      icon: '✔️',
+      name: 'TaskCompleted',
+      color: 'text-green-400',
+      hook: 'TaskCompleted',
+      desc: lang === 'th' ? 'เมื่อ task ในทีมเสร็จสมบูรณ์' : 'When a team task is completed',
+      data: ['agentId', 'sessionId', 'timestamp']
+    },
   ];
 
   const hookList = [
@@ -2689,8 +2765,11 @@ function EventsSection({ lang, theme = 'dark' }) {
     { hook: 'PermissionRequest', desc: lang === 'th' ? 'ขอ permission จาก user' : 'Permission requested' },
     { hook: 'Stop', desc: lang === 'th' ? 'Claude หยุดตอบ' : 'Claude stops' },
     { hook: 'PreCompact', desc: lang === 'th' ? 'ก่อน compact context' : 'Before context compaction' },
+    { hook: 'Notification', desc: lang === 'th' ? 'แจ้งเตือนจาก Claude' : 'Claude notification' },
     { hook: 'SessionStart', desc: lang === 'th' ? 'เริ่ม session ใหม่' : 'Session starts' },
     { hook: 'SessionEnd', desc: lang === 'th' ? 'จบ session' : 'Session ends' },
+    { hook: 'TeammateIdle', desc: lang === 'th' ? 'Teammate หยุดทำงานชั่วคราว' : 'Teammate goes idle' },
+    { hook: 'TaskCompleted', desc: lang === 'th' ? 'Task เสร็จสมบูรณ์' : 'Task completed' },
   ];
 
   return (

@@ -202,6 +202,10 @@ export function useDemoReplay(demoMode) {
       const newTokens = (existing.tokens || 0) + tokenIncrement;
       const inputRatio = 0.85; // ~85% input tokens
 
+      // Simulate context window fill — grows from ~10k to ~180k as session progresses
+      const simLastInput = Math.min(10000 + Math.floor(newTokens * 0.08), 180000);
+      const simContextPct = Math.round((simLastInput / 200000) * 100);
+
       const updated = {
         ...existing,
         id: mainId,
@@ -214,6 +218,8 @@ export function useDemoReplay(demoMode) {
         tokens: newTokens,
         inputTokens: Math.floor(newTokens * inputRatio),
         outputTokens: Math.floor(newTokens * (1 - inputRatio)),
+        lastInputTokens: simLastInput,
+        contextPct: simContextPct,
         cwd: event.cwd || existing.cwd || meta.cwd,
         gitDiff: existing.gitDiff || { additions: 0, deletions: 0, files: 0 },
       };
@@ -250,11 +256,15 @@ export function useDemoReplay(demoMode) {
             const increment = Math.max(Math.floor(targetTokens / 600), 100);
             const newTokens = Math.min((agent.tokens || 0) + increment, targetTokens);
             const taskIdx = Math.floor((newTokens / targetTokens) * teamToolTasks.length) % teamToolTasks.length;
+            const subLastInput = Math.min(8000 + Math.floor(newTokens * 0.1), 160000);
+            const subContextPct = Math.round((subLastInput / 200000) * 100);
             s.agentsMap.set(id, {
               ...agent,
               tokens: newTokens,
               inputTokens: Math.floor(newTokens * 0.85),
               outputTokens: Math.floor(newTokens * 0.15),
+              lastInputTokens: subLastInput,
+              contextPct: subContextPct,
               lastSeen: now,
               lastTask: teamToolTasks[taskIdx],
               toolsUsed: meta.toolsUsed || agent.toolsUsed || ['Read', 'Grep'],
@@ -281,6 +291,8 @@ export function useDemoReplay(demoMode) {
         tokens: 0,
         inputTokens: 0,
         outputTokens: 0,
+        lastInputTokens: 0,
+        contextPct: 0,
         description: meta.description?.slice(0, 80),
         toolsUsed: [],
         teamName: null,
@@ -293,14 +305,19 @@ export function useDemoReplay(demoMode) {
       const existing = s.agentsMap.get(event.agentId);
       if (existing) {
         const meta = DEMO_AGENT_META[event.agentId] || {};
+        const finalTokens = meta.tokens || existing.tokens;
+        const finalLastInput = Math.min(8000 + Math.floor(finalTokens * 0.1), 160000);
+        const finalContextPct = Math.round((finalLastInput / 200000) * 100);
         s.agentsMap.set(event.agentId, {
           ...existing,
           status: 'stopped',
           lastSeen: now,
           stoppedAt: now,
-          tokens: meta.tokens || existing.tokens,
+          tokens: finalTokens,
           inputTokens: meta.inputTokens || existing.inputTokens,
           outputTokens: meta.outputTokens || existing.outputTokens,
+          lastInputTokens: finalLastInput,
+          contextPct: finalContextPct,
           toolsUsed: meta.toolsUsed || existing.toolsUsed,
           duration: existing.startedAt ? Date.now() - new Date(existing.startedAt).getTime() : null,
           durationFormatted: existing.startedAt ? formatDuration(Date.now() - new Date(existing.startedAt).getTime()) : null,
@@ -317,6 +334,8 @@ export function useDemoReplay(demoMode) {
 
         const tokenIncrement = tokenSchedule.tokensPerEvent[event.agentId] || 5000;
         const newTokens = (existing.tokens || 0) + tokenIncrement;
+        const agentLastInput = Math.min(8000 + Math.floor(newTokens * 0.1), 160000);
+        const agentContextPct = Math.round((agentLastInput / 200000) * 100);
 
         s.agentsMap.set(event.agentId, {
           ...existing,
@@ -326,6 +345,8 @@ export function useDemoReplay(demoMode) {
           tokens: newTokens,
           inputTokens: Math.floor(newTokens * 0.85),
           outputTokens: Math.floor(newTokens * 0.15),
+          lastInputTokens: agentLastInput,
+          contextPct: agentContextPct,
           lastTask: event.toolName ? `${event.toolName} ${getToolTarget(event) || ''}`.trim() : existing.lastTask,
         });
       }

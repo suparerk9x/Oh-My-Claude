@@ -1,13 +1,22 @@
 #!/usr/bin/env node
 /**
  * Universal Event Sender for Claude Code Hooks
- * Sends hook events to the observability server via HTTP POST
+ * Sends hook events to the observability server via HTTP POST.
+ * Also reads transcript tail on PostToolUse/Stop to extract real-time context window data.
  */
 
 const http = require('http');
+const fs = require('fs');
 
 const SERVER_URL = process.env.MONITOR_SERVER || 'http://localhost:4824';
 const SOURCE_APP = process.env.MONITOR_SOURCE || 'claude-monitor';
+
+// Track pending HTTP requests — exit only when all complete
+let pendingRequests = 0;
+function requestDone() {
+  pendingRequests--;
+  if (pendingRequests <= 0) process.exit(0);
+}
 
 // Read event type from command line
 const args = process.argv.slice(2);
@@ -16,7 +25,7 @@ const eventType = eventTypeIndex !== -1 ? args[eventTypeIndex + 1] : 'Unknown';
 
 // Read JSON from stdin
 let inputData = '';
-let dataReceived = false;  // Track if any data was received
+let dataReceived = false;
 process.stdin.setEncoding('utf8');
 
 process.stdin.on('data', (chunk) => {
@@ -26,7 +35,6 @@ process.stdin.on('data', (chunk) => {
 
 process.stdin.on('end', () => {
   try {
-    // Only parse if we actually received data
     const hookData = (dataReceived && inputData) ? JSON.parse(inputData) : {};
 
     // Build event payload
@@ -68,15 +76,73 @@ process.stdin.on('end', () => {
       raw: hookData
     };
 
-    // Send to server
+    // For PostToolUse/Stop events with transcript_path, read context data and send separately
+    if ((eventType === 'PostToolUse' || eventType === 'Stop') && hookData.transcript_path && hookData.session_id) {
+      sendContextUpdate(hookData.session_id, hookData.transcript_path);
+    }
+
+    // Send event to server
     sendEvent(event);
   } catch (err) {
-    // Silent fail - don't block Claude Code
     process.exit(0);
   }
 });
 
+/**
+ * Read the last 32KB of the transcript file and extract the latest context window fill.
+ * Matches Claude Code's formula: (input_tokens + cache_creation + cache_read) / 200000 * 100
+ * Sends the result to /context-update on the backend.
+ */
+function sendContextUpdate(sessionId, transcriptPath) {
+  try {
+    const fd = fs.openSync(transcriptPath, 'r');
+    const stats = fs.fstatSync(fd);
+    const tailSize = Math.min(stats.size, 32768);
+    const buffer = Buffer.alloc(tailSize);
+    fs.readSync(fd, buffer, 0, tailSize, stats.size - tailSize);
+    fs.closeSync(fd);
+
+    const tail = buffer.toString('utf-8');
+    const lines = tail.split('\n');
+
+    // Scan from end for last real assistant usage (skip synthetic/compact)
+    for (let i = lines.length - 1; i >= 0; i--) {
+      const line = lines[i].trim();
+      if (!line || !line.includes('"usage"')) continue;
+      try {
+        const parsed = JSON.parse(line);
+        if (parsed.type === 'assistant' && parsed.message?.usage && parsed.message.model !== '<synthetic>') {
+          const u = parsed.message.usage;
+          const lastInputTokens = (u.input_tokens || 0) + (u.cache_read_input_tokens || 0) + (u.cache_creation_input_tokens || 0);
+          const contextLimit = 200000;
+          const usedPct = Math.round((lastInputTokens / contextLimit) * 100);
+
+          // Send to /context-update
+          pendingRequests++;
+          const payload = JSON.stringify({
+            sessionId,
+            contextWindow: { used_percentage: usedPct, remaining_percentage: 100 - usedPct }
+          });
+          const req = http.request({
+            hostname: '127.0.0.1', port: 4824,
+            path: '/context-update', method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) },
+            timeout: 500
+          });
+          req.on('error', () => requestDone());
+          req.on('timeout', () => { req.destroy(); requestDone(); });
+          req.on('response', () => requestDone());
+          req.write(payload);
+          req.end();
+          return;
+        }
+      } catch {}
+    }
+  } catch {}
+}
+
 function sendEvent(event) {
+  pendingRequests++;
   const url = new URL('/events', SERVER_URL);
   const postData = JSON.stringify(event);
 
@@ -92,24 +158,12 @@ function sendEvent(event) {
     timeout: 2000
   };
 
-  const req = http.request(options, (res) => {
-    // Success - exit cleanly
-    process.exit(0);
-  });
-
-  req.on('error', () => {
-    // Silent fail - server might not be running
-    process.exit(0);
-  });
-
-  req.on('timeout', () => {
-    req.destroy();
-    process.exit(0);
-  });
-
+  const req = http.request(options, () => requestDone());
+  req.on('error', () => requestDone());
+  req.on('timeout', () => { req.destroy(); requestDone(); });
   req.write(postData);
   req.end();
 }
 
-// NOTE: setTimeout fallback REMOVED - it caused duplicate events
-// The 'end' event handles both cases: with data and without data
+// Safety: exit after 3s no matter what
+setTimeout(() => process.exit(0), 3000);

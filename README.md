@@ -58,7 +58,7 @@ Started as "how much quota left?" → became a window into how Claude Code works
 | **Event Details** | Click any event to inspect Input/Output in footer detail panel |
 | **Mini Pop-out** | Floating mini window (280x400px) for compact monitoring |
 | **Install as App** | PWA support — install to desktop, runs without browser UI |
-| **Dark / Light Theme** | Toggle between dark and light mode |
+| **Dark / Light Theme** | Comprehensive theme system with semantic color tokens — fully readable in both modes |
 | **Notifications** | Desktop notifications for events (bell toggle) |
 | **Bilingual Guide** | Built-in help guide in English & Thai (11 sections) |
 | **Chrome Extension** | Sync usage % directly from Claude.ai — **strongly recommended** |
@@ -223,6 +223,26 @@ Add the `hooks` section — replace `<PATH>` with your Oh-My-Claude folder path:
           }
         ]
       }
+    ],
+    "TeammateIdle": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"<PATH>/Oh-My-Claude/hooks/send_event.js\" --event-type TeammateIdle"
+          }
+        ]
+      }
+    ],
+    "TaskCompleted": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"<PATH>/Oh-My-Claude/hooks/send_event.js\" --event-type TaskCompleted"
+          }
+        ]
+      }
     ]
   }
 }
@@ -351,7 +371,8 @@ A compact floating window for monitoring while you work:
 
 - Click the **Mini Pop-out** button (↗) in the header toolbar
 - Opens a **280x400px** floating window
-- Shows: connection status, token stats, agent list, and recent activity
+- Shows: connection status, token gauges, agent list with team members, and smart status
+- Syncs theme (dark/light) and demo mode bidirectionally with the main app
 - Perfect for keeping on the side while coding
 
 ---
@@ -445,8 +466,8 @@ Oh-My-Claude/
 │       ├── mini-main.jsx     # Mini entry + PWA registration
 │       ├── index.css          # Global styles (Tailwind imports)
 │       ├── config/
-│       │   ├── theme.js      # Dark/Light theme colors
-│       │   └── eventTypes.js # Event type definitions
+│       │   ├── theme.js      # Theme system (11 color categories: status, model, tool, event, semantic, etc.)
+│       │   └── eventTypes.js # Event type definitions (theme-aware colors)
 │       ├── data/
 │       │   └── demoData.js   # Demo replay dataset (1,006 events)
 │       ├── hooks/

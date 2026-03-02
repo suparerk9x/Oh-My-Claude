@@ -154,6 +154,7 @@ export function AgentTree({ agents = [], colors = {}, compact = false, expanded 
       'Write':       { icon: '📝', ...(tl.edit    || { color: 'text-orange-500', bg: 'bg-orange-500/15' }) },
       'Bash':        { icon: '⚡', ...(tl.bash    || { color: 'text-amber-500',  bg: 'bg-amber-500/15' }) },
       'Task':        { icon: '🔀', ...(tl.task    || { color: 'text-violet-500', bg: 'bg-violet-500/15' }) },
+      'Agent':       { icon: '🔀', ...(tl.task    || { color: 'text-violet-500', bg: 'bg-violet-500/15' }) },
       'WebFetch':    { icon: '🌐', ...(tl.web     || { color: 'text-cyan-500',   bg: 'bg-cyan-500/15' }) },
       'WebSearch':   { icon: '🔎', ...(tl.web     || { color: 'text-cyan-500',   bg: 'bg-cyan-500/15' }) },
       'TeamCreate':  { icon: '👥', ...(tl.team    || { color: 'text-indigo-500', bg: 'bg-indigo-500/15' }) },
@@ -226,6 +227,11 @@ export function AgentTree({ agents = [], colors = {}, compact = false, expanded 
     const tokens = task.tokens || (task.inputTokens || 0) + (task.outputTokens || 0);
     if (tokens > HIGH_TOKEN_THRESHOLD) {
       warnings.push({ level: 'orange', icon: '🔥', label: formatTokens(tokens), title: `High token usage: ${tokens.toLocaleString()}` });
+    }
+
+    // Context window nearly full
+    if (task.contextPct >= 80) {
+      warnings.push({ level: 'red', icon: '📦', label: `ctx ${task.contextPct}%`, title: `Context window ${task.contextPct}% full — compaction imminent` });
     }
 
     // File conflicts
@@ -361,11 +367,19 @@ export function AgentTree({ agents = [], colors = {}, compact = false, expanded 
               <span className={`font-mono ${ctx.expanded ? 'text-[10px]' : 'text-[9px]'} tabular-nums ${mi.tokens || 'text-amber-500'} w-[45px] text-right`}>
                 {tokens > 0 ? ctx.formatTokens(tokens) : ''}
               </span>
+              {task.teamName && (() => {
+                const pct = task.contextPct || 0;
+                return (
+                  <span className={`font-mono ${ctx.expanded ? 'text-[9px]' : 'text-[8px]'} tabular-nums px-1 py-0.5 rounded shrink-0 w-[42px] text-right ${pct >= 80 ? 'bg-red-500/15 text-red-400' : pct >= 50 ? 'bg-amber-500/15 text-amber-400' : 'bg-emerald-500/15 text-emerald-400'}`} title={`Context window ${pct}% full`}>
+                    ctx {pct}%
+                  </span>
+                );
+              })()}
             </div>
           </div>
 
-          {/* Line 2: Tools + Token bar */}
-          {!ctx.compact && (task.toolsUsed?.length > 0 || tokenPct > 0) && (
+          {/* Line 2: Tools + Token bar + Context bar (team only) */}
+          {!ctx.compact && (task.toolsUsed?.length > 0 || tokenPct > 0 || (task.teamName && task.contextPct > 0)) && (
             <div className={`flex items-center gap-1 ${ctx.expanded ? 'pl-8 flex-wrap' : 'pl-8'}`}>
               {task.toolsUsed?.length > 0 && (
                 <>
@@ -377,12 +391,21 @@ export function AgentTree({ agents = [], colors = {}, compact = false, expanded 
                   ))}
                 </>
               )}
-              {tokenPct > 0 && (
+              {(tokenPct > 0 || (task.teamName && task.contextPct > 0)) && (
                 <div className="flex items-center gap-1.5 ml-auto shrink-0">
-                  <div className={`h-1 rounded-full ${mi.tokenBarTrack || 'bg-gray-700/30'} overflow-hidden w-[50px]`}>
-                    <div className={`h-full rounded-full ${mi.tokenBarFill || 'bg-amber-500/50'} transition-all`} style={{ width: `${Math.min(tokenPct, 100)}%` }} />
-                  </div>
-                  <span className={`text-[8px] font-mono ${mi.tokenPct || 'text-amber-500/70'}`}>{tokenPct}%</span>
+                  {tokenPct > 0 && (
+                    <>
+                      <span className={`text-[8px] font-mono ${mi.tokenPct || 'text-amber-500/70'}`}>{tokenPct}%</span>
+                      <div className={`h-1 rounded-full ${mi.tokenBarTrack || 'bg-gray-700/30'} overflow-hidden w-[42px]`}>
+                        <div className={`h-full rounded-full ${mi.tokenBarFill || 'bg-amber-500/50'} transition-all`} style={{ width: `${Math.min(tokenPct, 100)}%` }} />
+                      </div>
+                    </>
+                  )}
+                  {task.teamName && task.contextPct > 0 && (
+                    <div className={`h-1 rounded-full ${mi.tokenBarTrack || 'bg-gray-700/30'} overflow-hidden w-[42px]`}>
+                      <div className={`h-full rounded-full transition-all ${task.contextPct >= 80 ? 'bg-red-500/70' : task.contextPct >= 50 ? 'bg-amber-500/50' : 'bg-emerald-500/50'}`} style={{ width: `${Math.min(task.contextPct, 100)}%` }} />
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -469,11 +492,19 @@ export function AgentTree({ agents = [], colors = {}, compact = false, expanded 
                     <span className={`font-mono text-[10px] tabular-nums ${mi.tokens || 'text-amber-500'} w-[45px] text-right`}>
                       {formatTokens(sessionTokens)}
                     </span>
+                    {(() => {
+                      const pct = main?.contextPct || 0;
+                      return (
+                        <span className={`font-mono text-[8px] tabular-nums px-1 py-0.5 rounded shrink-0 w-[42px] text-right ${pct >= 80 ? 'bg-red-500/15 text-red-400' : pct >= 50 ? 'bg-amber-500/15 text-amber-400' : 'bg-emerald-500/15 text-emerald-400'}`} title={`Context window ${pct}% full`}>
+                          ctx {pct}%
+                        </span>
+                      );
+                    })()}
                   </div>
                 </div>
 
-                {/* Project name + Team badge */}
-                {(main?.cwd || teamInfo) && (
+                {/* Project name + Team badge + Context gauge */}
+                {(main?.cwd || teamInfo || main?.contextPct > 0) && (
                   <div className="mt-0.5 pl-[22px] flex items-center gap-1.5">
                     {main?.cwd && (
                       <span className={`text-[10px] font-mono tracking-widest uppercase ${mi.projectName || 'text-cyan-400/70'}`} style={{ fontFamily: "'Share Tech Mono', 'Fira Code', 'JetBrains Mono', monospace", letterSpacing: '0.15em' }} title={main.cwd}>
@@ -490,6 +521,28 @@ export function AgentTree({ agents = [], colors = {}, compact = false, expanded 
                         ⚠ {teamInfo.fileConflicts.length} conflict{teamInfo.fileConflicts.length > 1 ? 's' : ''}
                       </span>
                     )}
+                    {/* Context window gauge — right-aligned */}
+                    {main?.contextPct > 0 && (() => {
+                      const pct = main.contextPct;
+                      const clamp = Math.min(pct, 100);
+                      const barColor = pct >= 80 ? 'bg-red-500' : pct >= 50 ? 'bg-amber-500' : 'bg-emerald-500';
+                      const glowColor = pct >= 80 ? 'shadow-red-500/30' : pct >= 50 ? 'shadow-amber-500/20' : '';
+                      const lastInput = main.lastInputTokens || 0;
+                      const limitK = '200k';
+                      return (
+                        <div className="ml-auto flex items-center shrink-0" title={`Context window: ${lastInput.toLocaleString()} / ${limitK} tokens (${pct}%)`}>
+                          <div className={`relative h-[6px] w-[42px] rounded-full ${mi.tokenBarTrack || 'bg-gray-700/40'} overflow-hidden ${glowColor ? `shadow-sm ${glowColor}` : ''}`}>
+                            <div
+                              className={`absolute inset-y-0 left-0 rounded-full ${barColor} transition-all duration-700 ease-out`}
+                              style={{ width: `${clamp}%` }}
+                            />
+                            {/* Tick marks at 50% and 80% */}
+                            <div className="absolute inset-y-0 left-[50%] w-px bg-white/10" />
+                            <div className="absolute inset-y-0 left-[80%] w-px bg-white/15" />
+                          </div>
+                        </div>
+                      );
+                    })()}
                   </div>
                 )}
 
