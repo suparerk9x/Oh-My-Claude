@@ -5,7 +5,7 @@ import { formatTokens } from '../utils/format';
  * AgentTree - Compact but COMPLETE information
  * No truncation - show all data
  */
-export function AgentTree({ agents = [], colors = {}, compact = false, expanded = false, smartStatus = {}, teams = [] }) {
+export function AgentTree({ agents = [], colors = {}, compact = false, expanded = false, smartStatus = {}, teams = [], hideFooter = false }) {
   // Group by session - handle subagents with different sessionIds
   // First, build a map of main agents by their ID (main_<sessionId>)
   const mainAgentMap = {};
@@ -650,7 +650,7 @@ export function AgentTree({ agents = [], colors = {}, compact = false, expanded 
       </div>
 
       {/* Footer */}
-      <div className={`h-8 flex items-center justify-between px-2 border-t ${borderColor} ${colors?.bg?.tertiary || 'bg-black/20'} text-[10px]`}>
+      {!hideFooter && <div className={`h-5 flex items-center justify-between px-2 border-t ${borderColor} ${colors?.bg?.tertiary || 'bg-black/20'} text-[10px]`}>
         <div className="flex items-center gap-2">
           {/* Sessions */}
           <span className="flex items-center gap-1">
@@ -675,7 +675,7 @@ export function AgentTree({ agents = [], colors = {}, compact = false, expanded 
         {totalTokens > 0 && (
           <span className={`font-mono tabular-nums ${mi.tokens || 'text-amber-500'}`}>{formatTokens(totalTokens)}</span>
         )}
-      </div>
+      </div>}
     </div>
   );
 }

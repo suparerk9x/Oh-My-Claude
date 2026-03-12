@@ -6,6 +6,7 @@ import { TokenGauge, AgentTree, HelpGuide, ActivityItem, HourlyBreakdown, TokenS
 import { useNotifications } from './hooks/useNotifications';
 import { useDemoReplay } from './hooks/useDemoReplay';
 import MiniApp from './MiniApp.jsx';
+import MediumApp from './MediumApp.jsx';
 
 const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:4824';
 
@@ -37,6 +38,7 @@ function detectPWA() {
 export default function App() {
   const [isPWA, setIsPWA] = useState(detectPWA);
   const [miniMode, setMiniMode] = useState(false);
+  const [mediumMode, setMediumMode] = useState(false);
 
   // Re-check PWA mode when display-mode changes (e.g. after install)
   useEffect(() => {
@@ -488,6 +490,16 @@ export default function App() {
     );
   }
 
+  // PWA medium mode: render MediumApp inline with switch-back button
+  if (isPWA && mediumMode) {
+    return (
+      <MediumApp onSwitchToFull={() => {
+        setMediumMode(false);
+        try { window.resizeTo(965, 870); } catch {}
+      }} />
+    );
+  }
+
   return (
     <div className={`h-screen w-full min-w-[950px] mx-auto ${colors.bg.primary} ${colors.text.primary} flex flex-col overflow-hidden font-['Inter',system-ui,sans-serif]`}>
       {/* Top accent line - Claude coral */}
@@ -655,6 +667,24 @@ export default function App() {
                 <path d="M12 2.25a.75.75 0 01.75.75v2.25a.75.75 0 01-1.5 0V3a.75.75 0 01.75-.75zM7.5 12a4.5 4.5 0 119 0 4.5 4.5 0 01-9 0zM18.894 6.166a.75.75 0 00-1.06-1.06l-1.591 1.59a.75.75 0 101.06 1.061l1.591-1.59zM21.75 12a.75.75 0 01-.75.75h-2.25a.75.75 0 010-1.5H21a.75.75 0 01.75.75zM17.834 18.894a.75.75 0 001.06-1.06l-1.59-1.591a.75.75 0 10-1.061 1.06l1.59 1.591zM12 18a.75.75 0 01.75.75V21a.75.75 0 01-1.5 0v-2.25A.75.75 0 0112 18zM7.758 17.303a.75.75 0 00-1.061-1.06l-1.591 1.59a.75.75 0 001.06 1.061l1.591-1.59zM6 12a.75.75 0 01-.75.75H3a.75.75 0 010-1.5h2.25A.75.75 0 016 12zM6.697 7.757a.75.75 0 001.06-1.06l-1.59-1.591a.75.75 0 00-1.061 1.06l1.59 1.591z" />
               </svg>
             )}
+          </button>
+          {/* Medium pop-out */}
+          <button
+            onClick={() => {
+              if (isPWA) {
+                setMediumMode(true);
+                try { window.resizeTo(450, 870); } catch {}
+              } else {
+                window.open('/medium.html', '_blank', 'popup,width=450,height=870');
+              }
+            }}
+            className={`p-1 rounded-lg ${colors.button.base} border transition-all ${colors.button.text} h-7 w-7 flex items-center justify-center`}
+            title={isPWA ? "Switch to Medium View" : "Open Medium View (popup)"}
+          >
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 5a1 1 0 011-1h4a1 1 0 011 1v14a1 1 0 01-1 1H5a1 1 0 01-1-1V5z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 9h6M14 13h6M14 17h4" opacity={0.4} />
+            </svg>
           </button>
           {/* Mini toggle (PWA) / Pop-out (browser) */}
           <button
