@@ -2,18 +2,32 @@ import { useState, useEffect, useRef } from 'react';
 import PropTypes from 'prop-types';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { formatTokens, cacheSavedUSD, formatDuration, cleanAssistantMessage, formatTimeWithSeconds } from '../utils/format';
+import { formatTokens, cacheSavedUSD, formatDuration, cleanAssistantMessage, formatTimeWithSeconds, formatRelativeTime } from '../utils/format';
+
+// Highlight occurrences of `q` in plain text (used in timeline search mode)
+function highlightText(text, q) {
+  if (!q) return text;
+  const out = []; const lower = text.toLowerCase(); const ql = q.toLowerCase();
+  let i = 0, idx;
+  while ((idx = lower.indexOf(ql, i)) !== -1) {
+    if (idx > i) out.push(text.slice(i, idx));
+    out.push(<mark key={idx} className="rounded px-0.5 bg-amber-400/30 text-amber-200">{text.slice(idx, idx + q.length)}</mark>);
+    i = idx + q.length;
+  }
+  out.push(text.slice(i));
+  return out;
+}
 
 // Shared markdown styling for the reply timeline (dark-theme tuned)
 const MD_COMPONENTS = {
-  h1: (p) => <div className="text-[13px] font-semibold text-white mt-2 mb-1" {...p} />,
-  h2: (p) => <div className="text-[12px] font-semibold text-white mt-2 mb-1" {...p} />,
-  h3: (p) => <div className="text-[12px] font-semibold text-gray-200 mt-1.5 mb-0.5" {...p} />,
-  p: (p) => <p className="mb-1.5" {...p} />,
-  ul: (p) => <ul className="list-disc pl-4 mb-1.5 space-y-0.5" {...p} />,
-  ol: (p) => <ol className="list-decimal pl-4 mb-1.5 space-y-0.5" {...p} />,
-  li: (p) => <li className="leading-snug" {...p} />,
-  strong: (p) => <strong className="font-semibold text-gray-100" {...p} />,
+  h1: (p) => <div className="text-[13px] font-medium text-gray-100 mt-2 mb-1" {...p} />,
+  h2: (p) => <div className="text-[12px] font-medium text-gray-100 mt-2 mb-1" {...p} />,
+  h3: (p) => <div className="text-[12px] font-normal text-gray-200 mt-1.5 mb-0.5" {...p} />,
+  p: (p) => <p className="mb-2 last:mb-0" {...p} />,
+  ul: (p) => <ul className="list-disc pl-4 mb-2 space-y-1" {...p} />,
+  ol: (p) => <ol className="list-decimal pl-4 mb-2 space-y-1" {...p} />,
+  li: (p) => <li className="leading-[1.7]" {...p} />,
+  strong: (p) => <strong className="font-normal text-gray-100" {...p} />,
   a: (p) => <a className="text-sky-400 underline" target="_blank" rel="noreferrer" {...p} />,
   blockquote: (p) => <blockquote className="border-l-2 border-gray-600 pl-2 text-gray-400 mb-1.5" {...p} />,
   hr: () => <hr className="border-gray-700 my-2" />,
@@ -41,12 +55,24 @@ export function AgentTree({ agents = [], colors = {}, compact = false, expanded 
   const [collapsedRemaining, setCollapsedRemaining] = useState(() => ({})); // sessionId -> collapse remaining (in-progress + queued)
   const [bgDetail, setBgDetail] = useState(null); // background task object shown in detail popup
   const [fullMsg, setFullMsg] = useState(null); // { sessionId, loading, messages:[{ts,text}], total, limit, error } — reply timeline
+  const [copiedIdx, setCopiedIdx] = useState(null); // timeline entry index showing the "copied" flash
+  const [timelineQuery, setTimelineQuery] = useState(''); // reply-timeline search box
   const timelineRef = useRef(null);
   const lastTimelineTextRef = useRef('');
+
+  // Copy a timeline reply to the clipboard (with a brief "copied" flash)
+  const copyMessage = (text, idx) => {
+    if (!navigator.clipboard?.writeText) return;
+    navigator.clipboard.writeText(text).then(() => {
+      setCopiedIdx(idx);
+      setTimeout(() => setCopiedIdx(c => (c === idx ? null : c)), 1500);
+    }).catch(() => {});
+  };
 
   // Open the reply timeline — fetch the most recent assistant messages for this session
   const openFullMessage = (sessionId) => {
     lastTimelineTextRef.current = ''; // force scroll-to-bottom on every open (even reopening the same session)
+    setTimelineQuery('');
     setFullMsg({ sessionId, loading: true, messages: [], total: 0, limit: 50, error: null });
     fetch(`/api/session/${sessionId}/messages?limit=50`)
       .then(r => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
@@ -571,6 +597,8 @@ export function AgentTree({ agents = [], colors = {}, compact = false, expanded 
           // always show duration: use elapsed/duration string, else compute from startedAt → stoppedAt/lastSeen
           const mainDuration = (main && getDuration(main))
             || (main?.startedAt ? formatDuration(new Date(main.stoppedAt || main.lastSeen || Date.now()) - new Date(main.startedAt)) : '');
+          // "quiet" = labeled active but no new event for a while (possibly stuck, or a long-running tool)
+          const quietMs = main?.status === 'active' && main?.lastSeen ? (Date.now() - new Date(main.lastSeen).getTime()) : 0;
           const activeTaskCount = tasks.filter(t => t.status === 'active').length;
           const teamInfo = teamBySession[sessionId];
           const hasConflicts = teamInfo?.fileConflicts?.length > 0;
@@ -618,6 +646,11 @@ export function AgentTree({ agents = [], colors = {}, compact = false, expanded 
                       <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded shrink-0 ${mainStatus.bg}`}>
                         <span className={`text-[10px] shrink-0 ${mainStatus.color} ${mainStatus.pulse ? 'animate-pulse' : ''}`}>{mainStatus.icon}</span>
                         <span className={`text-[9px] whitespace-nowrap ${mainStatus.color}`}>{mainStatus.label}</span>
+                      </span>
+                    )}
+                    {quietMs > 90000 && (
+                      <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[8px] shrink-0 whitespace-nowrap bg-amber-500/15 text-amber-400 border border-amber-500/25" title={`ไม่มี event ใหม่ ${formatDuration(quietMs)} — อาจค้าง หรือกำลังรัน tool ยาวๆ`}>
+                        ⚠ เงียบ {formatDuration(quietMs)}
                       </span>
                     )}
                   </div>
@@ -1029,44 +1062,82 @@ export function AgentTree({ agents = [], colors = {}, compact = false, expanded 
         <div className="fixed inset-0 z-50 flex items-center justify-center" onClick={() => setFullMsg(null)}>
           <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
           <div
-            className={`relative w-[560px] max-w-[92vw] max-h-[80vh] flex flex-col rounded-xl border ${borderColor} ${colors?.bg?.primary || 'bg-[#0f0f17]'} shadow-2xl shadow-black/50`}
+            className={`relative w-[560px] max-w-[92vw] max-h-[80vh] flex flex-col rounded-xl border ${borderColor} bg-[#1e1e20] shadow-2xl shadow-black/50`}
             onClick={e => e.stopPropagation()}
           >
-            <div className={`shrink-0 px-4 py-3 border-b ${borderColor} ${colors?.bg?.secondary || 'bg-[#13131f]'} flex items-center justify-between`}>
-              <span className={`flex items-center gap-2 text-[11px] font-medium ${colors?.text?.primary || 'text-white'}`}>
-                ↳ Reply timeline
-                <span className={`text-[9px] font-mono ${textMuted}`}>{fullMsg.messages.length}{fullMsg.total > fullMsg.messages.length ? `/${fullMsg.total}` : ''}</span>
-                <span className="flex items-center gap-1 text-[9px] text-emerald-400" title="ต่อท้ายอัตโนมัติเมื่อมีคำตอบใหม่">
+            <div className={`shrink-0 px-4 pt-3 bg-[#1e1e20] flex items-center justify-between`}>
+              <div className="flex items-center gap-2 min-w-0">
+                <span className={`text-[12px] font-semibold ${colors?.text?.primary || 'text-white'}`}>↳ Reply timeline</span>
+                <span className="flex items-center gap-1 text-[9px] text-emerald-400 shrink-0" title="Auto-appends new replies">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />live
                 </span>
-              </span>
-              <button onClick={() => setFullMsg(null)} className={`p-1 rounded hover:bg-white/10 ${textMuted}`}>
+              </div>
+              <button onClick={() => setFullMsg(null)} className={`p-1 -mr-1 rounded hover:bg-white/10 ${textMuted} shrink-0`}>
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
               </button>
             </div>
-            <div ref={timelineRef} className="px-4 py-3 overflow-y-auto space-y-2.5">
-              {fullMsg.loading && <div className={`text-[10px] ${textMuted}`}>กำลังโหลด timeline…</div>}
-              {fullMsg.error && <div className="text-[10px] text-amber-400">โหลดไม่ได้ ({fullMsg.error})</div>}
+            {/* Search toolbar */}
+            <div className={`shrink-0 px-4 pt-2 pb-3 border-b ${borderColor} bg-[#1e1e20]`}>
+              <div className="relative flex items-center">
+                <span className={`absolute left-2.5 text-[10px] pointer-events-none ${textMuted}`}>🔍</span>
+                <input
+                  type="text"
+                  value={timelineQuery}
+                  onChange={(e) => setTimelineQuery(e.target.value)}
+                  placeholder="Search replies…"
+                  className={`w-full text-[10px] pl-7 pr-24 py-1.5 rounded-lg bg-white/[0.04] border border-transparent focus:border-gray-500/40 focus:bg-white/[0.06] outline-none transition-colors ${colors?.text?.secondary || 'text-gray-300'}`}
+                />
+                <div className="absolute right-2 flex items-center gap-1.5">
+                  <span className={`text-[9px] font-mono ${textMuted}`}>
+                    {timelineQuery
+                      ? `${fullMsg.messages.filter(m => m.text.toLowerCase().includes(timelineQuery.toLowerCase())).length} found`
+                      : `${fullMsg.total} replies`}
+                  </span>
+                  {timelineQuery && (
+                    <button onClick={() => setTimelineQuery('')} className={`text-[11px] ${textMuted} hover:text-gray-300`}>✕</button>
+                  )}
+                </div>
+              </div>
+            </div>
+            <div ref={timelineRef} className="px-2 py-1 overflow-y-auto divide-y divide-white/[0.06]">
+              {fullMsg.loading && <div className={`text-[10px] px-2 py-2 ${textMuted}`}>Loading timeline…</div>}
+              {fullMsg.error && <div className="text-[10px] px-2 py-2 text-amber-400">Failed to load ({fullMsg.error})</div>}
               {!fullMsg.loading && fullMsg.total > fullMsg.messages.length && (
-                <button onClick={loadOlderMessages} className={`w-full text-[9px] py-1 rounded border ${borderColor} ${textMuted} hover:text-gray-300 transition-colors`}>
-                  ↑ โหลดเก่ากว่า (เหลืออีก {fullMsg.total - fullMsg.messages.length})
+                <button onClick={loadOlderMessages} className={`w-full text-[9px] py-1.5 ${textMuted} hover:text-gray-300 transition-colors`}>
+                  ↑ Load older ({fullMsg.total - fullMsg.messages.length} more)
                 </button>
               )}
               {!fullMsg.loading && !fullMsg.error && fullMsg.messages.length === 0 && (
-                <div className={`text-[10px] ${textMuted}`}>ยังไม่มีคำตอบใน session นี้</div>
+                <div className={`text-[10px] px-2 py-2 ${textMuted}`}>No replies yet in this session</div>
               )}
-              {fullMsg.messages.map((m, i) => (
-                <div key={i} className={`rounded-lg border ${borderColor} ${colors?.bg?.secondary || 'bg-[#13131f]'} px-2.5 py-2`}>
+              {!fullMsg.loading && timelineQuery && fullMsg.messages.length > 0 && fullMsg.messages.every(m => !m.text.toLowerCase().includes(timelineQuery.toLowerCase())) && (
+                <div className={`text-[10px] px-2 py-2 ${textMuted}`}>No replies match “{timelineQuery}”</div>
+              )}
+              {fullMsg.messages.map((m, i) => {
+                if (timelineQuery && !m.text.toLowerCase().includes(timelineQuery.toLowerCase())) return null;
+                return (
+                <div
+                  key={i}
+                  className={`group px-2 py-3 cursor-pointer transition-colors ${copiedIdx === i ? 'bg-emerald-500/[0.07]' : 'hover:bg-white/[0.02]'}`}
+                  title="Click to copy"
+                  onClick={(e) => { if (e.target.closest('a')) return; copyMessage(m.text, i); }}
+                >
                   <div className={`flex items-center gap-1.5 mb-1 text-[8px] ${textMuted}`}>
                     <span className="text-emerald-400/70">↳</span>
                     <span className="font-mono">#{fullMsg.total - fullMsg.messages.length + i + 1}</span>
-                    {m.ts && <span className="font-mono">· {formatTimeWithSeconds(m.ts)}</span>}
+                    {m.ts && <span className="font-mono" title={new Date(m.ts).toLocaleString()}>· {formatRelativeTime(m.ts)}</span>}
+                    {copiedIdx === i
+                      ? <span className="ml-auto text-emerald-400 font-medium">✓ copied</span>
+                      : <span className="ml-auto opacity-0 group-hover:opacity-100 transition-opacity">⧉ copy</span>}
                   </div>
-                  <div className={`text-[11px] leading-relaxed break-words ${colors?.text?.secondary || 'text-gray-300'}`}>
-                    <ReactMarkdown remarkPlugins={[remarkGfm]} components={MD_COMPONENTS}>{m.text}</ReactMarkdown>
+                  <div className={`text-[12px] font-light leading-[1.7] break-words ${colors?.text?.secondary || 'text-gray-300'}`}>
+                    {timelineQuery
+                      ? <div className="whitespace-pre-wrap">{highlightText(m.text, timelineQuery)}</div>
+                      : <ReactMarkdown remarkPlugins={[remarkGfm]} components={MD_COMPONENTS}>{m.text}</ReactMarkdown>}
                   </div>
                 </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         </div>
