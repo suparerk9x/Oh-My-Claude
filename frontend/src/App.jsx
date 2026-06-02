@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { EVENT_CONFIG } from './config/eventTypes';
 import { getThemeColors } from './config/theme';
-import { formatTokens, formatRelativeTime, getUsageBadge } from './utils/format';
+import { formatTokens, formatRelativeTime, getUsageBadge, burnSpeedPct } from './utils/format';
 import { TokenGauge, AgentTree, HelpGuide, ActivityItem, HourlyBreakdown, TokenStats, getEventTarget } from './components';
 import { useNotifications } from './hooks/useNotifications';
 import { useDemoReplay } from './hooks/useDemoReplay';
@@ -398,7 +398,7 @@ export default function App() {
   const hasRealUsage = demoMode || claudeUsage?.five_hour != null;
   // Only show Sync indicator if extension synced within last 2 minutes
   // Uses lastSync timestamp from backend (set when extension actually syncs)
-  const USAGE_TIMEOUT_MS = 2 * 60 * 1000; // 2 minutes
+  const USAGE_TIMEOUT_MS = 5 * 60 * 1000; // 2 minutes
   const lastSyncTime = claudeUsage?.lastSync ? new Date(claudeUsage.lastSync).getTime() : 0;
   const isSyncActive = hasRealUsage && lastSyncTime && (Date.now() - lastSyncTime) < USAGE_TIMEOUT_MS;
   const sessionPct = demoMode ? 30 : (hasRealUsage ? claudeUsage.five_hour.utilization : null);
@@ -750,6 +750,18 @@ export default function App() {
       {showHelp && <HelpGuide onClose={() => setShowHelp(false)} theme={theme} demoMode={demoMode} onDemoToggle={() => setDemoMode(d => !d)} />}
 
       {/* Main Content */}
+      {(() => {
+        const f = claudeUsage?.five_hour;
+        const speed = burnSpeedPct(f);
+        if (!f || speed == null || speed <= 100 || f.etaMinutes == null || f.etaMinutes >= 15) return null;
+        return (
+          <div className="flex-shrink-0 px-3 py-1 bg-red-500/15 border-b border-red-500/30 flex items-center gap-2 text-[11px] text-red-300">
+            <span className="animate-pulse">🔴</span>
+            <span className="font-semibold">ใกล้ชน rate limit — เร็ว {speed}% · ชนใน ~{f.etaMinutes}m</span>
+          </div>
+        );
+      })()}
+
       <main className="flex-1 flex overflow-hidden">
         {/* Left Panel: Token Stats - All token info consolidated */}
         <aside className={`w-[200px] ${colors.bg.secondary} border-r ${colors.border} flex flex-col flex-shrink-0`}>
@@ -766,6 +778,26 @@ export default function App() {
                 resetType="rolling"
                 colors={colors}
               />
+              {(() => {
+                const f = claudeUsage?.five_hour;
+                if (!f) return null;
+                const speed = burnSpeedPct(f);
+                if (speed == null) return (
+                  <div className="-mt-1 px-1 text-[9px] font-medium text-gray-500 flex items-center gap-1" title="กำลังวัด burn rate (ต้องมี sample ~3 นาที)"><span>⏳</span><span>วัดความเร็ว…</span></div>
+                );
+                if (speed <= 0) return (
+                  <div className="-mt-1 px-1 text-[9px] font-medium text-emerald-400/80 flex items-center gap-1" title="ตอนนี้ไม่ได้ใช้ token — utilization จะค่อยๆ ลดลงเมื่อ window เลื่อน"><span>🟢</span><span>ไม่ได้ใช้งาน</span></div>
+                );
+                const willHit = f.etaMinutes != null; // show ETA whenever a burn rate is measured
+                const sev = speed < 100 ? 'safe' : speed < 150 ? 'warn' : 'crit';
+                const c = sev === 'crit' ? 'text-red-400' : sev === 'warn' ? 'text-amber-400' : 'text-emerald-400';
+                const dot = sev === 'crit' ? '🔴' : sev === 'warn' ? '🟠' : '🟢';
+                return (
+                  <div className={`-mt-1 px-1 text-[9px] font-medium ${c} flex items-center gap-1`} title="ความเร็วใช้ token เทียบเพดานปลอดภัย 20%/ชม. (ใช้ครบ 100% พอดีใน 5 ชม.) · <100% ปลอดภัย · >100% อัตรานี้จะชน limit ใน 5 ชม.">
+                    <span>{dot}</span><span>เร็ว {speed}%{willHit ? ` · ชนใน ~${f.etaMinutes}m` : ''}</span>
+                  </div>
+                );
+              })()}
               <TokenGauge
                 label="Weekly"
                 pct={weeklyPct}

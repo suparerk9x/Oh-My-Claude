@@ -245,7 +245,7 @@ export default function MiniApp({ onSwitchToFull }) {
 
   // Session usage from Chrome extension (or demo overrides)
   const hasRealUsage = demoMode || claudeUsage?.five_hour != null;
-  const USAGE_TIMEOUT_MS = 2 * 60 * 1000;
+  const USAGE_TIMEOUT_MS = 5 * 60 * 1000;
   const lastSyncTime = claudeUsage?.lastSync ? new Date(claudeUsage.lastSync).getTime() : 0;
   const isSyncActive = hasRealUsage && lastSyncTime && (Date.now() - lastSyncTime) < USAGE_TIMEOUT_MS;
   const sessionPct = demoMode ? 30 : (hasRealUsage ? claudeUsage.five_hour.utilization : null);

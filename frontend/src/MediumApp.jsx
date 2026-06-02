@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { getThemeColors } from './config/theme';
-import { formatTokens, getUsageBadge } from './utils/format';
+import { formatTokens, getUsageBadge, burnSpeedPct } from './utils/format';
 import { useDemoReplay } from './hooks/useDemoReplay';
 import { useNotifications } from './hooks/useNotifications';
 import { AgentTree } from './components/AgentTree';
@@ -189,7 +189,7 @@ export default function MediumApp({ onSwitchToFull }) {
 
   // Usage
   const hasRealUsage = demoMode || claudeUsage?.five_hour != null;
-  const USAGE_TIMEOUT_MS = 2 * 60 * 1000;
+  const USAGE_TIMEOUT_MS = 5 * 60 * 1000;
   const lastSyncTime = claudeUsage?.lastSync ? new Date(claudeUsage.lastSync).getTime() : 0;
   const isSyncActive = hasRealUsage && lastSyncTime && (Date.now() - lastSyncTime) < USAGE_TIMEOUT_MS;
   const sessionPct = demoMode ? 30 : (hasRealUsage ? claudeUsage.five_hour.utilization : null);
@@ -210,27 +210,18 @@ export default function MediumApp({ onSwitchToFull }) {
     return 'soon';
   };
 
-  // Round up to the next 10-minute mark (e.g. 14:23 → 14:30, 14:31 → 14:40, 14:59 → 15:00)
-  const roundUpToTenMinutes = (d) => {
-    const m = d.getMinutes();
-    if (d.getSeconds() > 0 || d.getMilliseconds() > 0 || m % 10 !== 0) {
-      d.setMinutes(Math.floor(m / 10) * 10 + 10, 0, 0);
-    }
-    return d;
-  };
-
+  // Show the actual reset time (no rounding — matches the "Resets in" countdown + ETA line)
   const formatResetAt = (isoStr) => {
     if (!isoStr) return null;
     try {
-      const d = roundUpToTenMinutes(new Date(isoStr));
-      return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      return new Date(isoStr).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
     } catch { return null; }
   };
   const sessionResetAt = demoMode ? '17:00' : formatResetAt(claudeUsage?.five_hour?.resets_at);
   const weeklyResetAt = demoMode ? 'Sat 15:00' : (() => {
     if (!claudeUsage?.seven_day?.resets_at) return null;
     try {
-      const d = roundUpToTenMinutes(new Date(claudeUsage.seven_day.resets_at));
+      const d = new Date(claudeUsage.seven_day.resets_at);
       const diff = d - new Date();
       const days = Math.floor(diff / 86400000);
       if (days > 0) return d.toLocaleDateString([], { weekday: 'short' }) + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -418,7 +409,29 @@ export default function MediumApp({ onSwitchToFull }) {
 
       {/* Token Gauges Row */}
       <div className={`grid grid-cols-2 gap-4 px-3 py-2 border-b ${colors.border} ${colors.bg.secondary} flex-shrink-0`}>
-        <TokenGauge label="Session" pct={sessionPct} resetTime={getSessionResetTime()} resetAt={sessionResetAt} resetType="rolling" colors={colors} />
+        <div>
+          <TokenGauge label="Session" pct={sessionPct} resetTime={getSessionResetTime()} resetAt={sessionResetAt} resetType="rolling" colors={colors} />
+          {(() => {
+            const f = claudeUsage?.five_hour;
+            if (!f) return null;
+            const speed = burnSpeedPct(f);
+            if (speed == null) return (
+              <div className="mt-0.5 text-[9px] font-medium text-gray-500 flex items-center gap-1" title="กำลังวัด burn rate (ต้องมี sample ~3 นาที)"><span>⏳</span><span>วัดความเร็ว…</span></div>
+            );
+            if (speed <= 0) return (
+              <div className="mt-0.5 text-[9px] font-medium text-emerald-400/80 flex items-center gap-1" title="ตอนนี้ไม่ได้ใช้ token — utilization จะค่อยๆ ลดลงเมื่อ window เลื่อน"><span>🟢</span><span>ไม่ได้ใช้งาน</span></div>
+            );
+            const willHit = f.etaMinutes != null; // show ETA whenever a burn rate is measured
+            const sev = speed < 100 ? 'safe' : speed < 150 ? 'warn' : 'crit';
+            const c = sev === 'crit' ? 'text-red-400' : sev === 'warn' ? 'text-amber-400' : 'text-emerald-400';
+            const dot = sev === 'crit' ? '🔴' : sev === 'warn' ? '🟠' : '🟢';
+            return (
+              <div className={`mt-0.5 text-[9px] font-medium ${c} flex items-center gap-1`} title="ความเร็วใช้ token เทียบเพดานปลอดภัย 20%/ชม. (ใช้ครบ 100% พอดีใน 5 ชม.) · <100% ปลอดภัย · >100% อัตรานี้จะชน limit ใน 5 ชม.">
+                <span>{dot}</span><span>เร็ว {speed}%{willHit ? ` · ชนใน ~${f.etaMinutes}m` : ''}</span>
+              </div>
+            );
+          })()}
+        </div>
         <TokenGauge label="Weekly" pct={weeklyPct} resetTime={getWeeklyResetTime()} resetAt={weeklyResetAt} resetType="rolling" colors={colors} />
       </div>
 

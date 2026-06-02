@@ -2286,6 +2286,7 @@ setInterval(async () => {
 // Backoff state — Anthropic's /oauth/usage endpoint rate-limits (429); don't hammer it every 60s.
 let usageBackoffUntil = 0;
 let usageBackoffMs = 0;
+const usageHistory = []; // recent [{ t, util }] samples of 5h utilization → burn rate / ETA to 100%
 async function fetchClaudeCodeUsage() {
   try {
     if (Date.now() < usageBackoffUntil) return; // still backing off after a 429
@@ -2306,7 +2307,7 @@ async function fetchClaudeCodeUsage() {
     if (res.status === 429) {
       // Rate limited — back off (respect Retry-After, else exponential 2.5m→30m cap). Keep last-known usage.
       const ra = parseInt(res.headers.get('retry-after') || '', 10);
-      usageBackoffMs = ra > 0 ? ra * 1000 : Math.min(Math.max(usageBackoffMs * 2, 150000), 1800000);
+      usageBackoffMs = ra > 0 ? ra * 1000 : Math.min(Math.max(usageBackoffMs * 2, 90000), 1800000);
       usageBackoffUntil = Date.now() + usageBackoffMs;
       console.warn(`[USAGE] OAuth usage rate-limited (429) — backing off ${Math.round(usageBackoffMs / 1000)}s`);
       return;
@@ -2318,9 +2319,26 @@ async function fetchClaudeCodeUsage() {
     }
     usageBackoffMs = 0; usageBackoffUntil = 0; // healthy — reset backoff
     const u = await res.json();
+    // ── Burn rate + ETA for the 5h window ──
+    // Sample utilization over time; rate = Δutil/Δt (%/min). ETA to 100% only when actively rising
+    // (rolling window can decay when idle → rate ≤ 0 → "safe/cooling", no ETA).
+    let etaMinutes = null, burnRatePerMin = null;
+    const util = u.five_hour?.utilization;
+    if (typeof util === 'number') {
+      const now = Date.now();
+      usageHistory.push({ t: now, util });
+      while (usageHistory.length && now - usageHistory[0].t > 12 * 60000) usageHistory.shift(); // keep ~12 min
+      const past = usageHistory.find(s => now - s.t >= 3 * 60000); // compare to ~3min+ ago for a stable rate
+      if (past && now > past.t) {
+        const rate = (util - past.util) / ((now - past.t) / 60000); // %/min
+        burnRatePerMin = Math.round(rate * 100) / 100;
+        if (rate > 0.05 && util < 100) etaMinutes = Math.max(0, Math.round((100 - util) / rate));
+      }
+    }
+    const fiveHour = u.five_hour ? { ...u.five_hour, etaMinutes, burnRatePerMin } : null;
     // Endpoint shape matches the dashboard's existing claudeUsage shape 1:1
     claudeUsage = {
-      five_hour: u.five_hour || null,
+      five_hour: fiveHour,
       seven_day: u.seven_day || null,
       seven_day_sonnet: u.seven_day_sonnet || null,
       seven_day_opus: u.seven_day_opus || null,

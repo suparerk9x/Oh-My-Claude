@@ -79,6 +79,36 @@ export function formatUSD(n) {
 }
 
 /**
+ * Rate-limit ETA for the 5h window. Returns { status, etaMin, resetMs } or null.
+ *   status: 'safe'    — burn flat/decaying OR will reset before hitting the cap
+ *           'ok'      — will hit cap, but >30m away
+ *           'warn'    — 15–30m
+ *           'critical'— <15m
+ * etaMin = minutes until 100% (null when safe/decaying). Needs five_hour.{utilization,resets_at,etaMinutes}.
+ */
+export function rateLimitEta(fiveHour) {
+  if (!fiveHour) return null;
+  const eta = fiveHour.etaMinutes;
+  const resetMs = fiveHour.resets_at ? new Date(fiveHour.resets_at).getTime() : null;
+  const toResetMin = resetMs ? Math.max(0, (resetMs - Date.now()) / 60000) : null;
+  if (eta == null) return { status: 'safe', etaMin: null, resetMs };          // not rising
+  if (toResetMin != null && eta >= toResetMin) return { status: 'safe', etaMin: eta, resetMs }; // resets first
+  const status = eta < 15 ? 'critical' : eta < 30 ? 'warn' : 'ok';
+  return { status, etaMin: eta, resetMs };
+}
+
+/**
+ * Burn speed vs the sustainable pace, as a %. 100% = the rate that fills 100% over the 5h window
+ * (20%/hour). <100% → safe (utilization plateaus below the cap); >100% → will hit the limit.
+ *   speed = burnRatePerMin × 300   (perMin → perHour ×60, then ÷ 20%/h × 100)
+ * Returns null when no rate sample yet.
+ */
+export function burnSpeedPct(fiveHour) {
+  if (!fiveHour || fiveHour.burnRatePerMin == null) return null;
+  return Math.round(fiveHour.burnRatePerMin * 300);
+}
+
+/**
  * Get usage badge info for session percentage (shared across App + MiniApp)
  */
 export function getUsageBadge(pct) {
