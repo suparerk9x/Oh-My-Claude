@@ -662,9 +662,9 @@ export function AgentTree({ agents = [], colors = {}, compact = false, expanded 
                     markdown is stripped to clean prose; subtle left accent marks it as the agent's latest voice. */}
                 {!compact && main?.lastAssistantMessage && (
                   <div
-                    className={`mt-1 ml-4 pl-1.5 border-l-2 ${mi.lastMsgBorder || 'border-gray-600/40'} flex items-start gap-1.5 min-w-0 cursor-pointer hover:!opacity-80 transition-opacity ${main?.status === 'active' ? 'opacity-[0.45]' : 'opacity-100'}`}
+                    className={`mt-1 ml-4 pl-1.5 border-l-2 ${mi.lastMsgBorder || 'border-gray-600/40'} flex items-start gap-1.5 min-w-0 cursor-pointer hover:!opacity-80 transition-opacity ${main?.awaitingReply ? 'opacity-[0.45]' : 'opacity-100'}`}
                     onClick={(e) => { e.stopPropagation(); openFullMessage(sessionId, main.lastAssistantMessage); }}
-                    title={main?.status === 'active' ? 'คำตอบเทิร์นก่อน (กำลังประมวลผลใหม่) — คลิกดูเต็ม' : 'คลิกดูข้อความเต็ม'}
+                    title={main?.awaitingReply ? 'คำตอบเทิร์นก่อน (กำลังประมวลผลคำถามใหม่) — คลิกดูเต็ม' : 'คลิกดูข้อความเต็ม'}
                   >
                     <span className={`text-[9px] shrink-0 ${textMuted} mt-px`}>↳</span>
                     <span className={`text-[9px] leading-relaxed line-clamp-2 min-w-0 ${mi.lastMsg || 'text-gray-300'}`}>

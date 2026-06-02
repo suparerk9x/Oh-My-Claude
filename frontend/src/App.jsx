@@ -199,6 +199,10 @@ export default function App() {
                 merged.contextPct = old.contextPct;
                 merged.lastInputTokens = old.lastInputTokens;
               }
+              // Preserve live-pushed last message if a lightweight update lacks it
+              if (merged.lastAssistantMessage == null && old.lastAssistantMessage) {
+                merged.lastAssistantMessage = old.lastAssistantMessage;
+              }
               return merged;
             });
           });
@@ -242,6 +246,13 @@ export default function App() {
           checkAgentChangesRef.current(data.agents || []);
         } else if (data.type === 'usage') {
           setClaudeUsage(data.usage);
+        } else if (data.type === 'last-message') {
+          // Live push from transcript watcher — update the matching main agent instantly (no poll wait)
+          setAgents(prev => prev.map(a =>
+            (a.type === 'main' && a.sessionId === data.sessionId)
+              ? { ...a, ...(data.message != null ? { lastAssistantMessage: data.message } : {}), awaitingReply: !!data.awaitingReply }
+              : a
+          ));
         } else if (data.type === 'clear') {
           seenEventIds.current.clear();
           setEvents([]);

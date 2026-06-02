@@ -345,25 +345,13 @@ function OverviewSection({ lang, theme = 'dark' }) {
               </div>
               <span className={`text-[8px] ${colors.text.faint}`}>{txt.archClaudeCodeDesc}</span>
             </div>
-            {/* Chrome Extension */}
-            <div className="text-center">
-              <div className="w-20 h-16 rounded-lg bg-cyan-500/20 border border-cyan-500/30 flex flex-col items-center justify-center mb-1">
-                <span className="text-lg">🌐</span>
-                <span className="text-[9px] text-cyan-500 font-medium">{txt.archChromeExt}</span>
-              </div>
-              <span className={`text-[8px] ${colors.text.faint}`}>{txt.archChromeExtDesc}</span>
-            </div>
           </div>
 
-          {/* Arrows Down */}
-          <div className="flex justify-center gap-8 mb-2">
+          {/* Arrow Down */}
+          <div className="flex justify-center mb-2">
             <div className="flex flex-col items-center">
               <span className={colors.text.faint}>↓</span>
               <span className="text-[8px] text-violet-500/70">{txt.archFlow1}</span>
-            </div>
-            <div className="flex flex-col items-center">
-              <span className={colors.text.faint}>↓</span>
-              <span className="text-[8px] text-cyan-500/70">{txt.archFlow2}</span>
             </div>
           </div>
 
@@ -1376,11 +1364,15 @@ function AgentsSection({ lang, theme = 'dark' }) {
       smartCompacting: 'Context compaction — freeing up context window',
       smartProcessing: 'Other tool in progress',
       cardLayoutTitle: 'Card Layout (Full Mode)',
-      cardLayoutDesc: 'Each main agent displays up to 4 lines. Team members show 3 lines indented. Non-team subagents show 3 lines. Stopped sessions/subagents are dimmed (opacity 50%).',
-      cardLine1: 'Main Line 1: Session number + Model badge (with version) + Smart Status (icon + label) or Status badge + Duration + Tokens + Context % badge',
-      cardLine2: 'Main Line 2: Project name (monospace cyan uppercase) + Team badge (👥 team-name, if team lead) + Context gauge bar (right-aligned)',
-      cardLine3: 'Main Line 3: Last activity (tool icon + tool name + file path) + Session ID',
-      cardLine4: 'Main Line 4: Task count badge (active/total running) + Git diff chip (+adds -dels files)',
+      cardLayoutDesc: 'A session card stacks zones top→bottom: Identity → Live story (activity · last message · background jobs · to-dos) → Reference (git · version) → Resources (duration · tokens). Subagents are grouped below under a collapsible header. Stopped sessions are dimmed (opacity 50%).',
+      cardLine1: 'Identity: Session number + Model badge + Effort chip (⚡HIGH / MAX — only when reasoning effort is raised) + Smart Status (icon + label) or Status badge · right: Context tokens + ctx % badge',
+      cardLine2: 'Project: Project name (monospace cyan uppercase) + Team badge (👥 team-name, if team lead) + Context gauge bar (right-aligned)',
+      cardLine3: 'Activity: current tool (icon + name + file path) + Session ID — what it is doing right now',
+      cardLine4: 'Last message: ↳ latest assistant reply (markdown stripped; dimmed while working). Click → live popup with the full message (auto-refreshes every 3s, markdown-rendered, Esc to close)',
+      cardBgJobs: 'Background jobs: ⚙ background Bash runs — description + status. Click → command + full detail',
+      cardTodos: 'To-dos: ✅ progress summary (click to collapse the whole checklist) + DONE and REMAINING groups, each collapsible; the active item is marked ▶',
+      cardReference: 'Reference: git diff chip (+adds −dels files) + Claude Code version & entrypoint — click for session detail',
+      cardResources: 'Resources: ⏱ duration (left) · token breakdown (right) — ⇄ session · Σ total · ↻ reuse ×N. Click → cache read/write breakdown + estimated $ saved',
       teamHeaderTitle: 'Team Header',
       teamHeaderDesc: 'Users SVG icon (2-person stroke) + Team name + Member count + Health badge (🟢 Healthy / 🟡 idle / 🟠 high-token / 🔴 conflict) + Total team tokens',
       cardSubLine1: 'Team Member Line 1: └ + Person icon + Agent name badge + Model + Type + Health warnings (🔥 high tokens / 💤 idle >5m / ⚠ file conflict / 📦 ctx ≥80%) + Status + Duration + Tokens + Context % badge',
@@ -1403,8 +1395,8 @@ function AgentsSection({ lang, theme = 'dark' }) {
       contextSource: 'Data source: reads last input_tokens + cache_read + cache_creation from session transcript (.jsonl)',
       stableOrderTitle: 'Stable Ordering',
       stableOrderDesc: 'Agent cards maintain their position. Re-sorting only happens when sessions are added/removed or active status changes. No jumping on data-only updates.',
-      subagentCountTitle: 'Subagent Count',
-      subagentCountDesc: 'Shows active/total running subagents as a badge (e.g. "2/5 running").',
+      subagentCountTitle: 'Subagent Group',
+      subagentCountDesc: 'Non-team subagents are grouped under a collapsible header: ⚙ Subagents + active/total running badge (e.g. "5/6 running") + combined token total. Click the header to collapse/expand the rows.',
       expandedTitle: 'Expanded View',
       expandedDesc: 'Expanded mode shows session cards with rounded borders and larger font/spacing. The whole panel scrolls vertically. Tools can wrap to multiple lines. Descriptions are single-line truncated.'
     },
@@ -1442,11 +1434,15 @@ function AgentsSection({ lang, theme = 'dark' }) {
       smartCompacting: 'Context compaction — เคลียร์ context window',
       smartProcessing: 'Tool อื่นกำลังทำงาน',
       cardLayoutTitle: 'Card Layout (Full Mode)',
-      cardLayoutDesc: 'Main agent แสดง 4 บรรทัด, Team member แสดง 3 บรรทัดย่อย, Non-team subagent แสดง 3 บรรทัด Session/subagent ที่ stopped จะจางลง (opacity 50%)',
-      cardLine1: 'Main บรรทัด 1: ลำดับ session + Model badge (พร้อมเวอร์ชัน) + Smart Status (icon + label) หรือ Status badge + Duration + Tokens + Context % badge',
-      cardLine2: 'Main บรรทัด 2: ชื่อ project (monospace สีฟ้า ตัวพิมพ์ใหญ่) + Team badge (👥 ชื่อทีม, ถ้าเป็น team lead) + Context gauge bar (ชิดขวา)',
-      cardLine3: 'Main บรรทัด 3: Activity ล่าสุด (ไอคอน tool + ชื่อ + path ไฟล์) + Session ID',
-      cardLine4: 'Main บรรทัด 4: Task count badge (active/total running) + Git diff chip (+เพิ่ม -ลบ ไฟล์)',
+      cardLayoutDesc: 'การ์ด session ไล่เป็นโซนบนลงล่าง: Identity → Live (activity · ข้อความล่าสุด · background jobs · to-dos) → Reference (git · version) → Resources (เวลา · tokens) Subagent จัดเป็นกลุ่มด้านล่างใต้หัวข้อที่กดหด/ยืดได้ Session ที่ stopped จะจางลง (opacity 50%)',
+      cardLine1: 'Identity: ลำดับ session + Model badge + Effort chip (⚡HIGH / MAX — เฉพาะตอนดัน effort สูง) + Smart Status (icon + label) หรือ Status badge · ขวา: Context tokens + ctx % badge',
+      cardLine2: 'Project: ชื่อ project (monospace สีฟ้า ตัวพิมพ์ใหญ่) + Team badge (👥 ชื่อทีม, ถ้าเป็น team lead) + Context gauge bar (ชิดขวา)',
+      cardLine3: 'Activity: tool ที่กำลังเรียก (ไอคอน + ชื่อ + path ไฟล์) + Session ID — กำลังทำอะไรอยู่ตอนนี้',
+      cardLine4: 'Last message: ↳ คำตอบล่าสุดของ assistant (ตัด markdown ออก; จางลงตอนกำลังทำงาน) คลิก → popup ข้อความเต็มแบบ live (รีเฟรชทุก 3 วิ, render markdown, Esc ปิด)',
+      cardBgJobs: 'Background jobs: ⚙ งาน Bash ที่รันเบื้องหลัง — คำอธิบาย + สถานะ คลิก → command + รายละเอียดเต็ม',
+      cardTodos: 'To-dos: ✅ สรุป progress (คลิกหดทั้ง checklist) + กลุ่ม DONE และ REMAINING กดหด/ยืดได้ทั้งคู่; ตัวที่กำลังทำมี ▶',
+      cardReference: 'Reference: git diff chip (+เพิ่ม −ลบ ไฟล์) + เวอร์ชัน Claude Code & entrypoint — คลิกดูรายละเอียด session',
+      cardResources: 'Resources: ⏱ เวลา (ซ้าย) · token breakdown (ขวา) — ⇄ session · Σ total · ↻ reuse ×N คลิก → รายละเอียด cache read/write + เงินที่ประหยัด ($)',
       teamHeaderTitle: 'Team Header',
       teamHeaderDesc: 'SVG ไอคอน Users (2 คน stroke) + ชื่อทีม + จำนวน members + Health badge (🟢 Healthy / 🟡 idle / 🟠 high-token / 🔴 conflict) + Total tokens ของทีม',
       cardSubLine1: 'Team Member บรรทัด 1: └ + ไอคอนคน + ชื่อ Agent badge + Model + Type + Health warnings (🔥 tokens สูง / 💤 idle >5m / ⚠ file conflict / 📦 ctx ≥80%) + Status + Duration + Tokens + Context % badge',
@@ -1469,8 +1465,8 @@ function AgentsSection({ lang, theme = 'dark' }) {
       contextSource: 'แหล่งข้อมูล: อ่าน input_tokens + cache_read + cache_creation ล่าสุดจาก session transcript (.jsonl)',
       stableOrderTitle: 'Stable Ordering',
       stableOrderDesc: 'การ์ด agent จะอยู่ตำแหน่งเดิม จัดเรียงใหม่เฉพาะเมื่อ session เพิ่ม/ลบ หรือ active status เปลี่ยน ไม่กระโดดเมื่อข้อมูลอัปเดต',
-      subagentCountTitle: 'Subagent Count',
-      subagentCountDesc: 'แสดง active/total subagents เป็น badge (เช่น "2/5 running")',
+      subagentCountTitle: 'Subagent Group',
+      subagentCountDesc: 'Non-team subagent จัดเป็นกลุ่มใต้หัวข้อที่กดหด/ยืดได้: ⚙ Subagents + badge active/total (เช่น "5/6 running") + token รวมของกลุ่ม คลิกหัวข้อเพื่อหด/ยืดรายการ',
       expandedTitle: 'Expanded View',
       expandedDesc: 'Expanded mode แสดง session card มีขอบมน ตัวอักษรและ spacing ใหญ่ขึ้น panel ทั้งหมด scroll แนวตั้งได้ tools ขึ้นบรรทัดใหม่ได้ Description แสดง 1 บรรทัดตัดถ้ายาว'
     }
@@ -1620,17 +1616,18 @@ function AgentsSection({ lang, theme = 'dark' }) {
 
           {/* ── Session 1: Active Opus with Team + Subagents ── */}
           <div className={`${colors.card.bg} bg-emerald-500/[0.02]`}>
-            {/* Main agent - Line 1: Number + Model + Smart Status + Duration + Tokens */}
+            {/* Main agent - Line 1 (Identity): Number + Model + Effort chip + Smart Status · right: context tokens + ctx% */}
             <div className="px-3 pt-2.5 flex items-center justify-between">
               <div className="flex items-center gap-1.5">
                 <span className="text-[11px] font-mono font-bold text-white w-[16px] text-right">1.</span>
                 <span className="text-[10px] font-medium px-1 py-0.5 rounded bg-violet-500/15 text-violet-400">Opus 4.8</span>
+                <span className="text-[10px] font-medium px-1 py-0.5 rounded bg-amber-500/15 text-amber-300">⚡HIGH</span>
                 <span className="text-[10px] animate-pulse">✍️</span>
                 <span className="text-[9px] font-medium text-orange-400">Writing</span>
               </div>
-              <div className="flex items-center gap-2 font-mono text-[10px]">
-                <span className={colors.text.dimmed}>2h 41m</span>
-                <span className="text-amber-500">753.7k</span>
+              <div className="flex items-center gap-1.5 font-mono text-[10px]">
+                <span className="text-amber-500">472.6k</span>
+                <span className="text-[8px] px-1 py-0.5 rounded bg-amber-500/15 text-amber-400">ctx 47%</span>
               </div>
             </div>
             {/* Main agent - Line 2: Project name + Team badge */}
@@ -1647,9 +1644,25 @@ function AgentsSection({ lang, theme = 'dark' }) {
               </div>
               <code className={`text-[8px] font-mono ${colors.text.faint}`}>sess-00</code>
             </div>
-            {/* Main agent - Line 4: Task count + Git diff */}
-            <div className="px-3 pt-1 pb-2 pl-[20px] flex items-center gap-2">
-              <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold bg-emerald-500/15 text-emerald-400">2/4 running</span>
+            {/* Last message (↳) — dimmed while working; click → live full popup */}
+            <div className="px-3 pt-1 pl-[20px] flex items-start gap-1.5">
+              <span className={`text-[9px] ${colors.text.faint} mt-px`}>↳</span>
+              <span className={`text-[9px] ${colors.text.dimmed} line-clamp-1 opacity-[0.55]`}>Refactored the JWT middleware and wired the token guard — running the auth tests next…</span>
+            </div>
+            {/* To-dos — summary + DONE / REMAINING groups */}
+            <div className="px-3 pt-1 pl-[20px] space-y-px">
+              <div className="flex items-center gap-1.5">
+                <span className="text-[9px]">☑️</span>
+                <span className="text-[9px] font-mono text-amber-500">3/8</span>
+                <div className="h-1 w-[36px] rounded-full bg-gray-700/30 overflow-hidden"><div className="h-full bg-amber-500/60 rounded-full" style={{ width: '38%' }} /></div>
+              </div>
+              <div className="text-[8px] uppercase tracking-wider text-gray-500">3 done</div>
+              <div className="text-[8px] uppercase tracking-wider text-gray-500">5 remaining</div>
+              <div className="flex items-start gap-1"><span className="text-[8px] text-amber-400 mt-px">▶</span><span className="text-[9px] text-amber-300 line-clamp-1">Wire the token guard into protected routes</span></div>
+            </div>
+            {/* Reference: branch + git diff + version */}
+            <div className="px-3 pt-1 pl-[20px] flex items-center gap-1.5">
+              <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-mono bg-violet-500/10 text-violet-300">⎇ main</span>
               <div className="inline-flex items-center gap-0 rounded-md border border-gray-700/40 overflow-hidden text-[10px] font-mono">
                 <span className="flex items-center gap-1 px-1.5 py-0.5 bg-green-500/10">
                   <span className="w-1 h-1 rounded-full bg-green-400" />
@@ -1661,6 +1674,16 @@ function AgentsSection({ lang, theme = 'dark' }) {
                 </span>
                 <span className="px-1.5 py-0.5 text-gray-500 border-l border-gray-700/40">17 files</span>
               </div>
+              <span className={`text-[9px] font-mono ${colors.text.faint} ml-auto`}>v2.1.154 vscode</span>
+            </div>
+            {/* Resources: token breakdown (left) + duration (right) */}
+            <div className="px-3 pt-1 pb-2 pl-[20px] flex items-center gap-1.5">
+              <div className="inline-flex items-center gap-0 rounded-md border border-gray-700/40 overflow-hidden text-[9px] font-mono">
+                <span className="px-1.5 py-0.5 text-amber-500">⇄ 753.7k</span>
+                <span className="px-1.5 py-0.5 border-l border-gray-700/40 text-sky-400">Σ 41.2M</span>
+                <span className="px-1.5 py-0.5 border-l border-gray-700/40 text-emerald-400">↻ ×54</span>
+              </div>
+              <span className={`ml-auto inline-flex items-center gap-0.5 font-mono text-[9px] ${colors.text.dimmed}`}>⏱ 2h 41m</span>
             </div>
 
             {/* ── Team Section ── */}
@@ -1850,8 +1873,17 @@ function AgentsSection({ lang, theme = 'dark' }) {
               </div>
             </div>
 
+            {/* ── Subagents group header (collapsible) ── */}
+            <div className={`border-t ${colors.card.border} pl-5 pr-2 py-1 bg-white/[0.03] flex items-center justify-between`}>
+              <div className="flex items-center gap-1.5">
+                <span className={`text-[10px] ${colors.text.muted}`}>⚙</span>
+                <span className={`text-[10px] font-semibold ${colors.text.secondary}`}>Subagents</span>
+                <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-gray-500/15 text-gray-500">1 done</span>
+              </div>
+              <span className="font-mono text-[9px] tabular-nums text-amber-500">166.8k</span>
+            </div>
             {/* ── Non-team subagent (stopped, dimmed) ── */}
-            <div className={`border-t ${colors.card.border} opacity-50 pb-2`}>
+            <div className={`opacity-50 pb-2`}>
               <div className="px-3 pt-2 flex items-center justify-between">
                 <div className="flex items-center gap-1 text-[10px]">
                   <span className={colors.text.faint}>└</span>
@@ -1889,9 +1921,9 @@ function AgentsSection({ lang, theme = 'dark' }) {
                 <span className="text-[10px] animate-pulse">🧠</span>
                 <span className="text-[9px] font-medium text-violet-400">Thinking</span>
               </div>
-              <div className="flex items-center gap-2 font-mono text-[10px]">
-                <span className={colors.text.dimmed}>8m 15s</span>
+              <div className="flex items-center gap-1.5 font-mono text-[10px]">
                 <span className="text-amber-500">33.7k</span>
+                <span className="text-[8px] px-1 py-0.5 rounded bg-emerald-500/15 text-emerald-400">ctx 3%</span>
               </div>
             </div>
             <div className="px-3 pt-1 pl-[28px] flex items-center gap-1.5">
@@ -1905,8 +1937,9 @@ function AgentsSection({ lang, theme = 'dark' }) {
               </div>
               <code className={`text-[8px] font-mono ${colors.text.faint}`}>sess-00</code>
             </div>
-            <div className="px-3 pt-1 pb-2 pl-[20px] flex items-center gap-2">
-              <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold bg-emerald-500/15 text-emerald-400">1/1 running</span>
+            {/* Reference: branch + git diff + version */}
+            <div className="px-3 pt-1 pl-[20px] flex items-center gap-1.5">
+              <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-mono bg-violet-500/10 text-violet-300">⎇ main</span>
               <div className="inline-flex items-center gap-0 rounded-md border border-gray-700/40 overflow-hidden text-[10px] font-mono">
                 <span className="flex items-center gap-1 px-1.5 py-0.5 bg-green-500/10">
                   <span className="w-1 h-1 rounded-full bg-green-400" />
@@ -1919,8 +1952,26 @@ function AgentsSection({ lang, theme = 'dark' }) {
                 <span className="px-1.5 py-0.5 text-gray-500 border-l border-gray-700/40">3 files</span>
               </div>
             </div>
+            {/* Resources: token breakdown + duration */}
+            <div className="px-3 pt-1 pb-2 pl-[20px] flex items-center gap-1.5">
+              <div className="inline-flex items-center gap-0 rounded-md border border-gray-700/40 overflow-hidden text-[9px] font-mono">
+                <span className="px-1.5 py-0.5 text-amber-500">⇄ 33.7k</span>
+                <span className="px-1.5 py-0.5 border-l border-gray-700/40 text-sky-400">Σ 4.6M</span>
+                <span className="px-1.5 py-0.5 border-l border-gray-700/40 text-emerald-400">↻ ×38</span>
+              </div>
+              <span className={`ml-auto inline-flex items-center gap-0.5 font-mono text-[9px] ${colors.text.dimmed}`}>⏱ 8m 15s</span>
+            </div>
+            {/* Subagents group header */}
+            <div className={`border-t ${colors.card.border} pl-5 pr-2 py-1 bg-white/[0.03] flex items-center justify-between`}>
+              <div className="flex items-center gap-1.5">
+                <span className={`text-[10px] ${colors.text.muted}`}>⚙</span>
+                <span className={`text-[10px] font-semibold ${colors.text.secondary}`}>Subagents</span>
+                <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400">1/1 running</span>
+              </div>
+              <span className="font-mono text-[9px] tabular-nums text-amber-500">5.1k</span>
+            </div>
             {/* Non-team subagent of session 2 */}
-            <div className={`border-t ${colors.card.border} ${colors.card.bgAlt} pb-2`}>
+            <div className={`${colors.card.bgAlt} pb-2`}>
               <div className="px-3 pt-2 flex items-center justify-between">
                 <div className="flex items-center gap-1 text-[10px]">
                   <span className={colors.text.faint}>└</span>
@@ -2097,11 +2148,15 @@ function AgentsSection({ lang, theme = 'dark' }) {
 
         {/* Line descriptions */}
         <div className="mt-3 space-y-1">
-          <div className={`text-[10px] font-semibold ${colors.text.secondary} uppercase tracking-wider mt-2 mb-1`}>Main Agent</div>
-          <div className={`text-[11px] ${colors.text.dimmed}`}><span className="text-emerald-400 font-mono">1</span> {txt.cardLine1}</div>
-          <div className={`text-[11px] ${colors.text.dimmed}`}><span className="text-cyan-400 font-mono">2</span> {txt.cardLine2}</div>
-          <div className={`text-[11px] ${colors.text.dimmed}`}><span className="text-amber-400 font-mono">3</span> {txt.cardLine3}</div>
-          <div className={`text-[11px] ${colors.text.dimmed}`}><span className="text-violet-400 font-mono">4</span> {txt.cardLine4}</div>
+          <div className={`text-[10px] font-semibold ${colors.text.secondary} uppercase tracking-wider mt-2 mb-1`}>Main Agent (top → bottom)</div>
+          <div className={`text-[11px] ${colors.text.dimmed}`}><span className="text-emerald-400 font-mono">·</span> {txt.cardLine1}</div>
+          <div className={`text-[11px] ${colors.text.dimmed}`}><span className="text-cyan-400 font-mono">·</span> {txt.cardLine2}</div>
+          <div className={`text-[11px] ${colors.text.dimmed}`}><span className="text-amber-400 font-mono">·</span> {txt.cardLine3}</div>
+          <div className={`text-[11px] ${colors.text.dimmed}`}><span className="text-gray-400 font-mono">·</span> {txt.cardLine4}</div>
+          <div className={`text-[11px] ${colors.text.dimmed}`}><span className="text-gray-400 font-mono">·</span> {txt.cardBgJobs}</div>
+          <div className={`text-[11px] ${colors.text.dimmed}`}><span className="text-gray-400 font-mono">·</span> {txt.cardTodos}</div>
+          <div className={`text-[11px] ${colors.text.dimmed}`}><span className="text-violet-400 font-mono">·</span> {txt.cardReference}</div>
+          <div className={`text-[11px] ${colors.text.dimmed}`}><span className="text-amber-500 font-mono">·</span> {txt.cardResources}</div>
           <div className={`text-[10px] font-semibold ${colors.text.secondary} uppercase tracking-wider mt-3 mb-1`}>Team Header</div>
           <div className={`text-[11px] ${colors.text.dimmed}`}><span className="text-indigo-400 font-mono">◆</span> {txt.teamHeaderDesc}</div>
           <div className={`text-[10px] font-semibold ${colors.text.secondary} uppercase tracking-wider mt-3 mb-1`}>Team Member (Subagent)</div>

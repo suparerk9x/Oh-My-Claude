@@ -1245,7 +1245,7 @@ const SESSION_TOKEN_CACHE_TTL = 10000;
 
 // Cache for session context % (fast tail-read, refresh every 2 seconds)
 const sessionContextCache = new Map();
-const SESSION_CONTEXT_CACHE_TTL = 2000;
+const SESSION_CONTEXT_CACHE_TTL = 1000;
 
 // Resolve session ID to transcript file path (cached indefinitely per session)
 const sessionPathCache = new Map();
@@ -1268,10 +1268,10 @@ async function resolveSessionPath(sessionId) {
 async function readSessionContext(sessionId) {
   const cached = sessionContextCache.get(sessionId);
   if (cached && (Date.now() - cached.timestamp) < SESSION_CONTEXT_CACHE_TTL) {
-    return { lastInputTokens: cached.lastInputTokens, meta: cached.meta || null, lastMessage: cached.lastMessage || null };
+    return { lastInputTokens: cached.lastInputTokens, meta: cached.meta || null, lastMessage: cached.lastMessage || null, awaitingReply: cached.awaitingReply || false };
   }
   const transcriptPath = await resolveSessionPath(sessionId);
-  if (!transcriptPath) return { lastInputTokens: 0, meta: null, lastMessage: null };
+  if (!transcriptPath) return { lastInputTokens: 0, meta: null, lastMessage: null, awaitingReply: false };
   try {
     const fd = await fs.promises.open(transcriptPath, 'r');
     const stats = await fd.stat();
@@ -1281,15 +1281,27 @@ async function readSessionContext(sessionId) {
     await fd.close();
     const tail = buffer.toString('utf-8', 0, bytesRead);
     const lines = tail.split('\n');
-    // Single backward scan: capture last assistant usage (ctx%) + last assistant *text* (inline preview)
-    let lastInputTokens = 0, meta = null, lastMessage = null, haveCtx = false;
+    // Single backward scan: last assistant usage (ctx%) + last assistant text (inline) + awaitingReply.
+    // awaitingReply = a real typed user prompt appears NEWER than the last assistant text → the shown
+    // answer is the previous turn's (stale) and a reply is pending → the UI dims it.
+    let lastInputTokens = 0, meta = null, lastMessage = null, haveCtx = false, awaitingReply = false;
     for (let i = lines.length - 1; i >= 0; i--) {
       const line = lines[i].trim();
-      if (!line || line.indexOf('assistant') === -1) continue;
+      if (!line || (line.indexOf('"assistant"') === -1 && line.indexOf('"user"') === -1)) continue;
       let parsed;
       try { parsed = JSON.parse(line); } catch { continue; }
-      if (parsed.type !== 'assistant' || !parsed.message || parsed.message.model === '<synthetic>') continue;
       const m = parsed.message;
+      if (!m) continue;
+      // User line seen before any assistant text (scanning from the end) → a prompt is pending
+      if (parsed.type === 'user' && !lastMessage) {
+        const c = m.content;
+        const isPrompt = typeof c === 'string'
+          ? c.trim().length > 0
+          : Array.isArray(c) && c.some(b => b?.text || b?.type === 'text') && !c.some(b => b?.type === 'tool_result');
+        if (isPrompt) awaitingReply = true;
+        continue;
+      }
+      if (parsed.type !== 'assistant' || m.model === '<synthetic>') continue;
       if (!haveCtx && m.usage) {
         const u = m.usage;
         lastInputTokens = (u.input_tokens || 0) + (u.cache_read_input_tokens || 0) + (u.cache_creation_input_tokens || 0);
@@ -1309,10 +1321,76 @@ async function readSessionContext(sessionId) {
       }
       if (haveCtx && lastMessage) break;
     }
-    sessionContextCache.set(sessionId, { lastInputTokens, meta, lastMessage, timestamp: Date.now() });
-    return { lastInputTokens, meta, lastMessage };
-  } catch { return { lastInputTokens: 0, meta: null, lastMessage: null }; }
+    sessionContextCache.set(sessionId, { lastInputTokens, meta, lastMessage, awaitingReply, timestamp: Date.now() });
+    return { lastInputTokens, meta, lastMessage, awaitingReply };
+  } catch { return { lastInputTokens: 0, meta: null, lastMessage: null, awaitingReply: false }; }
 }
+
+// ── Live last-message push ──────────────────────────────────────────────────────────
+// Watch each active session's transcript; when Claude Code flushes new lines, parse them
+// and push the assistant text (and awaitingReply on a new prompt) over WebSocket immediately.
+// Removes the poll/cache delay — floor is Claude Code's ~1s transcript flush. Parses EVERY new
+// line so fast intermediate messages aren't skipped.
+const transcriptWatchers = new Map(); // sessionId -> { close }
+
+function watchSessionTranscript(sessionId, filePath) {
+  if (transcriptWatchers.has(sessionId)) return;
+  let offset; try { offset = fs.statSync(filePath).size; } catch { return; } // start at EOF — only new content
+  let partial = '';
+  let timer = null;
+  const readNew = () => {
+    try {
+      const stat = fs.statSync(filePath);
+      if (stat.size < offset) { offset = 0; partial = ''; } // truncated/rotated
+      if (stat.size <= offset) return;
+      const len = stat.size - offset;
+      const buf = Buffer.alloc(len);
+      const fd = fs.openSync(filePath, 'r');
+      fs.readSync(fd, buf, 0, len, offset);
+      fs.closeSync(fd);
+      offset = stat.size;
+      const lines = (partial + buf.toString('utf-8')).split('\n');
+      partial = lines.pop(); // last line may be incomplete — carry over
+      for (const line of lines) {
+        const l = line.trim(); if (!l) continue;
+        let p; try { p = JSON.parse(l); } catch { continue; }
+        const m = p.message; if (!m) continue;
+        if (p.type === 'user') {
+          const c = m.content;
+          const isPrompt = typeof c === 'string'
+            ? c.trim().length > 0
+            : Array.isArray(c) && c.some(b => b?.text || b?.type === 'text') && !c.some(b => b?.type === 'tool_result');
+          if (isPrompt) broadcast({ type: 'last-message', sessionId, awaitingReply: true });
+        } else if (p.type === 'assistant' && m.model !== '<synthetic>') {
+          const c = m.content; let t = '';
+          if (typeof c === 'string') t = c;
+          else if (Array.isArray(c)) t = c.filter(b => b?.text).map(b => b.text).join('\n').trim();
+          if (t) broadcast({ type: 'last-message', sessionId, message: t.slice(0, 280), awaitingReply: false });
+        }
+      }
+    } catch { /* transient read error — next change retries */ }
+  };
+  let watcher;
+  try { watcher = fs.watch(filePath, () => { clearTimeout(timer); timer = setTimeout(readNew, 120); }); }
+  catch { return; }
+  transcriptWatchers.set(sessionId, { close: () => { clearTimeout(timer); try { watcher.close(); } catch {} } });
+}
+
+// Keep watchers in sync with active main sessions (start new, prune gone)
+async function manageTranscriptWatchers() {
+  const wanted = new Set();
+  for (const a of agents.values()) {
+    if (a.type === 'main' && a.sessionId && (a.status === 'active' || a.status === 'idle')) {
+      const fp = await resolveSessionPath(a.sessionId);
+      if (fp) { wanted.add(a.sessionId); watchSessionTranscript(a.sessionId, fp); }
+    }
+  }
+  for (const [sid, w] of transcriptWatchers) {
+    if (!wanted.has(sid)) { w.close(); transcriptWatchers.delete(sid); }
+  }
+}
+setTimeout(manageTranscriptWatchers, 3000);
+setInterval(manageTranscriptWatchers, 5000);
 
 // Read cumulative tokens from a session transcript file using STREAMING
 async function readSessionTokens(sessionId) {
@@ -1494,7 +1572,7 @@ async function getAgents() {
       readSessionTokens(agent.sessionId),
       readSessionContext(agent.sessionId), // fast tail-read — { lastInputTokens, meta }
     ]);
-    return { sessionId: agent.sessionId, tokens: sessionTokens, lastInputTokens: ctx.lastInputTokens, meta: ctx.meta, lastMessage: ctx.lastMessage };
+    return { sessionId: agent.sessionId, tokens: sessionTokens, lastInputTokens: ctx.lastInputTokens, meta: ctx.meta, lastMessage: ctx.lastMessage, awaitingReply: ctx.awaitingReply };
   });
 
   const tokenResults = (await Promise.allSettled(tokenPromises))
@@ -1503,6 +1581,7 @@ async function getAgents() {
   const sessionContextMap = new Map(tokenResults.map(r => [r.sessionId, r.lastInputTokens]));
   const sessionMetaMap = new Map(tokenResults.map(r => [r.sessionId, r.meta]));
   const sessionLastMsgMap = new Map(tokenResults.map(r => [r.sessionId, r.lastMessage]));
+  const sessionAwaitingMap = new Map(tokenResults.map(r => [r.sessionId, r.awaitingReply]));
 
   // Fetch tokens for subagents with transcript paths (including stopped — for contextPct)
   const activeSubagents = agentList.filter(a => a.type !== 'main' && a.transcriptPath && (a.status !== 'stopped' || !a.contextPct));
@@ -1575,6 +1654,8 @@ async function getAgents() {
           const cur2 = agents.get(agent.id);
           if (cur2) agents.set(agent.id, { ...cur2, lastAssistantMessage: freshMsg });
         }
+        // awaitingReply: a new user prompt is pending (no assistant text since) → UI dims the stale answer
+        result.awaitingReply = sessionAwaitingMap.get(agent.sessionId) || false;
       }
 
       // Add live tokens for active subagents (from transcript reading)
@@ -2179,8 +2260,12 @@ setInterval(async () => {
 // usage endpoint — same numbers shown in Claude Code's "Account & Usage" panel
 // (5-hour %, weekly %, weekly Sonnet/Opus, extra usage). Re-reads the token each cycle
 // so it stays valid after Claude Code refreshes it. Falls back silently on error.
+// Backoff state — Anthropic's /oauth/usage endpoint rate-limits (429); don't hammer it every 60s.
+let usageBackoffUntil = 0;
+let usageBackoffMs = 0;
 async function fetchClaudeCodeUsage() {
   try {
+    if (Date.now() < usageBackoffUntil) return; // still backing off after a 429
     if (!fs.existsSync(CC_CREDENTIALS_PATH)) return;
     const raw = JSON.parse(fs.readFileSync(CC_CREDENTIALS_PATH, 'utf-8'));
     const oauth = raw.claudeAiOauth || raw;
@@ -2195,11 +2280,20 @@ async function fetchClaudeCodeUsage() {
       },
       signal: AbortSignal.timeout(8000)
     });
+    if (res.status === 429) {
+      // Rate limited — back off (respect Retry-After, else exponential 2.5m→30m cap). Keep last-known usage.
+      const ra = parseInt(res.headers.get('retry-after') || '', 10);
+      usageBackoffMs = ra > 0 ? ra * 1000 : Math.min(Math.max(usageBackoffMs * 2, 150000), 1800000);
+      usageBackoffUntil = Date.now() + usageBackoffMs;
+      console.warn(`[USAGE] OAuth usage rate-limited (429) — backing off ${Math.round(usageBackoffMs / 1000)}s`);
+      return;
+    }
     if (!res.ok) {
       // 401 => token rotated/expired; Claude Code will refresh it. Keep last-known, retry next cycle.
       console.warn(`[USAGE] OAuth usage fetch failed: HTTP ${res.status}`);
       return;
     }
+    usageBackoffMs = 0; usageBackoffUntil = 0; // healthy — reset backoff
     const u = await res.json();
     // Endpoint shape matches the dashboard's existing claudeUsage shape 1:1
     claudeUsage = {

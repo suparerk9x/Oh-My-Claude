@@ -100,6 +100,9 @@ export default function MediumApp({ onSwitchToFull }) {
                 merged.contextPct = old.contextPct;
                 merged.lastInputTokens = old.lastInputTokens;
               }
+              if (merged.lastAssistantMessage == null && old.lastAssistantMessage) {
+                merged.lastAssistantMessage = old.lastAssistantMessage;
+              }
               return merged;
             });
           });
@@ -123,6 +126,12 @@ export default function MediumApp({ onSwitchToFull }) {
           }
         } else if (data.type === 'usage') {
           setClaudeUsage(data.usage);
+        } else if (data.type === 'last-message') {
+          setAgents(prev => prev.map(a =>
+            (a.type === 'main' && a.sessionId === data.sessionId)
+              ? { ...a, ...(data.message != null ? { lastAssistantMessage: data.message } : {}), awaitingReply: !!data.awaitingReply }
+              : a
+          ));
         } else if (data.type === 'clear') {
           setEvents([]);
         }
