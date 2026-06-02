@@ -1985,6 +1985,29 @@ app.get('/session/:sessionId/last-message', async (req, res) => {
   }
 });
 
+// Reply timeline: all assistant text messages (chronological) — read on demand for the timeline view
+app.get('/session/:sessionId/messages', async (req, res) => {
+  try {
+    const limit = Math.min(parseInt(req.query.limit, 10) || 50, 500);
+    const transcriptPath = await resolveSessionPath(req.params.sessionId);
+    if (!transcriptPath) return res.status(404).json({ error: 'No transcript found' });
+    const all = [];
+    await safeReadLines(transcriptPath, (line) => {
+      if (!line.trim()) return;
+      let p; try { p = JSON.parse(line); } catch { return; }
+      const m = p.message;
+      if (p.type !== 'assistant' || !m || m.model === '<synthetic>') return;
+      let t = ''; const c = m.content;
+      if (typeof c === 'string') t = c;
+      else if (Array.isArray(c)) t = c.filter(b => b?.text).map(b => b.text).join('\n').trim();
+      if (t) all.push({ ts: p.timestamp || null, text: t.slice(0, 4000) });
+    });
+    res.json({ messages: all.slice(-limit), total: all.length }); // most recent `limit`, chronological
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Get sessions
 app.get('/sessions', (req, res) => {
   res.json(getSessions());

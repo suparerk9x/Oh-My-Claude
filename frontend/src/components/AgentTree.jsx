@@ -1,8 +1,32 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import PropTypes from 'prop-types';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { formatTokens, cacheSavedUSD, formatDuration, cleanAssistantMessage } from '../utils/format';
+import { formatTokens, cacheSavedUSD, formatDuration, cleanAssistantMessage, formatTimeWithSeconds } from '../utils/format';
+
+// Shared markdown styling for the reply timeline (dark-theme tuned)
+const MD_COMPONENTS = {
+  h1: (p) => <div className="text-[13px] font-semibold text-white mt-2 mb-1" {...p} />,
+  h2: (p) => <div className="text-[12px] font-semibold text-white mt-2 mb-1" {...p} />,
+  h3: (p) => <div className="text-[12px] font-semibold text-gray-200 mt-1.5 mb-0.5" {...p} />,
+  p: (p) => <p className="mb-1.5" {...p} />,
+  ul: (p) => <ul className="list-disc pl-4 mb-1.5 space-y-0.5" {...p} />,
+  ol: (p) => <ol className="list-decimal pl-4 mb-1.5 space-y-0.5" {...p} />,
+  li: (p) => <li className="leading-snug" {...p} />,
+  strong: (p) => <strong className="font-semibold text-gray-100" {...p} />,
+  a: (p) => <a className="text-sky-400 underline" target="_blank" rel="noreferrer" {...p} />,
+  blockquote: (p) => <blockquote className="border-l-2 border-gray-600 pl-2 text-gray-400 mb-1.5" {...p} />,
+  hr: () => <hr className="border-gray-700 my-2" />,
+  pre: (p) => <pre className="p-2 rounded bg-black/40 overflow-x-auto text-[11px] mb-1.5" {...p} />,
+  code: ({ className, children, ...rest }) => (
+    /language-/.test(className || '')
+      ? <code className={`font-mono text-[11px] ${className || ''}`} {...rest}>{children}</code>
+      : <code className="px-1 py-0.5 rounded bg-white/10 text-amber-300 font-mono text-[10px]" {...rest}>{children}</code>
+  ),
+  table: (p) => <div className="overflow-x-auto mb-1.5"><table className="border-collapse text-[11px]" {...p} /></div>,
+  th: (p) => <th className="border border-gray-700 px-1.5 py-0.5 text-left font-semibold" {...p} />,
+  td: (p) => <td className="border border-gray-700/60 px-1.5 py-0.5" {...p} />,
+};
 import { TokenBreakdown } from './TokenBreakdown';
 
 /**
@@ -16,18 +40,34 @@ export function AgentTree({ agents = [], colors = {}, compact = false, expanded 
   const [collapsedTodos, setCollapsedTodos] = useState(() => ({})); // sessionId -> collapse whole checklist
   const [collapsedRemaining, setCollapsedRemaining] = useState(() => ({})); // sessionId -> collapse remaining (in-progress + queued)
   const [bgDetail, setBgDetail] = useState(null); // background task object shown in detail popup
-  const [fullMsg, setFullMsg] = useState(null); // { sessionId, loading, text, error } — full last assistant message (fetched on click)
+  const [fullMsg, setFullMsg] = useState(null); // { sessionId, loading, messages:[{ts,text}], total, limit, error } — reply timeline
+  const timelineRef = useRef(null);
+  const lastTimelineTextRef = useRef('');
 
-  // Fetch the full last assistant message on demand (preview is 280 chars; full is read from transcript)
-  const openFullMessage = (sessionId, preview) => {
-    setFullMsg({ sessionId, loading: true, text: preview || '', error: null });
-    fetch(`/api/session/${sessionId}/last-message`)
+  // Open the reply timeline — fetch the most recent assistant messages for this session
+  const openFullMessage = (sessionId) => {
+    lastTimelineTextRef.current = ''; // force scroll-to-bottom on every open (even reopening the same session)
+    setFullMsg({ sessionId, loading: true, messages: [], total: 0, limit: 50, error: null });
+    fetch(`/api/session/${sessionId}/messages?limit=50`)
       .then(r => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
-      .then(d => setFullMsg({ sessionId, loading: false, text: d.message || preview || '', error: null }))
-      .catch(err => setFullMsg({ sessionId, loading: false, text: preview || '', error: err.message }));
+      .then(d => setFullMsg(f => (f && f.sessionId === sessionId ? { ...f, loading: false, messages: d.messages || [], total: d.total || 0 } : f)))
+      .catch(err => setFullMsg(f => (f && f.sessionId === sessionId ? { ...f, loading: false, error: err.message } : f)));
   };
 
-  // Esc closes the open modal (full message or background-job detail)
+  // Load an older window (50 more) — re-fetch with a larger limit
+  const loadOlderMessages = () => {
+    setFullMsg(f => {
+      if (!f) return f;
+      const newLimit = (f.limit || 50) + 50;
+      fetch(`/api/session/${f.sessionId}/messages?limit=${newLimit}`)
+        .then(r => (r.ok ? r.json() : null))
+        .then(d => { if (d) setFullMsg(cur => (cur && cur.sessionId === f.sessionId ? { ...cur, messages: d.messages || [], total: d.total || 0, limit: newLimit } : cur)); })
+        .catch(() => {});
+      return { ...f, limit: newLimit };
+    });
+  };
+
+  // Esc closes the open modal (timeline or background-job detail)
   useEffect(() => {
     if (!fullMsg && !bgDetail) return undefined;
     const onKey = (e) => { if (e.key === 'Escape') { setFullMsg(null); setBgDetail(null); } };
@@ -35,8 +75,7 @@ export function AgentTree({ agents = [], colors = {}, compact = false, expanded 
     return () => document.removeEventListener('keydown', onKey);
   }, [fullMsg, bgDetail]);
 
-  // While the full-message popup is open, live-refresh it every 3s so it tracks new turns
-  // (the message is a snapshot at open time; the agent keeps producing newer ones).
+  // While the timeline is open, poll the latest message every 3s and append new replies live
   useEffect(() => {
     const sid = fullMsg?.sessionId;
     if (!sid) return undefined;
@@ -44,13 +83,30 @@ export function AgentTree({ agents = [], colors = {}, compact = false, expanded 
       fetch(`/api/session/${sid}/last-message`)
         .then(r => (r.ok ? r.json() : null))
         .then(d => {
-          if (d?.message) setFullMsg(prev => (prev && prev.sessionId === sid && d.message !== prev.text ? { ...prev, text: d.message, loading: false } : prev));
+          if (!d?.message) return;
+          setFullMsg(f => {
+            if (!f || f.sessionId !== sid) return f;
+            const last = f.messages[f.messages.length - 1];
+            if (last && last.text.slice(0, 200) === d.message.slice(0, 200)) return f; // already the newest
+            return { ...f, messages: [...f.messages, { ts: null, text: d.message }], total: f.total + 1 };
+          });
         })
         .catch(() => {});
     };
     const iv = setInterval(tick, 3000);
     return () => clearInterval(iv);
   }, [fullMsg?.sessionId]);
+
+  // Auto-scroll to the bottom on open / when a new reply lands (not when loading older at the top)
+  useEffect(() => {
+    const msgs = fullMsg?.messages;
+    if (!msgs || !timelineRef.current) return;
+    const lastText = msgs.length ? msgs[msgs.length - 1].text : '';
+    if (lastText && lastText !== lastTimelineTextRef.current) {
+      timelineRef.current.scrollTop = timelineRef.current.scrollHeight;
+      lastTimelineTextRef.current = lastText;
+    }
+  }, [fullMsg?.messages]);
   // Group by session - handle subagents with different sessionIds
   // First, build a map of main agents by their ID (main_<sessionId>)
   const mainAgentMap = {};
@@ -663,8 +719,8 @@ export function AgentTree({ agents = [], colors = {}, compact = false, expanded 
                 {!compact && main?.lastAssistantMessage && (
                   <div
                     className={`mt-1 ml-4 pl-1.5 border-l-2 ${mi.lastMsgBorder || 'border-gray-600/40'} flex items-start gap-1.5 min-w-0 cursor-pointer hover:!opacity-80 transition-opacity ${main?.awaitingReply ? 'opacity-[0.45]' : 'opacity-100'}`}
-                    onClick={(e) => { e.stopPropagation(); openFullMessage(sessionId, main.lastAssistantMessage); }}
-                    title={main?.awaitingReply ? 'คำตอบเทิร์นก่อน (กำลังประมวลผลคำถามใหม่) — คลิกดูเต็ม' : 'คลิกดูข้อความเต็ม'}
+                    onClick={(e) => { e.stopPropagation(); openFullMessage(sessionId); }}
+                    title={main?.awaitingReply ? 'คำตอบเทิร์นก่อน (กำลังประมวลผลคำถามใหม่) — คลิกดู timeline' : 'คลิกดู timeline คำตอบ'}
                   >
                     <span className={`text-[9px] shrink-0 ${textMuted} mt-px`}>↳</span>
                     <span className={`text-[9px] leading-relaxed line-clamp-2 min-w-0 ${mi.lastMsg || 'text-gray-300'}`}>
@@ -968,18 +1024,19 @@ export function AgentTree({ agents = [], colors = {}, compact = false, expanded 
         )}
       </div>}
 
-      {/* Full last assistant message popup — fetched on demand */}
+      {/* Reply timeline — assistant replies for this session, oldest → newest, live-appends */}
       {fullMsg && (
         <div className="fixed inset-0 z-50 flex items-center justify-center" onClick={() => setFullMsg(null)}>
           <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
           <div
-            className={`relative w-[480px] max-w-[90vw] max-h-[72vh] flex flex-col rounded-xl border ${borderColor} ${colors?.bg?.primary || 'bg-[#0f0f17]'} shadow-2xl shadow-black/50`}
+            className={`relative w-[560px] max-w-[92vw] max-h-[80vh] flex flex-col rounded-xl border ${borderColor} ${colors?.bg?.primary || 'bg-[#0f0f17]'} shadow-2xl shadow-black/50`}
             onClick={e => e.stopPropagation()}
           >
-            <div className={`sticky top-0 px-4 py-3 border-b ${borderColor} ${colors?.bg?.secondary || 'bg-[#13131f]'} flex items-center justify-between`}>
+            <div className={`shrink-0 px-4 py-3 border-b ${borderColor} ${colors?.bg?.secondary || 'bg-[#13131f]'} flex items-center justify-between`}>
               <span className={`flex items-center gap-2 text-[11px] font-medium ${colors?.text?.primary || 'text-white'}`}>
-                ↳ Last message
-                <span className="flex items-center gap-1 text-[9px] text-emerald-400" title="อัปเดตอัตโนมัติทุก 3 วินาที">
+                ↳ Reply timeline
+                <span className={`text-[9px] font-mono ${textMuted}`}>{fullMsg.messages.length}{fullMsg.total > fullMsg.messages.length ? `/${fullMsg.total}` : ''}</span>
+                <span className="flex items-center gap-1 text-[9px] text-emerald-400" title="ต่อท้ายอัตโนมัติเมื่อมีคำตอบใหม่">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />live
                 </span>
               </span>
@@ -987,38 +1044,29 @@ export function AgentTree({ agents = [], colors = {}, compact = false, expanded 
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
               </button>
             </div>
-            <div className="px-4 py-3 overflow-y-auto">
-              {fullMsg.loading && <div className={`text-[10px] ${textMuted} mb-2`}>กำลังโหลดข้อความเต็ม…</div>}
-              {fullMsg.error && <div className="text-[10px] text-amber-400 mb-2">โหลดเต็มไม่ได้ ({fullMsg.error}) — แสดงเท่าที่มี</div>}
-              <div className={`text-[12px] leading-relaxed break-words ${colors?.text?.secondary || 'text-gray-300'}`}>
-                <ReactMarkdown
-                  remarkPlugins={[remarkGfm]}
-                  components={{
-                    h1: (p) => <div className="text-[13px] font-semibold text-white mt-2 mb-1" {...p} />,
-                    h2: (p) => <div className="text-[12px] font-semibold text-white mt-2 mb-1" {...p} />,
-                    h3: (p) => <div className="text-[12px] font-semibold text-gray-200 mt-1.5 mb-0.5" {...p} />,
-                    p: (p) => <p className="mb-1.5" {...p} />,
-                    ul: (p) => <ul className="list-disc pl-4 mb-1.5 space-y-0.5" {...p} />,
-                    ol: (p) => <ol className="list-decimal pl-4 mb-1.5 space-y-0.5" {...p} />,
-                    li: (p) => <li className="leading-snug" {...p} />,
-                    strong: (p) => <strong className="font-semibold text-gray-100" {...p} />,
-                    a: (p) => <a className="text-sky-400 underline" target="_blank" rel="noreferrer" {...p} />,
-                    blockquote: (p) => <blockquote className="border-l-2 border-gray-600 pl-2 text-gray-400 mb-1.5" {...p} />,
-                    hr: () => <hr className="border-gray-700 my-2" />,
-                    pre: (p) => <pre className="p-2 rounded bg-black/40 overflow-x-auto text-[11px] mb-1.5" {...p} />,
-                    code: ({ className, children, ...rest }) => (
-                      /language-/.test(className || '')
-                        ? <code className={`font-mono text-[11px] ${className || ''}`} {...rest}>{children}</code>
-                        : <code className="px-1 py-0.5 rounded bg-white/10 text-amber-300 font-mono text-[10px]" {...rest}>{children}</code>
-                    ),
-                    table: (p) => <div className="overflow-x-auto mb-1.5"><table className="border-collapse text-[11px]" {...p} /></div>,
-                    th: (p) => <th className="border border-gray-700 px-1.5 py-0.5 text-left font-semibold" {...p} />,
-                    td: (p) => <td className="border border-gray-700/60 px-1.5 py-0.5" {...p} />,
-                  }}
-                >
-                  {fullMsg.text}
-                </ReactMarkdown>
-              </div>
+            <div ref={timelineRef} className="px-4 py-3 overflow-y-auto space-y-2.5">
+              {fullMsg.loading && <div className={`text-[10px] ${textMuted}`}>กำลังโหลด timeline…</div>}
+              {fullMsg.error && <div className="text-[10px] text-amber-400">โหลดไม่ได้ ({fullMsg.error})</div>}
+              {!fullMsg.loading && fullMsg.total > fullMsg.messages.length && (
+                <button onClick={loadOlderMessages} className={`w-full text-[9px] py-1 rounded border ${borderColor} ${textMuted} hover:text-gray-300 transition-colors`}>
+                  ↑ โหลดเก่ากว่า (เหลืออีก {fullMsg.total - fullMsg.messages.length})
+                </button>
+              )}
+              {!fullMsg.loading && !fullMsg.error && fullMsg.messages.length === 0 && (
+                <div className={`text-[10px] ${textMuted}`}>ยังไม่มีคำตอบใน session นี้</div>
+              )}
+              {fullMsg.messages.map((m, i) => (
+                <div key={i} className={`rounded-lg border ${borderColor} ${colors?.bg?.secondary || 'bg-[#13131f]'} px-2.5 py-2`}>
+                  <div className={`flex items-center gap-1.5 mb-1 text-[8px] ${textMuted}`}>
+                    <span className="text-emerald-400/70">↳</span>
+                    <span className="font-mono">#{fullMsg.total - fullMsg.messages.length + i + 1}</span>
+                    {m.ts && <span className="font-mono">· {formatTimeWithSeconds(m.ts)}</span>}
+                  </div>
+                  <div className={`text-[11px] leading-relaxed break-words ${colors?.text?.secondary || 'text-gray-300'}`}>
+                    <ReactMarkdown remarkPlugins={[remarkGfm]} components={MD_COMPONENTS}>{m.text}</ReactMarkdown>
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
         </div>
