@@ -17,6 +17,68 @@ export function formatTokens(n) {
 }
 
 /**
+ * Estimate USD saved by serving tokens from cache instead of as fresh input.
+ * saving = cacheReadTokens × (input price − cacheRead price) per model, per 1M tokens.
+ * Matches backend PRICING (opus 5/0.5, sonnet 3/0.3, haiku 1/0.1; default = sonnet).
+ */
+export function cacheSavedUSD(cacheReadTokens = 0, model = '') {
+  if (!cacheReadTokens) return 0;
+  const deltaPer1M = /opus/i.test(model) ? 4.5
+                   : /haiku/i.test(model) ? 0.9
+                   : /sonnet/i.test(model) ? 2.7
+                   : 2.7;
+  return (cacheReadTokens / 1_000_000) * deltaPer1M;
+}
+
+/**
+ * Strip markdown noise from an assistant message for compact inline display.
+ * Removes code fences/backticks, table pipes & separators, headings, bold/italic
+ * markers, and list bullets; collapses whitespace. Keeps the human-readable prose.
+ */
+export function cleanAssistantMessage(raw) {
+  if (!raw) return '';
+  let s = String(raw);
+  s = s.replace(/```[\s\S]*?```/g, ' ');                  // fenced code blocks
+  s = s.replace(/`([^`]+)`/g, '$1');                      // inline code
+  // line-anchored markdown (well-formed text with newlines)
+  s = s.replace(/^\s*\|?[\s:|-]*-{2,}[\s:|-]*$/gm, ' ');  // table separator rows (|---|---|)
+  s = s.replace(/^#{1,6}\s*/gm, '');                      // headings at line start
+  s = s.replace(/^\s*[-*+]\s+/gm, '· ');                  // list bullets → middot
+  // global stragglers (collapsed / mid-line markers)
+  s = s.replace(/\|/g, ' ');                              // remaining table pipes
+  s = s.replace(/(^|\s)#{1,6}\s+/g, '$1');                // mid-line headings (## ...)
+  s = s.replace(/\s-{3,}\s|-{3,}/g, ' ');                 // stray separator dashes (--- )
+  s = s.replace(/\*\*([^*]+)\*\*/g, '$1');                // bold
+  s = s.replace(/(^|[^*])\*([^*]+)\*/g, '$1$2');          // italic
+  s = s.replace(/__([^_]+)__/g, '$1');                    // bold (underscore)
+  s = s.replace(/\s+/g, ' ').trim();                      // collapse whitespace/newlines
+  return s;
+}
+
+/**
+ * Format a duration in ms as "Xh Ym" / "Xm Ys" / "Xs" (matches backend style).
+ */
+export function formatDuration(ms) {
+  if (!ms || ms < 0) return '';
+  const s = Math.floor(ms / 1000);
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  if (h > 0) return `${h}h ${m}m`;
+  if (m > 0) return `${m}m ${sec}s`;
+  return `${sec}s`;
+}
+
+/**
+ * Format a small USD amount (e.g. "$20.25", "<$0.01").
+ */
+export function formatUSD(n) {
+  if (!n) return '$0.00';
+  if (n < 0.01) return '<$0.01';
+  return '$' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+/**
  * Get usage badge info for session percentage (shared across App + MiniApp)
  */
 export function getUsageBadge(pct) {

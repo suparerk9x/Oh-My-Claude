@@ -16,6 +16,7 @@ export default function MediumApp({ onSwitchToFull }) {
   const [stats, setStats] = useState(null);
   const [agents, setAgents] = useState([]);
   const [events, setEvents] = useState([]);
+  const [activityCollapsed, setActivityCollapsed] = useState(() => localStorage.getItem('mediumActivityCollapsed') === 'true');
   const [claudeUsage, setClaudeUsage] = useState(null);
   // smartStatus is now computed from displayEvents via useMemo (like App.jsx)
   const [teams, setTeams] = useState([]);
@@ -418,7 +419,6 @@ export default function MediumApp({ onSwitchToFull }) {
           const activeMainCount = displayAgents.filter(a => a.type === 'main' && a.status === 'active').length;
           const activeTaskCount = displayAgents.filter(a => a.type !== 'main' && a.status === 'active').length;
           const stoppedTaskCount = displayAgents.filter(a => a.type !== 'main' && (a.status === 'stopped' || a.status === 'timeout')).length;
-          const totalTokens = displayAgents.reduce((sum, a) => sum + (a.tokens || (a.inputTokens || 0) + (a.outputTokens || 0) || 0), 0);
           return (
             <div className={`h-6 min-h-[24px] px-2 flex items-center justify-between border-b ${colors.border} ${colors.sectionHeader?.agents || 'bg-gradient-to-r from-violet-500/[0.08] via-purple-500/[0.05] to-transparent'} flex-shrink-0`}>
               <div className="flex items-center gap-2 text-[10px]">
@@ -435,9 +435,6 @@ export default function MediumApp({ onSwitchToFull }) {
                     {activeTaskCount > 0 && stoppedTaskCount > 0 && ' · '}
                     {stoppedTaskCount > 0 && <span className="text-gray-500">{stoppedTaskCount} done</span>}
                   </span>
-                )}
-                {totalTokens > 0 && (
-                  <span className="font-mono tabular-nums text-amber-500">{formatTokens(totalTokens)}</span>
                 )}
               </div>
               {!demoMode && displayAgents.some(a => a.status === 'stopped' || a.status === 'timeout') && (
@@ -463,13 +460,20 @@ export default function MediumApp({ onSwitchToFull }) {
         </div>
       </div>
 
-      {/* Activity Feed — 25% */}
-      <div className="flex-[1] min-h-0 flex flex-col">
+      {/* Activity Feed — 25% (collapsible to give the agents panel full height) */}
+      <div className={`${activityCollapsed ? 'flex-none' : 'flex-[1]'} min-h-0 flex flex-col`}>
         {/* Filter bar */}
         <div className={`flex items-center gap-1 px-1.5 py-1 border-b ${colors.border} ${colors.sectionHeader?.activity || 'bg-gradient-to-r from-cyan-500/[0.08] via-sky-500/[0.05] to-transparent'} flex-shrink-0 overflow-x-auto`}>
-          <h2 className={`text-[10px] font-medium ${colors.accent?.activity || 'text-cyan-400'} uppercase tracking-wider leading-none shrink-0`}>
-            Activity Feed
-          </h2>
+          <button
+            onClick={() => setActivityCollapsed(v => { localStorage.setItem('mediumActivityCollapsed', String(!v)); return !v; })}
+            className="flex items-center gap-1 shrink-0 cursor-pointer select-none hover:opacity-80 transition-opacity"
+            title={activityCollapsed ? 'กาง Activity Feed' : 'หด Activity Feed'}
+          >
+            <span className={`text-[7px] ${colors.accent?.activity || 'text-cyan-400'}`}>{activityCollapsed ? '▸' : '▾'}</span>
+            <h2 className={`text-[10px] font-medium ${colors.accent?.activity || 'text-cyan-400'} uppercase tracking-wider leading-none`}>
+              Activity Feed
+            </h2>
+          </button>
           <div className="flex-1" />
           <button onClick={() => { setSelectedSession(null); setSelectedEventType(null); }}
             className={`px-1.5 py-0.5 text-[8px] rounded-full transition-all shrink-0 ${!selectedSession && !selectedEventType ? colors.tag.active : colors.tag.inactive}`}>
@@ -500,17 +504,19 @@ export default function MediumApp({ onSwitchToFull }) {
           )}
         </div>
         {/* Event list */}
-        <div className="flex-1 overflow-y-auto">
-          {filteredEvents.length === 0 ? (
-            <div className={`flex items-center justify-center h-full text-[10px] ${colors.text.muted}`}>Waiting for events...</div>
-          ) : (
-            <div className="p-1 space-y-0.5">
-              {filteredEvents.map((event, i) => (
-                <ActivityItem key={event.id || i} event={event} colors={colors} isSelected={false} onSelect={() => {}} />
-              ))}
-            </div>
-          )}
-        </div>
+        {!activityCollapsed && (
+          <div className="flex-1 overflow-y-auto">
+            {filteredEvents.length === 0 ? (
+              <div className={`flex items-center justify-center h-full text-[10px] ${colors.text.muted}`}>Waiting for events...</div>
+            ) : (
+              <div className="p-1 space-y-0.5">
+                {filteredEvents.map((event, i) => (
+                  <ActivityItem key={event.id || i} event={event} colors={colors} isSelected={false} onSelect={() => {}} />
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Footer */}

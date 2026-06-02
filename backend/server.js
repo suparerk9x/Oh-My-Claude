@@ -1268,10 +1268,10 @@ async function resolveSessionPath(sessionId) {
 async function readSessionContext(sessionId) {
   const cached = sessionContextCache.get(sessionId);
   if (cached && (Date.now() - cached.timestamp) < SESSION_CONTEXT_CACHE_TTL) {
-    return { lastInputTokens: cached.lastInputTokens, meta: cached.meta || null };
+    return { lastInputTokens: cached.lastInputTokens, meta: cached.meta || null, lastMessage: cached.lastMessage || null };
   }
   const transcriptPath = await resolveSessionPath(sessionId);
-  if (!transcriptPath) return { lastInputTokens: 0, meta: null };
+  if (!transcriptPath) return { lastInputTokens: 0, meta: null, lastMessage: null };
   try {
     const fd = await fs.promises.open(transcriptPath, 'r');
     const stats = await fd.stat();
@@ -1281,30 +1281,37 @@ async function readSessionContext(sessionId) {
     await fd.close();
     const tail = buffer.toString('utf-8', 0, bytesRead);
     const lines = tail.split('\n');
-    // Scan from end to find last real assistant usage (skip synthetic/compact messages)
+    // Single backward scan: capture last assistant usage (ctx%) + last assistant *text* (inline preview)
+    let lastInputTokens = 0, meta = null, lastMessage = null, haveCtx = false;
     for (let i = lines.length - 1; i >= 0; i--) {
       const line = lines[i].trim();
-      if (!line || !line.includes('"usage"')) continue;
-      try {
-        const parsed = JSON.parse(line);
-        if (parsed.type === 'assistant' && parsed.message?.usage && parsed.message.model !== '<synthetic>') {
-          const u = parsed.message.usage;
-          const lastInputTokens = (u.input_tokens || 0) + (u.cache_read_input_tokens || 0) + (u.cache_creation_input_tokens || 0);
-          // Entry-level metadata is present on every transcript line — capture from this one
-          const meta = {
-            gitBranch: parsed.gitBranch || null,
-            ccVersion: parsed.version || null,
-            entrypoint: parsed.entrypoint || null,
-            stopReason: parsed.message?.stop_reason || null
-          };
-          sessionContextCache.set(sessionId, { lastInputTokens, meta, timestamp: Date.now() });
-          return { lastInputTokens, meta };
-        }
-      } catch {}
+      if (!line || line.indexOf('assistant') === -1) continue;
+      let parsed;
+      try { parsed = JSON.parse(line); } catch { continue; }
+      if (parsed.type !== 'assistant' || !parsed.message || parsed.message.model === '<synthetic>') continue;
+      const m = parsed.message;
+      if (!haveCtx && m.usage) {
+        const u = m.usage;
+        lastInputTokens = (u.input_tokens || 0) + (u.cache_read_input_tokens || 0) + (u.cache_creation_input_tokens || 0);
+        meta = {
+          gitBranch: parsed.gitBranch || null,
+          ccVersion: parsed.version || null,
+          entrypoint: parsed.entrypoint || null,
+          stopReason: m.stop_reason || null
+        };
+        haveCtx = true;
+      }
+      if (!lastMessage) {
+        let t = '';
+        if (typeof m.content === 'string') t = m.content;
+        else if (Array.isArray(m.content)) t = m.content.filter(b => b?.text).map(b => b.text).join('\n').trim();
+        if (t) lastMessage = t.slice(0, 280);
+      }
+      if (haveCtx && lastMessage) break;
     }
-    sessionContextCache.set(sessionId, { lastInputTokens: 0, meta: null, timestamp: Date.now() });
-    return { lastInputTokens: 0, meta: null };
-  } catch { return { lastInputTokens: 0, meta: null }; }
+    sessionContextCache.set(sessionId, { lastInputTokens, meta, lastMessage, timestamp: Date.now() });
+    return { lastInputTokens, meta, lastMessage };
+  } catch { return { lastInputTokens: 0, meta: null, lastMessage: null }; }
 }
 
 // Read cumulative tokens from a session transcript file using STREAMING
@@ -1487,7 +1494,7 @@ async function getAgents() {
       readSessionTokens(agent.sessionId),
       readSessionContext(agent.sessionId), // fast tail-read — { lastInputTokens, meta }
     ]);
-    return { sessionId: agent.sessionId, tokens: sessionTokens, lastInputTokens: ctx.lastInputTokens, meta: ctx.meta };
+    return { sessionId: agent.sessionId, tokens: sessionTokens, lastInputTokens: ctx.lastInputTokens, meta: ctx.meta, lastMessage: ctx.lastMessage };
   });
 
   const tokenResults = (await Promise.allSettled(tokenPromises))
@@ -1495,6 +1502,7 @@ async function getAgents() {
   const sessionTokenMap = new Map(tokenResults.map(r => [r.sessionId, r.tokens]));
   const sessionContextMap = new Map(tokenResults.map(r => [r.sessionId, r.lastInputTokens]));
   const sessionMetaMap = new Map(tokenResults.map(r => [r.sessionId, r.meta]));
+  const sessionLastMsgMap = new Map(tokenResults.map(r => [r.sessionId, r.lastMessage]));
 
   // Fetch tokens for subagents with transcript paths (including stopped — for contextPct)
   const activeSubagents = agentList.filter(a => a.type !== 'main' && a.transcriptPath && (a.status !== 'stopped' || !a.contextPct));
@@ -1536,6 +1544,7 @@ async function getAgents() {
           result.inputTokens = sessionTokens.inputTokens;
           result.outputTokens = sessionTokens.outputTokens;
           result.cacheReadTokens = sessionTokens.cacheReadTokens;
+          result.cacheCreationTokens = sessionTokens.cacheCreationTokens;
           // Tier-2 session stats
           result.webSearches = sessionTokens.webSearches || 0;
           result.webFetches = sessionTokens.webFetches || 0;
@@ -1558,6 +1567,13 @@ async function getAgents() {
           result.stopReason = meta.stopReason || null;
           const cur = agents.get(agent.id);
           if (cur) agents.set(agent.id, { ...cur, gitBranch: result.gitBranch, ccVersion: result.ccVersion, entrypoint: result.entrypoint, stopReason: result.stopReason });
+        }
+        // Fresh last assistant message from the tail-read — overrides the slower hook value
+        const freshMsg = sessionLastMsgMap.get(agent.sessionId);
+        if (freshMsg) {
+          result.lastAssistantMessage = freshMsg;
+          const cur2 = agents.get(agent.id);
+          if (cur2) agents.set(agent.id, { ...cur2, lastAssistantMessage: freshMsg });
         }
       }
 
@@ -1852,6 +1868,40 @@ app.get('/stats', async (req, res) => {
 // Get agents
 app.get('/agents', async (req, res) => {
   res.json(await getAgents());
+});
+
+// Read the FULL latest assistant message from a session transcript — on-demand only
+// (the /agents payload keeps just a 280-char preview; full text is read here when the user clicks).
+async function readLastAssistantMessageFull(sessionId) {
+  const transcriptPath = await resolveSessionPath(sessionId);
+  if (!transcriptPath) return null;
+  let last = null;
+  await safeReadLines(transcriptPath, (line) => {
+    if (!line.trim()) return;
+    let parsed;
+    try { parsed = JSON.parse(line); } catch { return; }
+    const msg = parsed.message;
+    const isAssistant = parsed.type === 'assistant' || msg?.role === 'assistant';
+    if (!isAssistant || !msg || msg.model === '<synthetic>') return;
+    let text = '';
+    if (typeof msg.content === 'string') text = msg.content;
+    else if (Array.isArray(msg.content)) {
+      text = msg.content.filter(b => b?.text).map(b => b.text).join('\n').trim();
+    }
+    if (text) last = text;
+  });
+  return last;
+}
+
+// Full last assistant message (no truncation) — read on click, not on every poll
+app.get('/session/:sessionId/last-message', async (req, res) => {
+  try {
+    const message = await readLastAssistantMessageFull(req.params.sessionId);
+    if (message == null) return res.status(404).json({ error: 'No assistant message found' });
+    res.json({ message });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // Get sessions

@@ -1,6 +1,9 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import PropTypes from 'prop-types';
-import { formatTokens } from '../utils/format';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import { formatTokens, cacheSavedUSD, formatDuration, cleanAssistantMessage } from '../utils/format';
+import { TokenBreakdown } from './TokenBreakdown';
 
 /**
  * AgentTree - Compact but COMPLETE information
@@ -8,7 +11,46 @@ import { formatTokens } from '../utils/format';
  */
 export function AgentTree({ agents = [], colors = {}, compact = false, expanded = false, smartStatus = {}, teams = [], hideFooter = false }) {
   const [detailSession, setDetailSession] = useState(null);
-  const [openDone, setOpenDone] = useState(() => ({})); // sessionId -> reveal completed todos
+  const [collapsedSubs, setCollapsedSubs] = useState(() => ({})); // sessionId -> collapse subagent group
+  const [collapsedDone, setCollapsedDone] = useState(() => ({})); // sessionId -> collapse completed todos
+  const [collapsedTodos, setCollapsedTodos] = useState(() => ({})); // sessionId -> collapse whole checklist
+  const [collapsedRemaining, setCollapsedRemaining] = useState(() => ({})); // sessionId -> collapse remaining (in-progress + queued)
+  const [bgDetail, setBgDetail] = useState(null); // background task object shown in detail popup
+  const [fullMsg, setFullMsg] = useState(null); // { sessionId, loading, text, error } — full last assistant message (fetched on click)
+
+  // Fetch the full last assistant message on demand (preview is 280 chars; full is read from transcript)
+  const openFullMessage = (sessionId, preview) => {
+    setFullMsg({ sessionId, loading: true, text: preview || '', error: null });
+    fetch(`/api/session/${sessionId}/last-message`)
+      .then(r => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+      .then(d => setFullMsg({ sessionId, loading: false, text: d.message || preview || '', error: null }))
+      .catch(err => setFullMsg({ sessionId, loading: false, text: preview || '', error: err.message }));
+  };
+
+  // Esc closes the open modal (full message or background-job detail)
+  useEffect(() => {
+    if (!fullMsg && !bgDetail) return undefined;
+    const onKey = (e) => { if (e.key === 'Escape') { setFullMsg(null); setBgDetail(null); } };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [fullMsg, bgDetail]);
+
+  // While the full-message popup is open, live-refresh it every 3s so it tracks new turns
+  // (the message is a snapshot at open time; the agent keeps producing newer ones).
+  useEffect(() => {
+    const sid = fullMsg?.sessionId;
+    if (!sid) return undefined;
+    const tick = () => {
+      fetch(`/api/session/${sid}/last-message`)
+        .then(r => (r.ok ? r.json() : null))
+        .then(d => {
+          if (d?.message) setFullMsg(prev => (prev && prev.sessionId === sid && d.message !== prev.text ? { ...prev, text: d.message, loading: false } : prev));
+        })
+        .catch(() => {});
+    };
+    const iv = setInterval(tick, 3000);
+    return () => clearInterval(iv);
+  }, [fullMsg?.sessionId]);
   // Group by session - handle subagents with different sessionIds
   // First, build a map of main agents by their ID (main_<sessionId>)
   const mainAgentMap = {};
@@ -463,6 +505,16 @@ export function AgentTree({ agents = [], colors = {}, compact = false, expanded 
           const smart = smartStatus[sessionId];
           const mainModel = main ? getModel(main.model) : null;
           const sessionTokens = (main?.tokens || 0) + tasks.reduce((sum, t) => sum + (t.tokens || 0), 0);
+          // total = work + cache (read + creation) — everything actually sent to the API (≈ the bill)
+          const sessionCacheRead = main?.cacheReadTokens || 0;
+          // cacheCreate from the exact field if backend sends it, else reconstruct from 1h+5m tiers
+          const sessionCacheCreate = main?.cacheCreationTokens ?? ((main?.cacheCreation1h || 0) + (main?.cacheCreation5m || 0));
+          const sessionTotal = sessionTokens + sessionCacheRead + sessionCacheCreate;
+          const sessionReuse = sessionCacheCreate > 0 ? sessionCacheRead / sessionCacheCreate : null;
+          const sessionSaved = cacheSavedUSD(sessionCacheRead, main?.model);
+          // always show duration: use elapsed/duration string, else compute from startedAt → stoppedAt/lastSeen
+          const mainDuration = (main && getDuration(main))
+            || (main?.startedAt ? formatDuration(new Date(main.stoppedAt || main.lastSeen || Date.now()) - new Date(main.startedAt)) : '');
           const activeTaskCount = tasks.filter(t => t.status === 'active').length;
           const teamInfo = teamBySession[sessionId];
           const hasConflicts = teamInfo?.fileConflicts?.length > 0;
@@ -487,6 +539,20 @@ export function AgentTree({ agents = [], colors = {}, compact = false, expanded 
                         {mainModel.name}
                       </span>
                     )}
+                    {(() => {
+                      const eff = main?.effort;
+                      if (!(eff === 'high' || eff === 'xhigh' || eff === 'max' || eff === 'ultra')) return null;
+                      const label = eff === 'ultra' ? 'ULTRA' : eff.toUpperCase();
+                      // chip with bg, same treatment as the model badge (rounded + colored bg, no border)
+                      const effChip = (eff === 'max' || eff === 'ultra') ? 'text-violet-300 bg-violet-500/20'
+                                    : eff === 'xhigh' ? 'text-fuchsia-300 bg-fuchsia-500/15'
+                                    : 'text-amber-300 bg-amber-500/15';
+                      return (
+                        <span className={`text-[10px] font-medium px-1 py-0.5 rounded shrink-0 whitespace-nowrap ${effChip}`} title={`Reasoning effort: ${eff}`}>
+                          ⚡{label}
+                        </span>
+                      );
+                    })()}
                     {smart && isActive ? (
                       <>
                         <span className={`text-[10px] shrink-0 ${smart.animation}`}>{smart.icon}</span>
@@ -500,11 +566,8 @@ export function AgentTree({ agents = [], colors = {}, compact = false, expanded 
                     )}
                   </div>
                   <div className="shrink-0 flex items-center gap-1 pl-1">
-                    <span className={`font-mono text-[10px] tabular-nums ${mi.duration || 'text-gray-400'} w-[48px] text-right whitespace-nowrap`}>
-                      {main && getDuration(main) ? getDuration(main) : ''}
-                    </span>
-                    <span className={`font-mono text-[10px] tabular-nums ${mi.tokens || 'text-amber-500'} w-[45px] text-right`}>
-                      {formatTokens(sessionTokens)}
+                    <span className={`font-mono text-[10px] tabular-nums ${mi.tokens || 'text-amber-500'} w-[45px] text-right`} title={`Context window: ${(main?.lastInputTokens || 0).toLocaleString()} tokens (the value behind ctx %)`}>
+                      {formatTokens(main?.lastInputTokens || 0)}
                     </span>
                     {(() => {
                       const pct = main?.contextPct || 0;
@@ -561,7 +624,21 @@ export function AgentTree({ agents = [], colors = {}, compact = false, expanded 
                   </div>
                 )}
 
-                {/* Line 2: Activity + Session ID - hidden in compact, hidden if no activity */}
+                {/* ── ALARMS: max-tokens / scheduled crons — hoisted to top so problems jump out ── */}
+                {!compact && (main?.stopReason === 'max_tokens' || main?.sessionCrons?.length > 0) && (
+                  <div className="mt-1 pl-4 flex items-center gap-1 flex-wrap">
+                    {main.stopReason === 'max_tokens' && (
+                      <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[8px] bg-red-500/15 text-red-400 border border-red-500/20" title="Last turn hit the max output-token limit — the reply may be truncated">⚠ max tokens</span>
+                    )}
+                    {main.sessionCrons?.length > 0 && (
+                      <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[8px] bg-sky-500/15 text-sky-400 border border-sky-500/20" title={`${main.sessionCrons.length} scheduled cron agent(s)`}>⏰ {main.sessionCrons.length}</span>
+                    )}
+                  </div>
+                )}
+
+                {/* ── LIVE STORY: activity → last message → tier-2 → background jobs → todos ── */}
+
+                {/* Activity + Session ID - hidden in compact, hidden if no activity */}
                 {!compact && (() => {
                   const parsed = main?.lastTask && main.lastTask !== 'Main Session' ? parseLastTask(main.lastTask) : null;
                   if (!parsed) return null;
@@ -581,7 +658,147 @@ export function AgentTree({ agents = [], colors = {}, compact = false, expanded 
                   );
                 })()}
 
-                {/* Line 3: branch + git diff (left) · CC version + entrypoint (right) — clickable for detail */}
+                {/* Last assistant message (turn / result summary) — paired with activity: the live narrative.
+                    markdown is stripped to clean prose; subtle left accent marks it as the agent's latest voice. */}
+                {!compact && main?.lastAssistantMessage && (
+                  <div
+                    className={`mt-1 ml-4 pl-1.5 border-l-2 ${mi.lastMsgBorder || 'border-gray-600/40'} flex items-start gap-1.5 min-w-0 cursor-pointer hover:!opacity-80 transition-opacity ${main?.status === 'active' ? 'opacity-[0.45]' : 'opacity-100'}`}
+                    onClick={(e) => { e.stopPropagation(); openFullMessage(sessionId, main.lastAssistantMessage); }}
+                    title={main?.status === 'active' ? 'คำตอบเทิร์นก่อน (กำลังประมวลผลใหม่) — คลิกดูเต็ม' : 'คลิกดูข้อความเต็ม'}
+                  >
+                    <span className={`text-[9px] shrink-0 ${textMuted} mt-px`}>↳</span>
+                    <span className={`text-[9px] leading-relaxed line-clamp-2 min-w-0 ${mi.lastMsg || 'text-gray-300'}`}>
+                      {cleanAssistantMessage(main.lastAssistantMessage)}
+                    </span>
+                  </div>
+                )}
+
+                {/* Tier-2 signals strip: web tool use, hook health, subagent task count */}
+                {!compact && (() => {
+                  const ws = main?.webSearches || 0;
+                  const wf = main?.webFetches || 0;
+                  const hh = main?.hookHealth;
+                  const hookBad = hh && (hh.failures > 0 || hh.maxMs > 1500);
+                  if (!ws && !wf && !hookBad) return null;
+                  return (
+                    <>
+                      <div className="mt-1 pl-4 flex items-center gap-1.5 flex-wrap text-[9px]">
+                        {ws > 0 && <span className={`${textMuted} font-mono`} title={`${ws} web search request(s) this session`}>🔎 {ws}</span>}
+                        {wf > 0 && <span className={`${textMuted} font-mono`} title={`${wf} web fetch request(s) this session`}>🌐 {wf}</span>}
+                      </div>
+                      {hookBad && (
+                        <div className="mt-1 pl-4 flex items-center gap-1.5 text-[9px]">
+                          <span className="shrink-0">🪝</span>
+                          {hh.failures > 0
+                            ? <span className="text-red-400" title="Hook(s) exited non-zero">{hh.failures} hook fail{hh.failures > 1 ? 's' : ''}</span>
+                            : <span className={textMuted}>{hh.total} hooks ok</span>}
+                          {hh.maxMs > 1500 && (
+                            <span className={`${textMuted} font-mono`} title={`Slowest hook: ${hh.slowest}`}>· {(hh.slowest || 'hook').split(':')[0]} {(hh.maxMs / 1000).toFixed(1)}s</span>
+                          )}
+                        </div>
+                      )}
+                    </>
+                  );
+                })()}
+
+                {/* Background jobs — running ones shown first (kept above todos: still-working signal) */}
+                {!compact && main?.backgroundTasks?.length > 0 && (
+                  <div className="mt-1 pl-4 space-y-0.5">
+                    {[...main.backgroundTasks].sort((a, b) => (b.status === 'running' ? 1 : 0) - (a.status === 'running' ? 1 : 0)).slice(0, 3).map((bt, i) => {
+                      const st = bt.status === 'running' ? { dot: 'bg-amber-400 animate-pulse', label: 'text-amber-400' }
+                               : bt.status === 'completed' ? { dot: 'bg-emerald-500', label: 'text-emerald-400' }
+                               : (bt.status === 'failed' || bt.status === 'error') ? { dot: 'bg-red-500', label: 'text-red-400' }
+                               : { dot: 'bg-gray-500', label: textMuted };
+                      return (
+                        <div
+                          key={bt.id || i}
+                          className={`flex items-center gap-1.5 min-w-0 cursor-pointer rounded hover:bg-white/[0.03] transition-colors ${bt.status === 'running' ? 'border-l-2 border-amber-400/60 pl-1.5' : ''}`}
+                          title="คลิกดูรายละเอียด"
+                          onClick={(e) => { e.stopPropagation(); setBgDetail(bt); }}
+                        >
+                          <span className="text-[9px] shrink-0 opacity-70">⚙</span>
+                          <span className={`text-[9px] ${mi.description || 'text-gray-400'} truncate min-w-0 flex-1`}>{bt.description || bt.command || 'background task'}</span>
+                          <span className={`text-[8px] font-mono shrink-0 ${st.label}`}>{bt.status}</span>
+                        </div>
+                      );
+                    })}
+                    {main.backgroundTasks.length > 3 && (
+                      <span className={`text-[8px] ${textMuted} pl-4 block`}>+{main.backgroundTasks.length - 3} more</span>
+                    )}
+                  </div>
+                )}
+
+                {/* TODO checklist (from TodoWrite) — single list in ORIGINAL order; done stay in place.
+                    Completed items naturally sit on top → scan top→bottom to read progress in sequence. */}
+                {!compact && main?.todos?.length > 0 && (() => {
+                  const total = main.todos.length;
+                  const done = main.todos.filter(t => t.status === 'completed').length;
+                  const pct = total ? Math.round((done / total) * 100) : 0;
+                  const complete = done === total;
+                  const dCollapsed = !!collapsedDone[sessionId];
+                  const tCollapsed = !!collapsedTodos[sessionId];
+                  return (
+                    <div className="mt-1 pl-4 min-w-0">
+                      {/* Summary: done/total + progress bar — click to collapse/expand the whole checklist */}
+                      <div
+                        className="flex items-center gap-1.5 min-w-0 cursor-pointer select-none hover:opacity-80 transition-opacity"
+                        onClick={(e) => { e.stopPropagation(); setCollapsedTodos(prev => ({ ...prev, [sessionId]: !prev[sessionId] })); }}
+                        title={tCollapsed ? 'กางรายการงาน' : 'หดรายการงาน'}
+                      >
+                        <span className="text-[9px] shrink-0" title="Task checklist (TodoWrite)">{complete ? '✅' : '☑️'}</span>
+                        <span className={`text-[9px] font-mono tabular-nums shrink-0 ${complete ? 'text-emerald-400' : (mi.tokens || 'text-amber-500')}`}>{done}/{total}</span>
+                        <div className={`h-1 rounded-full ${mi.tokenBarTrack || 'bg-gray-700/30'} overflow-hidden w-[36px] shrink-0`}>
+                          <div className={`h-full rounded-full transition-all ${complete ? 'bg-emerald-500/60' : 'bg-amber-500/60'}`} style={{ width: `${pct}%` }} />
+                        </div>
+                      </div>
+                      {!tCollapsed && (() => {
+                        const rCollapsed = !!collapsedRemaining[sessionId];
+                        const doneList = main.todos.filter(t => t.status === 'completed');
+                        const remainList = main.todos.filter(t => t.status !== 'completed'); // in-progress + queued, original order
+                        const labelCls = `flex items-center gap-1 text-[8px] uppercase tracking-wider ${textMuted} hover:text-gray-300 transition-colors`;
+                        return (
+                          <div className="mt-0.5 space-y-px">
+                            {/* DONE group */}
+                            {doneList.length > 0 && (
+                              <button onClick={(e) => { e.stopPropagation(); setCollapsedDone(prev => ({ ...prev, [sessionId]: !prev[sessionId] })); }} className={labelCls} title={dCollapsed ? 'แสดงงานที่เสร็จ' : 'ซ่อนงานที่เสร็จ'}>
+                                <span className="font-mono tabular-nums">{doneList.length} done</span>
+                              </button>
+                            )}
+                            {!dCollapsed && doneList.map((t, i) => (
+                              <div key={`d${i}`} className="flex items-start gap-1 min-w-0">
+                                <span className="text-[8px] shrink-0 mt-px text-emerald-400/60">✓</span>
+                                <span className="text-[9px] leading-snug line-clamp-1 min-w-0 text-emerald-400/50" title={t.content}>{t.content}</span>
+                              </div>
+                            ))}
+                            {/* REMAINING group — in-progress (▶ highlighted) + queued (○), original order */}
+                            {remainList.length > 0 && (
+                              <button onClick={(e) => { e.stopPropagation(); setCollapsedRemaining(prev => ({ ...prev, [sessionId]: !prev[sessionId] })); }} className={`${labelCls} ${doneList.length > 0 ? 'mt-1' : ''}`} title={rCollapsed ? 'แสดงงานที่เหลือ' : 'ซ่อนงานที่เหลือ'}>
+                                <span className="font-mono tabular-nums">{remainList.length} remaining</span>
+                              </button>
+                            )}
+                            {!rCollapsed && remainList.map((t, i) => (
+                              t.status === 'in_progress' ? (
+                                <div key={`r${i}`} className="flex items-start gap-1 min-w-0">
+                                  <span className={`text-[8px] shrink-0 mt-px ${mi.tokens || 'text-amber-400'}`}>▶</span>
+                                  <span className={`text-[9px] leading-snug font-medium line-clamp-2 min-w-0 ${mi.tokens || 'text-amber-300'}`} title={t.content}>{t.activeForm || t.content}</span>
+                                </div>
+                              ) : (
+                                <div key={`r${i}`} className="flex items-start gap-1 min-w-0">
+                                  <span className={`text-[8px] shrink-0 mt-px ${textMuted}`}>○</span>
+                                  <span className={`text-[9px] leading-snug line-clamp-1 min-w-0 ${textMuted}`} title={t.content}>{t.content}</span>
+                                </div>
+                              )
+                            ))}
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  );
+                })()}
+
+                {/* ── REFERENCE: git changeset + version (accumulated, not live) → cost ── */}
+
+                {/* branch + git diff (left) · CC version + entrypoint (right) — clickable for detail */}
                 {!compact && (main?.gitDiff || main?.gitBranch || main?.ccVersion || main?.entrypoint) && (
                   <div
                     className="mt-1 pl-4 flex items-center gap-1.5 min-w-0 cursor-pointer hover:opacity-80 transition-opacity"
@@ -624,167 +841,18 @@ export function AgentTree({ agents = [], colors = {}, compact = false, expanded 
                   </div>
                 )}
 
-                {/* ── Claude Code session signals (2.1.154): effort/stats, branch, background jobs, todos, last message ── */}
-
-                {/* Tier-2 signals strip: effort/mode, web tool use, files touched, 1h-cache, hook health */}
-                {!compact && (() => {
-                  const eff = main?.effort;
-                  const effHigh = eff === 'high' || eff === 'xhigh' || eff === 'max' || eff === 'ultra';
-                  const ws = main?.webSearches || 0;
-                  const wf = main?.webFetches || 0;
-                  const ft = main?.filesTouched || 0;
-                  const cc1h = main?.cacheCreation1h || 0;
-                  const hh = main?.hookHealth;
-                  const hookBad = hh && (hh.failures > 0 || hh.maxMs > 1500);
-                  if (!effHigh && !ws && !wf && !ft && !cc1h && !hookBad && tasks.length === 0) return null;
-                  const effStyle = (eff === 'max' || eff === 'ultra') ? 'bg-violet-500/20 text-violet-300 border-violet-500/30'
-                                 : eff === 'xhigh' ? 'bg-fuchsia-500/15 text-fuchsia-300 border-fuchsia-500/25'
-                                 : 'bg-amber-500/15 text-amber-300 border-amber-500/25';
-                  return (
-                    <>
-                      <div className="mt-1 pl-4 flex items-center gap-1.5 flex-wrap text-[9px]">
-                        {effHigh && (
-                          <span className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full border font-medium ${effStyle}`} title={`Reasoning effort: ${eff}`}>⚡ {eff === 'ultra' ? 'ULTRA' : eff.toUpperCase()}</span>
-                        )}
-                        {ws > 0 && <span className={`${textMuted} font-mono`} title={`${ws} web search request(s) this session`}>🔎 {ws}</span>}
-                        {wf > 0 && <span className={`${textMuted} font-mono`} title={`${wf} web fetch request(s) this session`}>🌐 {wf}</span>}
-                        {ft > 0 && <span className={`${textMuted} font-mono`} title={`${ft} file(s) tracked this session`}>📄 {ft}</span>}
-                        {cc1h > 0 && (
-                          <span className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded font-mono ${mi.toolBadgeBg || 'bg-orange-500/10'} text-orange-400/80`} title={`${cc1h.toLocaleString()} tokens written to the 1-hour cache tier (priced ~2x the 5-minute tier)`}>
-                            🕐 {formatTokens(cc1h)}
-                          </span>
-                        )}
-                        {tasks.length > 0 && (
-                          <span className={`ml-auto shrink-0 px-1.5 py-0.5 rounded-full whitespace-nowrap ${
-                            activeTaskCount > 0
-                              ? `${(as.active || {}).bg || 'bg-emerald-500/15'} ${(as.active || {}).text || 'text-emerald-400'}`
-                              : `${(as.stopped || {}).bg || 'bg-gray-500/15'} ${(as.stopped || {}).text || 'text-gray-500'}`
-                          }`}>
-                            {activeTaskCount > 0 ? `${activeTaskCount}/${tasks.length} running` : `${tasks.length} done`}
-                          </span>
-                        )}
-                      </div>
-                      {hookBad && (
-                        <div className="mt-1 pl-4 flex items-center gap-1.5 text-[9px]">
-                          <span className="shrink-0">🪝</span>
-                          {hh.failures > 0
-                            ? <span className="text-red-400" title="Hook(s) exited non-zero">{hh.failures} hook fail{hh.failures > 1 ? 's' : ''}</span>
-                            : <span className={textMuted}>{hh.total} hooks ok</span>}
-                          {hh.maxMs > 1500 && (
-                            <span className={`${textMuted} font-mono`} title={`Slowest hook: ${hh.slowest}`}>· {(hh.slowest || 'hook').split(':')[0]} {(hh.maxMs / 1000).toFixed(1)}s</span>
-                          )}
-                        </div>
-                      )}
-                    </>
-                  );
-                })()}
-
-                {/* Warnings strip: max-tokens / scheduled crons (branch · version · entrypoint moved up to Line 3) */}
-                {!compact && (main?.stopReason === 'max_tokens' || main?.sessionCrons?.length > 0) && (
-                  <div className="mt-1 pl-4 flex items-center gap-1 flex-wrap">
-                    {main.stopReason === 'max_tokens' && (
-                      <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[8px] bg-red-500/15 text-red-400 border border-red-500/20" title="Last turn hit the max output-token limit — the reply may be truncated">⚠ max tokens</span>
+                {/* Timer + token breakdown: duration · session · total · reuse (right-aligned, click for detail) */}
+                {!compact && (sessionTotal > 0 || mainDuration) && (
+                  <div className="mt-1 pl-4 flex items-center gap-1.5">
+                    {sessionTotal > 0 && (
+                      <TokenBreakdown session={sessionTokens} total={sessionTotal} cc1h={main?.cacheCreation1h || 0} reuse={sessionReuse} savedUsd={sessionSaved} scope="session" colors={colors} align="left" />
                     )}
-                    {main.sessionCrons?.length > 0 && (
-                      <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[8px] bg-sky-500/15 text-sky-400 border border-sky-500/20" title={`${main.sessionCrons.length} scheduled cron agent(s)`}>⏰ {main.sessionCrons.length}</span>
+                    {mainDuration && (
+                      <span className={`inline-flex items-center gap-0.5 font-mono text-[9px] tabular-nums whitespace-nowrap ml-auto ${mi.duration || 'text-gray-400'}`} title="Session duration / elapsed">
+                        <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" className="opacity-80 shrink-0"><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></svg>
+                        {mainDuration}
+                      </span>
                     )}
-                  </div>
-                )}
-
-                {/* Background jobs — running ones shown first (kept above todos: still-working signal) */}
-                {!compact && main?.backgroundTasks?.length > 0 && (
-                  <div className="mt-1 pl-4 space-y-0.5">
-                    {[...main.backgroundTasks].sort((a, b) => (b.status === 'running' ? 1 : 0) - (a.status === 'running' ? 1 : 0)).slice(0, 3).map((bt, i) => {
-                      const st = bt.status === 'running' ? { dot: 'bg-amber-400 animate-pulse', label: 'text-amber-400' }
-                               : bt.status === 'completed' ? { dot: 'bg-emerald-500', label: 'text-emerald-400' }
-                               : (bt.status === 'failed' || bt.status === 'error') ? { dot: 'bg-red-500', label: 'text-red-400' }
-                               : { dot: 'bg-gray-500', label: textMuted };
-                      return (
-                        <div key={bt.id || i} className={`flex items-center gap-1.5 min-w-0 ${bt.status === 'running' ? 'border-l-2 border-amber-400/60 pl-1.5' : ''}`} title={bt.command || bt.description || ''}>
-                          <span className="text-[9px] shrink-0 opacity-70">⚙</span>
-                          <span className={`w-1 h-1 rounded-full shrink-0 ${st.dot}`} />
-                          <span className={`text-[9px] ${mi.description || 'text-gray-400'} truncate min-w-0 flex-1`}>{bt.description || bt.command || 'background task'}</span>
-                          <span className={`text-[8px] font-mono shrink-0 ${st.label}`}>{bt.status}</span>
-                        </div>
-                      );
-                    })}
-                    {main.backgroundTasks.length > 3 && (
-                      <span className={`text-[8px] ${textMuted} pl-4 block`}>+{main.backgroundTasks.length - 3} more</span>
-                    )}
-                  </div>
-                )}
-
-                {/* TODO checklist (from TodoWrite) — NOW accented · pending readable · done collapsed (click to reveal) */}
-                {!compact && main?.todos?.length > 0 && (() => {
-                  const total = main.todos.length;
-                  const doneItems = main.todos.filter(t => t.status === 'completed');
-                  const inProg = main.todos.filter(t => t.status === 'in_progress');
-                  const pending = main.todos.filter(t => t.status !== 'completed' && t.status !== 'in_progress');
-                  const done = doneItems.length;
-                  const pct = total ? Math.round((done / total) * 100) : 0;
-                  const complete = done === total;
-                  const doneOpen = !!openDone[sessionId];
-                  return (
-                    <div className="mt-1 pl-4 min-w-0">
-                      {/* Summary: done/total + progress bar */}
-                      <div className="flex items-center gap-1.5 min-w-0">
-                        <span className="text-[9px] shrink-0" title="Task checklist (TodoWrite)">{complete ? '✅' : '☑️'}</span>
-                        <span className={`text-[9px] font-mono tabular-nums shrink-0 ${complete ? 'text-emerald-400' : (mi.tokens || 'text-amber-500')}`}>{done}/{total}</span>
-                        <div className={`h-1 rounded-full ${mi.tokenBarTrack || 'bg-gray-700/30'} overflow-hidden w-[36px] shrink-0`}>
-                          <div className={`h-full rounded-full transition-all ${complete ? 'bg-emerald-500/60' : 'bg-amber-500/60'}`} style={{ width: `${pct}%` }} />
-                        </div>
-                      </div>
-                      {/* NOW — in-progress item(s): accent bar + bright */}
-                      {inProg.map((t, i) => (
-                        <div key={`ip${i}`} className="mt-0.5 flex items-start gap-1 min-w-0 border-l-2 border-amber-400/60 pl-1.5">
-                          <span className={`text-[8px] shrink-0 mt-px ${mi.tokens || 'text-amber-400'}`}>▶</span>
-                          <span className={`text-[9px] leading-snug font-medium line-clamp-2 min-w-0 ${mi.tokens || 'text-amber-300'}`} title={t.content}>{t.activeForm || t.content}</span>
-                        </div>
-                      ))}
-                      {/* Pending — normal weight */}
-                      {pending.length > 0 && (
-                        <div className="mt-0.5 pl-0.5 space-y-px">
-                          {pending.map((t, i) => (
-                            <div key={`pd${i}`} className="flex items-start gap-1 min-w-0">
-                              <span className={`text-[8px] shrink-0 mt-px ${textMuted}`}>○</span>
-                              <span className={`text-[9px] leading-snug line-clamp-1 min-w-0 ${textMuted}`} title={t.content}>{t.content}</span>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                      {/* Done — collapsed to a count; click to reveal (de-emphasized) */}
-                      {done > 0 && (
-                        <div className="mt-0.5 pl-0.5">
-                          <button
-                            onClick={(e) => { e.stopPropagation(); setOpenDone(prev => ({ ...prev, [sessionId]: !prev[sessionId] })); }}
-                            className={`flex items-center gap-1 text-[9px] opacity-70 hover:opacity-100 transition-opacity ${textMuted}`}
-                            title={doneOpen ? 'Hide completed' : 'Show completed'}
-                          >
-                            <span className="text-emerald-400/70">✓</span>
-                            <span className="font-mono tabular-nums">{done} done</span>
-                            <span className="text-[7px]">{doneOpen ? '▾' : '▸'}</span>
-                          </button>
-                          {doneOpen && (
-                            <div className="mt-px pl-2 space-y-px">
-                              {doneItems.map((t, i) => (
-                                <div key={`dn${i}`} className="flex items-start gap-1 min-w-0">
-                                  <span className="text-[8px] shrink-0 mt-px text-emerald-400/50">✓</span>
-                                  <span className="text-[8px] leading-snug line-clamp-1 min-w-0 text-gray-500" title={t.content}>{t.content}</span>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })()}
-
-                {/* Last assistant message (turn / result summary) */}
-                {!compact && main?.lastAssistantMessage && (
-                  <div className="mt-1 pl-4 flex items-start gap-1.5 min-w-0">
-                    <span className={`text-[9px] shrink-0 ${textMuted} mt-px`}>↳</span>
-                    <span className={`text-[9px] italic leading-relaxed line-clamp-2 min-w-0 ${mi.description || 'text-gray-400'}`} title={main.lastAssistantMessage}>{main.lastAssistantMessage}</span>
                   </div>
                 )}
               </div>
@@ -828,12 +896,45 @@ export function AgentTree({ agents = [], colors = {}, compact = false, expanded 
                 </div>
               )}
 
-              {/* Non-team tasks */}
-              {nonTeamTasks.length > 0 && (
-                <div className={`border-t ${borderColor} ${tasksBg} pb-2`}>
-                  {nonTeamTasks.map((task, i) => renderTask(task, i, nonTeamTasks.length, { expanded, compact, textMuted, borderColor, getStatus, getModel, getTypeInfo, getDuration, formatTime, formatTokens, getHealthIndicator, agentConflicts, teamTotalTokens: 0 }))}
-                </div>
-              )}
+              {/* Non-team tasks — grouped under a "Subagents" header that absorbs the running count
+                  and ties the rows to the parent session (so they don't read as orphaned cards) */}
+              {nonTeamTasks.length > 0 && (() => {
+                const naActive = nonTeamTasks.filter(t => t.status === 'active').length;
+                const naTokens = nonTeamTasks.reduce((s, t) => s + (t.tokens || (t.inputTokens || 0) + (t.outputTokens || 0) || 0), 0);
+                const collapsed = !!collapsedSubs[sessionId];
+                return (
+                  <div className={`border-t ${borderColor}`}>
+                    {/* Subagents group header — click to collapse/expand the rows */}
+                    <div
+                      className={`${expanded ? 'pr-3 pl-7 py-1.5' : 'pr-2 pl-5 py-1'} ${mi.subagentHeaderBg || 'bg-white/[0.03]'} border-b ${borderColor} flex items-center justify-between cursor-pointer select-none hover:bg-white/[0.05] transition-colors`}
+                      onClick={() => setCollapsedSubs(prev => ({ ...prev, [sessionId]: !prev[sessionId] }))}
+                      title={collapsed ? 'กางรายการ subagent' : 'หดรายการ subagent'}
+                    >
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <span className={`text-[7px] shrink-0 ${textMuted}`}>{collapsed ? '▸' : '▾'}</span>
+                        <span className={`text-[10px] shrink-0 ${textMuted}`}>⚙</span>
+                        <span className={`text-[10px] font-semibold ${colors?.text?.secondary || 'text-gray-300'}`}>Subagents</span>
+                        <span className={`text-[9px] px-1.5 py-0.5 rounded-full whitespace-nowrap shrink-0 ${
+                          naActive > 0
+                            ? `${(as.active || {}).bg || 'bg-emerald-500/15'} ${(as.active || {}).text || 'text-emerald-400'}`
+                            : `${(as.stopped || {}).bg || 'bg-gray-500/15'} ${(as.stopped || {}).text || 'text-gray-500'}`
+                        }`}>
+                          {naActive > 0 ? `${naActive}/${nonTeamTasks.length} running` : `${nonTeamTasks.length} done`}
+                        </span>
+                      </div>
+                      {naTokens > 0 && (
+                        <span className={`font-mono text-[9px] tabular-nums shrink-0 ${mi.tokens || 'text-amber-500'}`}>{formatTokens(naTokens)}</span>
+                      )}
+                    </div>
+                    {/* Subagent rows */}
+                    {!collapsed && (
+                      <div className={`${tasksBg} pb-2`}>
+                        {nonTeamTasks.map((task, i) => renderTask(task, i, nonTeamTasks.length, { expanded, compact, textMuted, borderColor, getStatus, getModel, getTypeInfo, getDuration, formatTime, formatTokens, getHealthIndicator, agentConflicts, teamTotalTokens: 0 }))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
             </div>
           );
         })}
@@ -866,6 +967,104 @@ export function AgentTree({ agents = [], colors = {}, compact = false, expanded 
           <span className={`font-mono tabular-nums ${mi.tokens || 'text-amber-500'}`}>{formatTokens(totalTokens)}</span>
         )}
       </div>}
+
+      {/* Full last assistant message popup — fetched on demand */}
+      {fullMsg && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center" onClick={() => setFullMsg(null)}>
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+          <div
+            className={`relative w-[480px] max-w-[90vw] max-h-[72vh] flex flex-col rounded-xl border ${borderColor} ${colors?.bg?.primary || 'bg-[#0f0f17]'} shadow-2xl shadow-black/50`}
+            onClick={e => e.stopPropagation()}
+          >
+            <div className={`sticky top-0 px-4 py-3 border-b ${borderColor} ${colors?.bg?.secondary || 'bg-[#13131f]'} flex items-center justify-between`}>
+              <span className={`flex items-center gap-2 text-[11px] font-medium ${colors?.text?.primary || 'text-white'}`}>
+                ↳ Last message
+                <span className="flex items-center gap-1 text-[9px] text-emerald-400" title="อัปเดตอัตโนมัติทุก 3 วินาที">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />live
+                </span>
+              </span>
+              <button onClick={() => setFullMsg(null)} className={`p-1 rounded hover:bg-white/10 ${textMuted}`}>
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+              </button>
+            </div>
+            <div className="px-4 py-3 overflow-y-auto">
+              {fullMsg.loading && <div className={`text-[10px] ${textMuted} mb-2`}>กำลังโหลดข้อความเต็ม…</div>}
+              {fullMsg.error && <div className="text-[10px] text-amber-400 mb-2">โหลดเต็มไม่ได้ ({fullMsg.error}) — แสดงเท่าที่มี</div>}
+              <div className={`text-[12px] leading-relaxed break-words ${colors?.text?.secondary || 'text-gray-300'}`}>
+                <ReactMarkdown
+                  remarkPlugins={[remarkGfm]}
+                  components={{
+                    h1: (p) => <div className="text-[13px] font-semibold text-white mt-2 mb-1" {...p} />,
+                    h2: (p) => <div className="text-[12px] font-semibold text-white mt-2 mb-1" {...p} />,
+                    h3: (p) => <div className="text-[12px] font-semibold text-gray-200 mt-1.5 mb-0.5" {...p} />,
+                    p: (p) => <p className="mb-1.5" {...p} />,
+                    ul: (p) => <ul className="list-disc pl-4 mb-1.5 space-y-0.5" {...p} />,
+                    ol: (p) => <ol className="list-decimal pl-4 mb-1.5 space-y-0.5" {...p} />,
+                    li: (p) => <li className="leading-snug" {...p} />,
+                    strong: (p) => <strong className="font-semibold text-gray-100" {...p} />,
+                    a: (p) => <a className="text-sky-400 underline" target="_blank" rel="noreferrer" {...p} />,
+                    blockquote: (p) => <blockquote className="border-l-2 border-gray-600 pl-2 text-gray-400 mb-1.5" {...p} />,
+                    hr: () => <hr className="border-gray-700 my-2" />,
+                    pre: (p) => <pre className="p-2 rounded bg-black/40 overflow-x-auto text-[11px] mb-1.5" {...p} />,
+                    code: ({ className, children, ...rest }) => (
+                      /language-/.test(className || '')
+                        ? <code className={`font-mono text-[11px] ${className || ''}`} {...rest}>{children}</code>
+                        : <code className="px-1 py-0.5 rounded bg-white/10 text-amber-300 font-mono text-[10px]" {...rest}>{children}</code>
+                    ),
+                    table: (p) => <div className="overflow-x-auto mb-1.5"><table className="border-collapse text-[11px]" {...p} /></div>,
+                    th: (p) => <th className="border border-gray-700 px-1.5 py-0.5 text-left font-semibold" {...p} />,
+                    td: (p) => <td className="border border-gray-700/60 px-1.5 py-0.5" {...p} />,
+                  }}
+                >
+                  {fullMsg.text}
+                </ReactMarkdown>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Background job detail popup */}
+      {bgDetail && (() => {
+        const stColor = bgDetail.status === 'running' ? 'bg-amber-500/15 text-amber-400'
+          : bgDetail.status === 'completed' ? 'bg-emerald-500/15 text-emerald-400'
+          : (bgDetail.status === 'failed' || bgDetail.status === 'error') ? 'bg-red-500/15 text-red-400'
+          : 'bg-gray-500/15 text-gray-400';
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center" onClick={() => setBgDetail(null)}>
+            <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+            <div
+              className={`relative w-[440px] max-w-[90vw] max-h-[70vh] flex flex-col rounded-xl border ${borderColor} ${colors?.bg?.primary || 'bg-[#0f0f17]'} shadow-2xl shadow-black/50`}
+              onClick={e => e.stopPropagation()}
+            >
+              <div className={`sticky top-0 px-4 py-3 border-b ${borderColor} ${colors?.bg?.secondary || 'bg-[#13131f]'} flex items-center justify-between`}>
+                <span className={`flex items-center gap-2 text-[11px] font-medium ${colors?.text?.primary || 'text-white'}`}>
+                  ⚙ Background job
+                  <span className={`text-[9px] px-1.5 py-0.5 rounded-full ${stColor}`}>{bgDetail.status}</span>
+                </span>
+                <button onClick={() => setBgDetail(null)} className={`p-1 rounded hover:bg-white/10 ${textMuted}`}>
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                </button>
+              </div>
+              <div className="px-4 py-3 space-y-3 overflow-y-auto">
+                <div>
+                  <div className={`text-[9px] uppercase tracking-wider ${textMuted} mb-1`}>Description</div>
+                  <div className={`text-[11px] leading-relaxed ${colors?.text?.secondary || 'text-gray-300'}`}>{bgDetail.description || '—'}</div>
+                </div>
+                {bgDetail.command && (
+                  <div>
+                    <div className={`text-[9px] uppercase tracking-wider ${textMuted} mb-1`}>Command</div>
+                    <pre className={`text-[10px] font-mono p-2 rounded bg-black/40 overflow-x-auto whitespace-pre-wrap break-words ${colors?.text?.secondary || 'text-gray-300'}`}>{bgDetail.command}</pre>
+                  </div>
+                )}
+                {bgDetail.type && (
+                  <div className={`text-[9px] ${textMuted}`}>type: <span className={`font-mono ${colors?.text?.secondary || 'text-gray-300'}`}>{bgDetail.type}</span></div>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Session Detail Popup */}
       {detailSession && (() => {
