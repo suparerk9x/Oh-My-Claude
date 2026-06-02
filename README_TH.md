@@ -34,7 +34,7 @@
 
 ### 🤖 "Agent ทำอะไรกันอยู่?"
 
-- Opus 4.6 ปล่อย team agents — code-reviewer, worker, reviewer-2 — แล้ว **มันทำอะไรกันอยู่?**
+- Opus 4.8 ปล่อย team agents — code-reviewer, worker, reviewer-2 — แล้ว **มันทำอะไรกันอยู่?**
 - อยากเห็น: ใครกำลัง active, ใช้ tool อะไร, กิน token ไปเท่าไหร่แล้ว
 - **Team Comms** — มันคุยกันจริงๆ (broadcast, DM, สั่งงาน) ดูสนุกมาก
 - **Subagents** — ดูมัน spawn มา ทำงาน แล้วก็ตาย วงจรชีวิต AI
@@ -61,7 +61,7 @@
 | **Dark / Light Theme** | ระบบธีมครบวงจรพร้อม semantic color tokens — อ่านง่ายทั้งโหมดมืดและสว่าง |
 | **Notifications** | แจ้งเตือน desktop สำหรับ events |
 | **Bilingual Guide** | คู่มือใน app EN/TH (11 หมวด) |
-| **Chrome Extension** | Sync usage % จาก Claude.ai อัตโนมัติ — **แนะนำอย่างยิ่ง** |
+| **Auto Usage Sync** | Session/weekly % sync อัตโนมัติจาก OAuth token ของ Claude Code — ไม่ต้องเปิด browser หรือ extension |
 | **Demo Mode** | เล่นซ้ำ 1,006 events จริงพร้อม retro tape counter UI |
 
 ### ตัวบอกสถานะ Usage
@@ -257,9 +257,9 @@ npm run install:all
 | Windows | `node "D:/Projects/Oh-My-Claude/hooks/send_event.js" --event-type PreToolUse` |
 | macOS | `node "/Users/john/Oh-My-Claude/hooks/send_event.js" --event-type PreToolUse` |
 
-### ขั้นตอน 3: ติดตั้ง Chrome Extension
+### ขั้นตอน 3: Sync Usage % (อัตโนมัติ)
 
-> **แนะนำอย่างยิ่ง** — นี่คือวิธีที่ Token Usage panel ได้ข้อมูล session/weekly % และนับถอยหลัง ดูรายละเอียดที่หมวด [Chrome Extension](#-chrome-extension-แนะนำอย่างยิ่ง)
+> Session/weekly % และตัวนับถอยหลัง sync อัตโนมัติจาก OAuth token ของ Claude Code บนเครื่องนี้ — **ไม่ต้องติดตั้งอะไร** แค่ login Claude Code (`claude` CLI) ค้างไว้ ถ้า Claude Code อยู่*คนละเครื่อง*กับ dashboard ดูทางเลือกสำรองที่หมวด [Chrome Extension](#-chrome-extension-ทางเลือกสำรอง)
 
 ### ขั้นตอน 4: เริ่มใช้งาน
 
@@ -290,11 +290,11 @@ npm run dev
 
 ```mermaid
 flowchart TD
-    CC["💻 Claude Code\nTerminal / IDE"]
-    CE["🌐 Chrome Extension\nดึงข้อมูลจาก claude.ai"]
+    CC["💻 Claude Code\nHooks (events) + OAuth (usage %)"]
+    CE["🌐 Chrome Extension\nทางเลือกสำรองสำหรับ usage"]
 
-    CC -->|"Hooks ส่ง events"| BS
-    CE -->|"Sync usage %"| BS
+    CC -->|"Events + usage %"| BS
+    CE -.->|"Usage % (สำรอง)"| BS
 
     BS["🖥️ Backend Server\nExpress + WebSocket · port 4824"]
 
@@ -314,17 +314,18 @@ flowchart TD
 **การไหลของข้อมูล:**
 
 1. **Claude Code** → Hooks ยิง events (PreToolUse, PostToolUse, SessionStart, SessionEnd ฯลฯ) → Backend
-2. **Chrome Extension** → ดึง usage % จาก claude.ai → Backend (ทุก 1 นาที)
-3. **Backend** → รวมข้อมูลทั้งหมด → กระจายผ่าน WebSocket
-4. **Dashboard** → รับผ่าน WebSocket → แสดงผลแบบเรียลไทม์
+2. **Claude Code OAuth** → Backend อ่าน OAuth token ในเครื่องแล้ว query usage % จาก Anthropic (ทุก 1 นาที ไม่ต้องเปิด browser) → เป็นตัวเลขเดียวกับ panel "Account & Usage" ของ Claude Code
+3. **Chrome Extension** *(ทางเลือกสำรอง)* → ดึง usage % จาก claude.ai → Backend ใช้เฉพาะกรณี Claude Code ไม่ได้อยู่บนเครื่องนี้
+4. **Backend** → รวมข้อมูลทั้งหมด → กระจายผ่าน WebSocket
+5. **Dashboard** → รับผ่าน WebSocket → แสดงผลแบบเรียลไทม์
 
 ---
 
-## 🌐 Chrome Extension (แนะนำอย่างยิ่ง)
+## 🌐 Chrome Extension (ทางเลือกสำรอง)
 
-> **นี่คือวิธีที่ Token Usage panel ได้ข้อมูลมา** ถ้าไม่มี extension จะไม่เห็น session/weekly usage % หรือนับถอยหลัง — ซึ่งเป็นฟีเจอร์หลักที่ป้องกันไม่ให้ token หมดโดยไม่รู้ตัว
+> **ปกติไม่จำเป็นต้องใช้** usage % sync อัตโนมัติจาก OAuth token ของ Claude Code บนเครื่องเดียวกันอยู่แล้ว (ดูขั้นตอน 3) extension มีประโยชน์เฉพาะกรณีที่ Claude Code อยู่*คนละเครื่อง*กับ dashboard — มันจะยืม session ของ claude.ai ใน browser แทนการอ่าน token ในเครื่อง
 
-Sync % การใช้งานจาก Claude.ai มาที่ dashboard ทุก 1 นาที อัตโนมัติ
+Sync % การใช้งานจาก Claude.ai มาที่ dashboard ทุก 1 นาที ผ่าน browser
 
 ### ติดตั้ง
 
@@ -491,7 +492,7 @@ Oh-My-Claude/
 ├── scripts/
 │   └── prepare-demo-data.js  # แปลง events จริง → ชุดข้อมูล demo
 │
-├── extension/                # Chrome extension (แนะนำอย่างยิ่ง)
+├── extension/                # Chrome extension (ทางเลือกสำรองสำหรับ usage)
 │   ├── manifest.json         # Manifest V3
 │   ├── background.js         # Background sync worker
 │   ├── content.js            # ดึง usage จาก claude.ai
@@ -616,7 +617,8 @@ curl http://localhost:4824/health
 |--------|---------|
 | Dashboard แสดง **OFF** | 1. ตรวจ backend: `curl http://localhost:4824/health` <br> 2. ตรวจ browser console หา WebSocket errors <br> 3. Hard refresh: `Ctrl+Shift+R` |
 | ไม่มี events ปรากฏ | 1. ตรวจ hooks ใน `~/.claude/settings.json` <br> 2. ตรวจ path ใช้ forward slash `/` <br> 3. Restart terminal ของ Claude Code |
-| Extension ไม่ sync | 1. ต้อง login claude.ai <br> 2. ตรวจ extension เปิดอยู่ที่ `chrome://extensions/` <br> 3. ตรวจ backend console หา "Usage received" |
+| Usage % เป็น 0 / ไม่อัปเดต | 1. ตรวจว่า Claude Code login บนเครื่องนี้แล้ว <br> 2. ต้องมีไฟล์ `~/.claude/.credentials.json` <br> 3. ตรวจ backend console หา `[USAGE] Synced from Claude Code OAuth` |
+| Extension ไม่ sync (เฉพาะ fallback) | 1. ต้อง login claude.ai <br> 2. ตรวจ extension เปิดอยู่ที่ `chrome://extensions/` <br> 3. ตรวจ backend console หา "Usage received" |
 | ติดตั้ง PWA ไม่ได้ | 1. ต้องเข้าผ่าน `http://localhost:4825` (ไม่ใช่ IP) <br> 2. ใช้ Chrome หรือ Edge <br> 3. ตรวจ DevTools → Application → Manifest |
 | Demo mode ไม่ทำงาน | 1. เปิด Guide → กดปุ่ม Demo <br> 2. ตรวจ browser console หา errors <br> 3. ตรวจว่ามีไฟล์ `frontend/src/data/demoData.js` |
 

@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git -C \"d:\\\\Antigravity\\\\Oh-My-Claude\" status --short)",
+      "Bash(git -C \"d:\\\\Antigravity\\\\Oh-My-Claude\" diff --stat)",
+      "Bash(git -C \"d:\\\\Antigravity\\\\Oh-My-Claude\" branch -vv)",
+      "Bash(git -C \"d:\\\\Antigravity\\\\Oh-My-Claude\" remote -v)"
+    ]
+  }
+}

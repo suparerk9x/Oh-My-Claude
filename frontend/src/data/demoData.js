@@ -6,13 +6,13 @@ export const DEMO_EVENTS = [{"id":"evt_1771588904660_yoceps","type":"PostToolUse
 
 export const DEMO_SESSION_META = {
   "98065d3b-6d9e-4000-9e45-79db708fb9df": {
-    "model": "claude-opus-4-6",
+    "model": "claude-opus-4-8",
     "cwd": "d:\\Antigravity\\CatStay Platform",
     "projectName": "CatStay Platform",
     "totalTokens": 500000
   },
   "6c5b8904-bd49-4983-829d-b9b0892a8048": {
-    "model": "claude-opus-4-6",
+    "model": "claude-opus-4-8",
     "cwd": "d:\\Antigravity\\Oh-My-Claude",
     "projectName": "Oh-My-Claude",
     "totalTokens": 500000
@@ -21,7 +21,7 @@ export const DEMO_SESSION_META = {
 
 export const DEMO_AGENT_META = {
   "a3afe20": {
-    "model": "claude-opus-4-6",
+    "model": "claude-opus-4-8",
     "tokens": 2395447,
     "inputTokens": 2395073,
     "outputTokens": 374,
@@ -34,7 +34,7 @@ export const DEMO_AGENT_META = {
     "agentType": "general-purpose"
   },
   "a9a3ee1": {
-    "model": "claude-opus-4-6",
+    "model": "claude-opus-4-8",
     "tokens": 395000,
     "inputTokens": 335750,
     "outputTokens": 59250,
@@ -46,7 +46,7 @@ export const DEMO_AGENT_META = {
     "agentType": "code-reviewer"
   },
   "a38c790": {
-    "model": "claude-opus-4-6",
+    "model": "claude-opus-4-8",
     "tokens": 2611323,
     "inputTokens": 2611066,
     "outputTokens": 257,
@@ -60,7 +60,7 @@ export const DEMO_AGENT_META = {
     "agentType": "Plan"
   },
   "a8ca2d1": {
-    "model": "claude-opus-4-6",
+    "model": "claude-opus-4-8",
     "tokens": 646962,
     "inputTokens": 646903,
     "outputTokens": 59,
@@ -73,7 +73,7 @@ export const DEMO_AGENT_META = {
     "agentType": "general-purpose"
   },
   "aa42cc3": {
-    "model": "claude-opus-4-6",
+    "model": "claude-opus-4-8",
     "tokens": 312410,
     "inputTokens": 312396,
     "outputTokens": 14,
@@ -85,7 +85,7 @@ export const DEMO_AGENT_META = {
     "agentType": "general-purpose"
   },
   "aca8612": {
-    "model": "claude-opus-4-6",
+    "model": "claude-opus-4-8",
     "tokens": 1313562,
     "inputTokens": 1313313,
     "outputTokens": 249,
@@ -99,7 +99,7 @@ export const DEMO_AGENT_META = {
     "agentType": "general-purpose"
   },
   "afe05a1": {
-    "model": "claude-opus-4-6",
+    "model": "claude-opus-4-8",
     "tokens": 4211862,
     "inputTokens": 4211306,
     "outputTokens": 556,
@@ -113,7 +113,7 @@ export const DEMO_AGENT_META = {
     "agentType": "Plan"
   },
   "team_cr01": {
-    "model": "claude-opus-4-6",
+    "model": "claude-opus-4-8",
     "tokens": 385000,
     "inputTokens": 327000,
     "outputTokens": 58000,
@@ -126,7 +126,7 @@ export const DEMO_AGENT_META = {
     "agentType": "code-reviewer"
   },
   "team_gp01": {
-    "model": "claude-opus-4-6",
+    "model": "claude-opus-4-8",
     "tokens": 320000,
     "inputTokens": 272000,
     "outputTokens": 48000,

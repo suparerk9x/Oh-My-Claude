@@ -200,6 +200,34 @@ export default function MediumApp({ onSwitchToFull }) {
     return 'soon';
   };
 
+  // Round up to the next 10-minute mark (e.g. 14:23 → 14:30, 14:31 → 14:40, 14:59 → 15:00)
+  const roundUpToTenMinutes = (d) => {
+    const m = d.getMinutes();
+    if (d.getSeconds() > 0 || d.getMilliseconds() > 0 || m % 10 !== 0) {
+      d.setMinutes(Math.floor(m / 10) * 10 + 10, 0, 0);
+    }
+    return d;
+  };
+
+  const formatResetAt = (isoStr) => {
+    if (!isoStr) return null;
+    try {
+      const d = roundUpToTenMinutes(new Date(isoStr));
+      return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    } catch { return null; }
+  };
+  const sessionResetAt = demoMode ? '17:00' : formatResetAt(claudeUsage?.five_hour?.resets_at);
+  const weeklyResetAt = demoMode ? 'Sat 15:00' : (() => {
+    if (!claudeUsage?.seven_day?.resets_at) return null;
+    try {
+      const d = roundUpToTenMinutes(new Date(claudeUsage.seven_day.resets_at));
+      const diff = d - new Date();
+      const days = Math.floor(diff / 86400000);
+      if (days > 0) return d.toLocaleDateString([], { weekday: 'short' }) + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    } catch { return null; }
+  })();
+
   // Page title
   useEffect(() => {
     const mainAgents = displayAgents.filter(a => a.type === 'main');
@@ -240,7 +268,7 @@ export default function MediumApp({ onSwitchToFull }) {
       if (selectedEventType) {
         if (selectedEventType === 'tools' && e.type !== 'PreToolUse') return false;
         if (selectedEventType === 'success' && e.type !== 'PostToolUse') return false;
-        if (selectedEventType === 'errors' && e.type !== 'PostToolUseFailure') return false;
+        if (selectedEventType === 'errors' && !((e.type === 'PostToolUse' && e.isError) || e.type === 'PostToolUseFailure')) return false;
         if (selectedEventType === 'prompts' && e.type !== 'UserPromptSubmit') return false;
       }
       return true;
@@ -260,11 +288,11 @@ export default function MediumApp({ onSwitchToFull }) {
 
       {/* Header */}
       <div className={`h-7 flex items-center justify-between px-2 border-b ${colors.border} ${colors.bg.header} flex-shrink-0`}>
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-1">
           <svg className="w-3.5 h-3.5 shrink-0" fill="none" viewBox="0 -.01 39.5 39.53" xmlns="http://www.w3.org/2000/svg">
             <path d="m7.75 26.27 7.77-4.36.13-.38-.13-.21h-.38l-1.3-.08-4.44-.12-3.85-.16-3.73-.2-.94-.2-.88-1.16.09-.58.79-.53 1.13.1 2.5.17 3.75.26 2.72.16 4.03.42h.64l.09-.26-.22-.16-.17-.16-3.88-2.63-4.2-2.78-2.2-1.6-1.19-.81-.6-.76-.26-1.66 1.08-1.19 1.45.1.37.1 1.47 1.13 3.14 2.43 4.1 3.02.6.5.24-.17.03-.12-.27-.45-2.23-4.03-2.38-4.1-1.06-1.7-.28-1.02c-.1-.42-.17-.77-.17-1.2l1.23-1.67.68-.22 1.64.22.69.6 1.02 2.33 1.65 3.67 2.56 4.99.75 1.48.4 1.37.15.42h.26v-.24l.21-2.81.39-3.45.38-4.44.13-1.25.62-1.5 1.23-.81.96.46.79 1.13-.11.73-.47 3.05-.92 4.78-.6 3.2h.35l.4-.4 1.62-2.15 2.72-3.4 1.2-1.35 1.4-1.49.9-.71h1.7l1.25 1.86-.56 1.92-1.75 2.22-1.45 1.88-2.08 2.8-1.3 2.24.12.18.31-.03 4.7-1 2.54-.46 3.03-.52 1.37.64.15.65-.54 1.33-3.24.8-3.8.76-5.66 1.34-.07.05.08.1 2.55.24 1.09.06h2.67l4.97.37 1.3.86.78 1.05-.13.8-2 1.02-2.7-.64-6.3-1.5-2.16-.54h-.3v.18l1.8 1.76 3.3 2.98 4.13 3.84.21.95-.53.75-.56-.08-3.63-2.73-1.4-1.23-3.17-2.67h-.21v.28l.73 1.07 3.86 5.8.2 1.78-.28.58-1 .35-1.1-.2-2.26-3.17-2.33-3.57-1.88-3.2-.23.13-1.11 11.95-.52.61-1.2.46-1-.76-.53-1.23.53-2.43.64-3.17.52-2.52.47-3.13.28-1.04-.02-.07-.23.03-2.36 3.24-3.59 4.85-2.84 3.04-.68.27-1.18-.61.11-1.09.66-.97 3.93-5 2.37-3.1 1.53-1.79-.01-.26h-.09l-10.44 6.78-1.86.24-.8-.75.1-1.23.38-.4 3.14-2.16z" fill="#d97757"/>
           </svg>
-          <span className={`text-[12px] font-bold ${colors.text.title}`}>Oh-My-Claude<span className="text-[#d97757]">!</span></span>
+          <span className={`text-[12px] font-bold ${colors.text.title}`}>OMC<span className="text-[#d97757]">!</span></span>
           <div className={`w-1.5 h-1.5 rounded-full ${demoMode ? 'bg-amber-400 animate-pulse' : connected ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`} />
           {demoMode ? (
             <span className={`text-[8px] font-bold ${colors.status.warning} uppercase tracking-wider`}>DEMO</span>
@@ -276,7 +304,7 @@ export default function MediumApp({ onSwitchToFull }) {
             <span className={`text-[8px] ${colors.status.error}`} title="Extension not syncing">💀</span>
           )}
         </div>
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-0.5">
           <button
             onClick={() => {
               const modes = ['compact', 'full'];
@@ -314,13 +342,25 @@ export default function MediumApp({ onSwitchToFull }) {
               </svg>
             )}
           </button>
+          {/* Popup Medium (300px narrow window) — close the host window manually after */}
+          <button
+            onClick={() => {
+              window.open('/medium.html', '_blank', 'popup,width=300,height=870');
+            }}
+            className={`p-0.5 rounded ${colors.button.text} ${colors.cardHover} transition-colors h-5 w-5 flex items-center justify-center`}
+            title="Pop out as 300px narrow window"
+          >
+            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3a1 1 0 011-1h10a1 1 0 011 1v14a1 1 0 01-1 1h-4M4 8h10a1 1 0 011 1v12a1 1 0 01-1 1H4a1 1 0 01-1-1V9a1 1 0 011-1z" />
+            </svg>
+          </button>
           <button
             onClick={() => {
               if (onSwitchToFull) {
                 onSwitchToFull();
               } else {
                 try { window.resizeTo(965, 870); } catch {}
-                window.location.href = '/';
+                window.location.href = '/full.html';
               }
             }}
             className={`p-0.5 rounded ${colors.button.text} ${colors.cardHover} transition-colors`}
@@ -340,11 +380,11 @@ export default function MediumApp({ onSwitchToFull }) {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
             </svg>
           </button>
-          {/* Guide */}
+          {/* Guide — open in full view */}
           <button
-            onClick={() => setShowHelp(true)}
+            onClick={() => window.open('/full.html?guide=1', '_blank', 'popup,width=965,height=870')}
             className={`p-0.5 rounded ${colors.button.text} ${colors.cardHover} transition-colors h-5 w-5 flex items-center justify-center`}
-            title="Dashboard Guide"
+            title="Open Guide (Full View)"
           >
             <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -367,9 +407,9 @@ export default function MediumApp({ onSwitchToFull }) {
       </div>
 
       {/* Token Gauges Row */}
-      <div className={`grid grid-cols-2 gap-3 px-2 py-1.5 border-b ${colors.border} ${colors.bg.secondary} flex-shrink-0`}>
-        <TokenGauge label="Session" pct={sessionPct} resetTime={getSessionResetTime()} resetType="rolling" colors={colors} />
-        <TokenGauge label="Weekly" pct={weeklyPct} resetTime={getWeeklyResetTime()} resetType="rolling" colors={colors} />
+      <div className={`grid grid-cols-2 gap-4 px-3 py-2 border-b ${colors.border} ${colors.bg.secondary} flex-shrink-0`}>
+        <TokenGauge label="Session" pct={sessionPct} resetTime={getSessionResetTime()} resetAt={sessionResetAt} resetType="rolling" colors={colors} />
+        <TokenGauge label="Weekly" pct={weeklyPct} resetTime={getWeeklyResetTime()} resetAt={weeklyResetAt} resetType="rolling" colors={colors} />
       </div>
 
       {/* Agents Panel — 75% */}
@@ -486,7 +526,7 @@ export default function MediumApp({ onSwitchToFull }) {
               <span className="text-[7px]">✅</span><span className={`font-mono ${colors.semantic?.emerald?.text || 'text-emerald-400'}`}>{eventCounts.PostToolUse || 0}</span>
             </button>
             <button onClick={() => setSelectedEventType(selectedEventType === 'errors' ? null : 'errors')} className={`px-0.5 py-0.5 rounded transition-all whitespace-nowrap ${selectedEventType === 'errors' ? `${colors.semantic?.red?.bg || 'bg-red-500/20'} ring-1 ${colors.semantic?.red?.ring || 'ring-red-500/50'}` : (colors.semantic?.red?.bgHover || 'hover:bg-red-500/10')}`} title="Errors">
-              <span className="text-[7px]">❌</span><span className={`font-mono ${colors.semantic?.red?.text || 'text-red-400'}`}>{eventCounts.PostToolUseFailure || 0}</span>
+              <span className="text-[7px]">❌</span><span className={`font-mono ${colors.semantic?.red?.text || 'text-red-400'}`}>{displayEvents.filter(e => (e.type === 'PostToolUse' && e.isError) || e.type === 'PostToolUseFailure').length || 0}</span>
             </button>
             <button onClick={() => setSelectedEventType(selectedEventType === 'prompts' ? null : 'prompts')} className={`px-0.5 py-0.5 rounded transition-all whitespace-nowrap ${selectedEventType === 'prompts' ? `${colors.semantic?.amber?.bg || 'bg-amber-500/20'} ring-1 ${colors.semantic?.amber?.ring || 'ring-amber-500/50'}` : (colors.semantic?.amber?.bgHover || 'hover:bg-amber-500/10')}`} title="Prompts">
               <span className="text-[7px]">💬</span><span className={`font-mono ${colors.semantic?.amber?.text || 'text-amber-400'}`}>{eventCounts.UserPromptSubmit || 0}</span>
@@ -494,12 +534,17 @@ export default function MediumApp({ onSwitchToFull }) {
           </div>
         </div>
         <div className="flex-1" />
-        {/* Right: Monthly Cost + model breakdown + Clock */}
+        {/* Right: Monthly Cost (hover for breakdown) + Clock */}
         <div className="flex items-center flex-nowrap shrink-0 gap-1.5">
-          <span className={`font-mono font-bold ${colors.status.success}`}>${monthCost.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>
-          <span className="flex items-center gap-0.5" title="Opus"><span className={colors.model?.opus?.text || 'text-violet-400'}>◆</span><span className={`font-mono ${colors.model?.opus?.text || 'text-violet-400'}`}>${(tokens.monthModelUsage?.Opus?.estimatedCost || 0).toLocaleString('en-US', {maximumFractionDigits: 0})}</span></span>
-          <span className="flex items-center gap-0.5" title="Sonnet"><span className={colors.model?.sonnet?.text || 'text-blue-400'}>●</span><span className={`font-mono ${colors.model?.sonnet?.text || 'text-blue-400'}`}>${(tokens.monthModelUsage?.Sonnet?.estimatedCost || 0).toLocaleString('en-US', {maximumFractionDigits: 0})}</span></span>
-          <span className="flex items-center gap-0.5" title="Haiku"><span className={colors.model?.haiku?.text || 'text-emerald-400'}>▪</span><span className={`font-mono ${colors.model?.haiku?.text || 'text-emerald-400'}`}>${(tokens.monthModelUsage?.Haiku?.estimatedCost || 0).toLocaleString('en-US', {maximumFractionDigits: 0})}</span></span>
+          <span className="relative group cursor-default">
+            <span className={`font-mono font-bold ${colors.status.success}`}>${monthCost.toLocaleString('en-US', {minimumFractionDigits: 0, maximumFractionDigits: 0})}</span>
+            <span className={`absolute bottom-full right-0 mb-1.5 hidden group-hover:flex flex-col gap-1 px-2.5 py-2 rounded-lg shadow-xl border ${colors.border} ${colors.bg.header} text-[10px] whitespace-nowrap z-50`}>
+              <span className={`font-mono font-bold text-[12px] ${colors.status.success} border-b ${colors.border} pb-1 mb-0.5`}>${monthCost.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}<span className={`text-[8px] ${colors.text.muted} ml-1 font-normal`}>this month</span></span>
+              <span className="flex items-center gap-1.5"><span className={colors.model?.opus?.text || 'text-violet-400'}>◆</span><span className={colors.text.muted}>Opus</span><span className={`font-mono ml-auto ${colors.model?.opus?.text || 'text-violet-400'}`}>${(tokens.monthModelUsage?.Opus?.estimatedCost || 0).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span></span>
+              <span className="flex items-center gap-1.5"><span className={colors.model?.sonnet?.text || 'text-blue-400'}>●</span><span className={colors.text.muted}>Sonnet</span><span className={`font-mono ml-auto ${colors.model?.sonnet?.text || 'text-blue-400'}`}>${(tokens.monthModelUsage?.Sonnet?.estimatedCost || 0).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span></span>
+              <span className="flex items-center gap-1.5"><span className={colors.model?.haiku?.text || 'text-emerald-400'}>▪</span><span className={colors.text.muted}>Haiku</span><span className={`font-mono ml-auto ${colors.model?.haiku?.text || 'text-emerald-400'}`}>${(tokens.monthModelUsage?.Haiku?.estimatedCost || 0).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span></span>
+            </span>
+          </span>
           <span className={colors.text.muted}>|</span>
           <span className={`font-mono ${colors.text.clock}`}>{clock}</span>
         </div>

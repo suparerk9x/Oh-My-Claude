@@ -1,5 +1,5 @@
 import ReactDOM from 'react-dom/client'
-import MediumApp from './MediumApp.jsx'
+import App from './App.jsx'
 import './index.css'
 
 // Register service worker for PWA install
@@ -8,8 +8,5 @@ if ('serviceWorker' in navigator) {
 }
 
 ReactDOM.createRoot(document.getElementById('root')).render(
-  <MediumApp onSwitchToFull={() => {
-    try { window.resizeTo(965, 870); } catch {}
-    window.location.href = '/full.html';
-  }} />
+  <App />
 )

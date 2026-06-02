@@ -4,7 +4,7 @@ import PropTypes from 'prop-types';
  * Token Gauge Component - Displays usage percentage with progress bar
  * Shows N/A when no Chrome extension data is available
  */
-export function TokenGauge({ label, pct = null, resetTime = null, resetType = 'rolling', colors = {} }) {
+export function TokenGauge({ label, pct = null, resetTime = null, resetAt = null, resetType = 'rolling', colors = {} }) {
   // Handle N/A case (pct is null when no Chrome extension data)
   const isNA = pct === null;
   const displayPct = isNA ? 0 : pct;
@@ -44,17 +44,24 @@ export function TokenGauge({ label, pct = null, resetTime = null, resetType = 'r
         />
       </div>
 
-      {/* Bottom Row: Reset time (left) + Percentage (right) */}
-      <div className="flex items-center justify-between gap-2">
-        {/* Left: Reset time only */}
-        {resetTime && (
-          <span className={`text-[10px] ${textSecondary}`}>
-            {isNA ? 'No extension data' : `Resets ${resetType === 'rolling' ? 'in ' : ''}${resetTime}`}
-          </span>
-        )}
+      {/* Bottom: Reset info (left, 2 lines) + Large % (right, spanning 2 lines) */}
+      <div className="flex items-end justify-between gap-1">
+        {/* Left: Countdown + clock time stacked */}
+        <div className="flex flex-col leading-tight min-w-0">
+          {resetTime && (
+            <span className={`text-[10px] ${textSecondary}`}>
+              {isNA ? 'No extension data' : `Resets ${resetType === 'rolling' ? 'in ' : ''}${resetTime}`}
+            </span>
+          )}
+          {resetAt && !isNA && (
+            <span className={`text-[9px] ${textMuted}`}>
+              {resetAt}
+            </span>
+          )}
+        </div>
 
-        {/* Right: Large percentage or N/A */}
-        <span className={`text-lg font-bold font-mono tabular-nums leading-none ${color}`}>
+        {/* Right: Large percentage spanning both lines */}
+        <span className={`text-2xl font-bold font-mono tabular-nums leading-none shrink-0 ${color}`}>
           {isNA ? 'N/A' : `${pct}%`}
         </span>
       </div>
@@ -66,6 +73,7 @@ TokenGauge.propTypes = {
   label: PropTypes.string.isRequired,
   pct: PropTypes.number, // null = N/A
   resetTime: PropTypes.string,
+  resetAt: PropTypes.string,
   resetType: PropTypes.oneOf(['rolling', 'fixed']),
   colors: PropTypes.shape({
     text: PropTypes.shape({

@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import PropTypes from 'prop-types';
 import { formatTokens } from '../utils/format';
 
@@ -6,6 +7,8 @@ import { formatTokens } from '../utils/format';
  * No truncation - show all data
  */
 export function AgentTree({ agents = [], colors = {}, compact = false, expanded = false, smartStatus = {}, teams = [], hideFooter = false }) {
+  const [detailSession, setDetailSession] = useState(null);
+  const [openDone, setOpenDone] = useState(() => ({})); // sessionId -> reveal completed todos
   // Group by session - handle subagents with different sessionIds
   // First, build a map of main agents by their ID (main_<sessionId>)
   const mainAgentMap = {};
@@ -160,6 +163,11 @@ export function AgentTree({ agents = [], colors = {}, compact = false, expanded 
       'TeamCreate':  { icon: '👥', ...(tl.team    || { color: 'text-indigo-500', bg: 'bg-indigo-500/15' }) },
       'SendMessage': { icon: '📨', ...(tl.web     || { color: 'text-cyan-500',   bg: 'bg-cyan-500/15' }) },
       'TeamDelete':  { icon: '🧹', ...(tl.teamDel || { color: 'text-gray-500',   bg: 'bg-gray-500/15' }) },
+      'TodoWrite':   { icon: '📋', ...(tl.todo    || { color: 'text-amber-500',  bg: 'bg-amber-500/15' }) },
+      'AskUserQuestion': { icon: '❓', ...(tl.ask  || { color: 'text-orange-500', bg: 'bg-orange-500/15' }) },
+      'ToolSearch':  { icon: '🔎', ...(tl.search  || { color: 'text-sky-500',    bg: 'bg-sky-500/15' }) },
+      'Workflow':    { icon: '🧩', ...(tl.workflow|| { color: 'text-violet-500', bg: 'bg-violet-500/15' }) },
+      'Skill':       { icon: '✨', ...(tl.skill   || { color: 'text-indigo-500', bg: 'bg-indigo-500/15' }) },
     };
 
     // Try to extract tool name from start of lastTask
@@ -312,7 +320,9 @@ export function AgentTree({ agents = [], colors = {}, compact = false, expanded 
     return (
       <div
         key={task.id || i}
-        className={`${ctx.expanded ? 'px-3 pt-3 pb-0' : 'px-2 pt-2 pb-0'} ${i < totalCount - 1 ? `border-b ${mi.separator || 'border-gray-800/20'}` : ''} ${task.status === 'stopped' ? 'opacity-50' : ''}`}
+        className={`${ctx.expanded ? 'px-3 pt-3 pb-0' : 'px-2 pt-2 pb-0'} ${i < totalCount - 1 ? `border-b ${mi.separator || 'border-gray-800/20'}` : ''} ${task.status === 'stopped' ? 'opacity-50' : ''} cursor-pointer hover:bg-white/[0.02] transition-colors`}
+        onClick={() => setDetailSession({ sessionId: task.sessionId || task.id, main: task, tasks: [], teamInfo: task.teamName ? { name: task.teamName } : null, sessionTokens: tokens, isSubagent: true })}
+        title="Click for details"
       >
         <div className={`${ctx.expanded ? 'pl-4 space-y-1.5' : 'pl-3 space-y-1'}`}>
           {/* Line 1: Status (fixed) + Model + Type + Name + Health + Duration + Tokens */}
@@ -445,6 +455,10 @@ export function AgentTree({ agents = [], colors = {}, compact = false, expanded 
       <div className={`flex-1 overflow-y-auto overflow-x-hidden ${expanded ? 'flex flex-col p-2 gap-2' : ''}`}>
         {sessions.map(({ id: sessionId, main, tasks }) => {
           const isActive = ['active', 'idle', 'stale'].includes(main?.status) || tasks.some(t => ['active', 'idle', 'stale'].includes(t.status));
+          // Keep the card un-dimmed while a background shell job is still running, even if the agent
+          // itself has stopped — the work isn't finished yet, so the status shouldn't fade out.
+          const hasRunningBg = main?.backgroundTasks?.some(bt => bt.status === 'running');
+          const keepBright = isActive || hasRunningBg;
           const mainStatus = main ? getStatus(main.status) : getStatus('unknown');
           const smart = smartStatus[sessionId];
           const mainModel = main ? getModel(main.model) : null;
@@ -461,7 +475,7 @@ export function AgentTree({ agents = [], colors = {}, compact = false, expanded 
           const teamTotalTokens = teamTasks.reduce((sum, t) => sum + (t.tokens || (t.inputTokens || 0) + (t.outputTokens || 0) || 0), 0);
 
           return (
-            <div key={sessionId} className={`${expanded ? `flex flex-col rounded-lg border ${borderColor}` : `border-b ${borderColor}`} ${isActive ? (mi.activeBg || 'bg-emerald-500/[0.03]') : 'opacity-50'}`}>
+            <div key={sessionId} className={`${expanded ? `flex flex-col rounded-lg border ${borderColor}` : `border-b ${borderColor}`} ${keepBright ? (mi.activeBg || 'bg-emerald-500/[0.03]') : 'opacity-50'}`}>
               {/* Session Header */}
               <div className={`${expanded ? 'px-3 py-2' : 'px-2 py-1.5'} shrink-0`}>
                 {/* Line 1: Number + Model + Status + Duration + Tokens */}
@@ -528,7 +542,8 @@ export function AgentTree({ agents = [], colors = {}, compact = false, expanded 
                       const barColor = pct >= 80 ? 'bg-red-500' : pct >= 50 ? 'bg-amber-500' : 'bg-emerald-500';
                       const glowColor = pct >= 80 ? 'shadow-red-500/30' : pct >= 50 ? 'shadow-amber-500/20' : '';
                       const lastInput = main.lastInputTokens || 0;
-                      const limitK = '200k';
+                      const ctxLimit = /haiku/i.test(main.model || '') ? 200000 : 1000000;
+                      const limitK = ctxLimit >= 1000000 ? '1M' : '200k';
                       return (
                         <div className="ml-auto flex items-center shrink-0" title={`Context window: ${lastInput.toLocaleString()} / ${limitK} tokens (${pct}%)`}>
                           <div className={`relative h-[6px] w-[42px] rounded-full ${mi.tokenBarTrack || 'bg-gray-700/40'} overflow-hidden ${glowColor ? `shadow-sm ${glowColor}` : ''}`}>
@@ -566,20 +581,21 @@ export function AgentTree({ agents = [], colors = {}, compact = false, expanded 
                   );
                 })()}
 
-                {/* Line 3: Task count + Git Diff - hidden in compact */}
-                {!compact && (tasks.length > 0 || main?.gitDiff) && (
-                  <div className="mt-1 pl-4 flex items-center gap-1.5 min-w-0">
-                    {tasks.length > 0 && (
-                      <span className={`text-[9px] px-1.5 py-0.5 rounded-full whitespace-nowrap ${
-                        activeTaskCount > 0
-                          ? `${(as.active || {}).bg || 'bg-emerald-500/15'} ${(as.active || {}).text || 'text-emerald-400'}`
-                          : `${(as.stopped || {}).bg || 'bg-gray-500/15'} ${(as.stopped || {}).text || 'text-gray-500'}`
-                      }`}>
-                        {activeTaskCount > 0 ? `${activeTaskCount}/${tasks.length} running` : `${tasks.length} done`}
+                {/* Line 3: branch + git diff (left) · CC version + entrypoint (right) — clickable for detail */}
+                {!compact && (main?.gitDiff || main?.gitBranch || main?.ccVersion || main?.entrypoint) && (
+                  <div
+                    className="mt-1 pl-4 flex items-center gap-1.5 min-w-0 cursor-pointer hover:opacity-80 transition-opacity"
+                    onClick={() => setDetailSession({ sessionId, main, tasks, teamInfo, sessionTokens })}
+                    title="Click for session details"
+                  >
+                    {main?.gitBranch && (
+                      <span className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-mono shrink-0 ${mi.branchBg || 'bg-violet-500/10'} ${mi.branchText || 'text-violet-300'}`} title={`Git branch: ${main.gitBranch}`}>
+                        <svg width="8" height="8" viewBox="0 0 16 16" fill="currentColor" className="opacity-80"><path d="M11.75 2.5a.75.75 0 100 1.5.75.75 0 000-1.5zm-2.25.75a2.25 2.25 0 113 2.122V6A2.5 2.5 0 0110 8.5H6a1 1 0 00-1 1v1.128a2.25 2.25 0 11-1.5 0V5.372a2.25 2.25 0 111.5 0v1.836A2.49 2.49 0 016 7h4a1 1 0 001-1v-.628A2.25 2.25 0 019.5 3.25zM4.25 12a.75.75 0 100 1.5.75.75 0 000-1.5zM3.5 5.25a.75.75 0 111.5 0 .75.75 0 01-1.5 0z"/></svg>
+                        {main.gitBranch}
                       </span>
                     )}
                     {main?.gitDiff && (
-                      <div className={`inline-flex items-center gap-0 rounded-md border ${gi.fileBorder || 'border-gray-700/40'} overflow-hidden ${expanded ? 'text-[10px]' : 'text-[9px]'} font-mono tabular-nums`}>
+                      <div className={`inline-flex items-center gap-0 rounded-md border ${gi.fileBorder || 'border-gray-700/40'} overflow-hidden shrink-0 ${expanded ? 'text-[10px]' : 'text-[9px]'} font-mono tabular-nums`}>
                         <span className={`flex items-center gap-1 px-1.5 py-0.5 ${gi.addBg || 'bg-green-500/8'}`}>
                           <span className={`w-1 h-1 rounded-full ${gi.addDot || 'bg-green-400'}`} />
                           <span className={gi.addText || 'text-green-400'}>+{main.gitDiff.additions.toLocaleString()}</span>
@@ -595,6 +611,180 @@ export function AgentTree({ agents = [], colors = {}, compact = false, expanded 
                         )}
                       </div>
                     )}
+                    {(main?.ccVersion || main?.entrypoint) && (
+                      <div className="ml-auto flex items-center gap-1 shrink-0">
+                        {main.ccVersion && (
+                          <span className={`text-[9px] font-mono ${textMuted}`} title="Claude Code version">v{main.ccVersion}</span>
+                        )}
+                        {main.entrypoint && (
+                          <span className={`text-[9px] ${textMuted}`} title={`Entrypoint: ${main.entrypoint}`}>{main.entrypoint.replace(/^claude-/, '')}</span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* ── Claude Code session signals (2.1.154): effort/stats, branch, background jobs, todos, last message ── */}
+
+                {/* Tier-2 signals strip: effort/mode, web tool use, files touched, 1h-cache, hook health */}
+                {!compact && (() => {
+                  const eff = main?.effort;
+                  const effHigh = eff === 'high' || eff === 'xhigh' || eff === 'max' || eff === 'ultra';
+                  const ws = main?.webSearches || 0;
+                  const wf = main?.webFetches || 0;
+                  const ft = main?.filesTouched || 0;
+                  const cc1h = main?.cacheCreation1h || 0;
+                  const hh = main?.hookHealth;
+                  const hookBad = hh && (hh.failures > 0 || hh.maxMs > 1500);
+                  if (!effHigh && !ws && !wf && !ft && !cc1h && !hookBad && tasks.length === 0) return null;
+                  const effStyle = (eff === 'max' || eff === 'ultra') ? 'bg-violet-500/20 text-violet-300 border-violet-500/30'
+                                 : eff === 'xhigh' ? 'bg-fuchsia-500/15 text-fuchsia-300 border-fuchsia-500/25'
+                                 : 'bg-amber-500/15 text-amber-300 border-amber-500/25';
+                  return (
+                    <>
+                      <div className="mt-1 pl-4 flex items-center gap-1.5 flex-wrap text-[9px]">
+                        {effHigh && (
+                          <span className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full border font-medium ${effStyle}`} title={`Reasoning effort: ${eff}`}>⚡ {eff === 'ultra' ? 'ULTRA' : eff.toUpperCase()}</span>
+                        )}
+                        {ws > 0 && <span className={`${textMuted} font-mono`} title={`${ws} web search request(s) this session`}>🔎 {ws}</span>}
+                        {wf > 0 && <span className={`${textMuted} font-mono`} title={`${wf} web fetch request(s) this session`}>🌐 {wf}</span>}
+                        {ft > 0 && <span className={`${textMuted} font-mono`} title={`${ft} file(s) tracked this session`}>📄 {ft}</span>}
+                        {cc1h > 0 && (
+                          <span className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded font-mono ${mi.toolBadgeBg || 'bg-orange-500/10'} text-orange-400/80`} title={`${cc1h.toLocaleString()} tokens written to the 1-hour cache tier (priced ~2x the 5-minute tier)`}>
+                            🕐 {formatTokens(cc1h)}
+                          </span>
+                        )}
+                        {tasks.length > 0 && (
+                          <span className={`ml-auto shrink-0 px-1.5 py-0.5 rounded-full whitespace-nowrap ${
+                            activeTaskCount > 0
+                              ? `${(as.active || {}).bg || 'bg-emerald-500/15'} ${(as.active || {}).text || 'text-emerald-400'}`
+                              : `${(as.stopped || {}).bg || 'bg-gray-500/15'} ${(as.stopped || {}).text || 'text-gray-500'}`
+                          }`}>
+                            {activeTaskCount > 0 ? `${activeTaskCount}/${tasks.length} running` : `${tasks.length} done`}
+                          </span>
+                        )}
+                      </div>
+                      {hookBad && (
+                        <div className="mt-1 pl-4 flex items-center gap-1.5 text-[9px]">
+                          <span className="shrink-0">🪝</span>
+                          {hh.failures > 0
+                            ? <span className="text-red-400" title="Hook(s) exited non-zero">{hh.failures} hook fail{hh.failures > 1 ? 's' : ''}</span>
+                            : <span className={textMuted}>{hh.total} hooks ok</span>}
+                          {hh.maxMs > 1500 && (
+                            <span className={`${textMuted} font-mono`} title={`Slowest hook: ${hh.slowest}`}>· {(hh.slowest || 'hook').split(':')[0]} {(hh.maxMs / 1000).toFixed(1)}s</span>
+                          )}
+                        </div>
+                      )}
+                    </>
+                  );
+                })()}
+
+                {/* Warnings strip: max-tokens / scheduled crons (branch · version · entrypoint moved up to Line 3) */}
+                {!compact && (main?.stopReason === 'max_tokens' || main?.sessionCrons?.length > 0) && (
+                  <div className="mt-1 pl-4 flex items-center gap-1 flex-wrap">
+                    {main.stopReason === 'max_tokens' && (
+                      <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[8px] bg-red-500/15 text-red-400 border border-red-500/20" title="Last turn hit the max output-token limit — the reply may be truncated">⚠ max tokens</span>
+                    )}
+                    {main.sessionCrons?.length > 0 && (
+                      <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[8px] bg-sky-500/15 text-sky-400 border border-sky-500/20" title={`${main.sessionCrons.length} scheduled cron agent(s)`}>⏰ {main.sessionCrons.length}</span>
+                    )}
+                  </div>
+                )}
+
+                {/* Background jobs — running ones shown first (kept above todos: still-working signal) */}
+                {!compact && main?.backgroundTasks?.length > 0 && (
+                  <div className="mt-1 pl-4 space-y-0.5">
+                    {[...main.backgroundTasks].sort((a, b) => (b.status === 'running' ? 1 : 0) - (a.status === 'running' ? 1 : 0)).slice(0, 3).map((bt, i) => {
+                      const st = bt.status === 'running' ? { dot: 'bg-amber-400 animate-pulse', label: 'text-amber-400' }
+                               : bt.status === 'completed' ? { dot: 'bg-emerald-500', label: 'text-emerald-400' }
+                               : (bt.status === 'failed' || bt.status === 'error') ? { dot: 'bg-red-500', label: 'text-red-400' }
+                               : { dot: 'bg-gray-500', label: textMuted };
+                      return (
+                        <div key={bt.id || i} className={`flex items-center gap-1.5 min-w-0 ${bt.status === 'running' ? 'border-l-2 border-amber-400/60 pl-1.5' : ''}`} title={bt.command || bt.description || ''}>
+                          <span className="text-[9px] shrink-0 opacity-70">⚙</span>
+                          <span className={`w-1 h-1 rounded-full shrink-0 ${st.dot}`} />
+                          <span className={`text-[9px] ${mi.description || 'text-gray-400'} truncate min-w-0 flex-1`}>{bt.description || bt.command || 'background task'}</span>
+                          <span className={`text-[8px] font-mono shrink-0 ${st.label}`}>{bt.status}</span>
+                        </div>
+                      );
+                    })}
+                    {main.backgroundTasks.length > 3 && (
+                      <span className={`text-[8px] ${textMuted} pl-4 block`}>+{main.backgroundTasks.length - 3} more</span>
+                    )}
+                  </div>
+                )}
+
+                {/* TODO checklist (from TodoWrite) — NOW accented · pending readable · done collapsed (click to reveal) */}
+                {!compact && main?.todos?.length > 0 && (() => {
+                  const total = main.todos.length;
+                  const doneItems = main.todos.filter(t => t.status === 'completed');
+                  const inProg = main.todos.filter(t => t.status === 'in_progress');
+                  const pending = main.todos.filter(t => t.status !== 'completed' && t.status !== 'in_progress');
+                  const done = doneItems.length;
+                  const pct = total ? Math.round((done / total) * 100) : 0;
+                  const complete = done === total;
+                  const doneOpen = !!openDone[sessionId];
+                  return (
+                    <div className="mt-1 pl-4 min-w-0">
+                      {/* Summary: done/total + progress bar */}
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <span className="text-[9px] shrink-0" title="Task checklist (TodoWrite)">{complete ? '✅' : '☑️'}</span>
+                        <span className={`text-[9px] font-mono tabular-nums shrink-0 ${complete ? 'text-emerald-400' : (mi.tokens || 'text-amber-500')}`}>{done}/{total}</span>
+                        <div className={`h-1 rounded-full ${mi.tokenBarTrack || 'bg-gray-700/30'} overflow-hidden w-[36px] shrink-0`}>
+                          <div className={`h-full rounded-full transition-all ${complete ? 'bg-emerald-500/60' : 'bg-amber-500/60'}`} style={{ width: `${pct}%` }} />
+                        </div>
+                      </div>
+                      {/* NOW — in-progress item(s): accent bar + bright */}
+                      {inProg.map((t, i) => (
+                        <div key={`ip${i}`} className="mt-0.5 flex items-start gap-1 min-w-0 border-l-2 border-amber-400/60 pl-1.5">
+                          <span className={`text-[8px] shrink-0 mt-px ${mi.tokens || 'text-amber-400'}`}>▶</span>
+                          <span className={`text-[9px] leading-snug font-medium line-clamp-2 min-w-0 ${mi.tokens || 'text-amber-300'}`} title={t.content}>{t.activeForm || t.content}</span>
+                        </div>
+                      ))}
+                      {/* Pending — normal weight */}
+                      {pending.length > 0 && (
+                        <div className="mt-0.5 pl-0.5 space-y-px">
+                          {pending.map((t, i) => (
+                            <div key={`pd${i}`} className="flex items-start gap-1 min-w-0">
+                              <span className={`text-[8px] shrink-0 mt-px ${textMuted}`}>○</span>
+                              <span className={`text-[9px] leading-snug line-clamp-1 min-w-0 ${textMuted}`} title={t.content}>{t.content}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      {/* Done — collapsed to a count; click to reveal (de-emphasized) */}
+                      {done > 0 && (
+                        <div className="mt-0.5 pl-0.5">
+                          <button
+                            onClick={(e) => { e.stopPropagation(); setOpenDone(prev => ({ ...prev, [sessionId]: !prev[sessionId] })); }}
+                            className={`flex items-center gap-1 text-[9px] opacity-70 hover:opacity-100 transition-opacity ${textMuted}`}
+                            title={doneOpen ? 'Hide completed' : 'Show completed'}
+                          >
+                            <span className="text-emerald-400/70">✓</span>
+                            <span className="font-mono tabular-nums">{done} done</span>
+                            <span className="text-[7px]">{doneOpen ? '▾' : '▸'}</span>
+                          </button>
+                          {doneOpen && (
+                            <div className="mt-px pl-2 space-y-px">
+                              {doneItems.map((t, i) => (
+                                <div key={`dn${i}`} className="flex items-start gap-1 min-w-0">
+                                  <span className="text-[8px] shrink-0 mt-px text-emerald-400/50">✓</span>
+                                  <span className="text-[8px] leading-snug line-clamp-1 min-w-0 text-gray-500" title={t.content}>{t.content}</span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
+
+                {/* Last assistant message (turn / result summary) */}
+                {!compact && main?.lastAssistantMessage && (
+                  <div className="mt-1 pl-4 flex items-start gap-1.5 min-w-0">
+                    <span className={`text-[9px] shrink-0 ${textMuted} mt-px`}>↳</span>
+                    <span className={`text-[9px] italic leading-relaxed line-clamp-2 min-w-0 ${mi.description || 'text-gray-400'}`} title={main.lastAssistantMessage}>{main.lastAssistantMessage}</span>
                   </div>
                 )}
               </div>
@@ -676,6 +866,162 @@ export function AgentTree({ agents = [], colors = {}, compact = false, expanded 
           <span className={`font-mono tabular-nums ${mi.tokens || 'text-amber-500'}`}>{formatTokens(totalTokens)}</span>
         )}
       </div>}
+
+      {/* Session Detail Popup */}
+      {detailSession && (() => {
+        const d = detailSession;
+        const m = d.main;
+        const status = m ? getStatus(m.status) : getStatus('unknown');
+        const model = m ? getModel(m.model) : null;
+        const ctxPct = m?.contextPct || 0;
+        const ctxColor = ctxPct >= 80 ? 'text-red-400' : ctxPct >= 50 ? 'text-amber-400' : 'text-emerald-400';
+        const ctxBarColor = ctxPct >= 80 ? 'bg-red-500' : ctxPct >= 50 ? 'bg-amber-500' : 'bg-emerald-500';
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center" onClick={() => setDetailSession(null)}>
+            <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+            <div
+              className={`relative w-[380px] max-h-[70vh] overflow-y-auto rounded-xl border ${borderColor} ${colors?.bg?.primary || 'bg-[#0f0f17]'} shadow-2xl shadow-black/50`}
+              onClick={e => e.stopPropagation()}
+            >
+              {/* Header */}
+              <div className={`sticky top-0 px-4 py-3 border-b ${borderColor} ${colors?.bg?.secondary || 'bg-[#13131f]'} flex items-center justify-between`}>
+                <div className="flex items-center gap-2">
+                  {d.isSubagent && <span className={`text-[10px] px-1.5 py-0.5 rounded bg-cyan-500/15 text-cyan-400`}>Subagent</span>}
+                  {m?.agentName && <span className={`text-[11px] font-medium ${colors?.text?.primary || 'text-white'}`}>{m.agentName}</span>}
+                  {model && <span className={`text-[11px] font-medium px-1.5 py-0.5 rounded ${model.color} ${model.bg}`}>{model.name}</span>}
+                  <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded ${status.bg}`}>
+                    <span className={`text-[11px] ${status.color}`}>{status.icon}</span>
+                    <span className={`text-[10px] ${status.color}`}>{status.label}</span>
+                  </span>
+                </div>
+                <button onClick={() => setDetailSession(null)} className={`p-1 rounded hover:bg-white/10 ${textMuted}`}>
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                </button>
+              </div>
+
+              <div className="px-4 py-3 space-y-3">
+                {/* Project */}
+                {m?.cwd && (
+                  <div>
+                    <div className={`text-[9px] uppercase tracking-wider ${textMuted} mb-1`}>Project</div>
+                    <div className="text-[11px] font-mono text-cyan-400">{m.cwd}</div>
+                  </div>
+                )}
+
+                {/* Session ID */}
+                <div>
+                  <div className={`text-[9px] uppercase tracking-wider ${textMuted} mb-1`}>Session</div>
+                  <code className={`text-[10px] font-mono ${textMuted}`}>{d.sessionId}</code>
+                </div>
+
+                {/* Description */}
+                {(m?.description || m?.lastTask) && (
+                  <div>
+                    <div className={`text-[9px] uppercase tracking-wider ${textMuted} mb-1`}>Task</div>
+                    <div className={`text-[11px] ${colors?.text?.primary || 'text-gray-200'}`}>{m.description || m.lastTask}</div>
+                  </div>
+                )}
+
+                {/* Tools Used */}
+                {m?.toolsUsed?.length > 0 && (
+                  <div>
+                    <div className={`text-[9px] uppercase tracking-wider ${textMuted} mb-1`}>Tools</div>
+                    <div className="flex flex-wrap gap-1">
+                      {m.toolsUsed.map((tool, idx) => (
+                        <span key={idx} className={`text-[9px] px-1.5 py-0.5 rounded ${mi.toolBadgeBg || 'bg-sky-500/10'} ${mi.toolBadgeText || 'text-sky-400/80'}`}>{tool}</span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Tokens */}
+                <div className="grid grid-cols-3 gap-2">
+                  <div className={`rounded-lg p-2 ${colors?.bg?.secondary || 'bg-white/5'}`}>
+                    <div className={`text-[9px] uppercase tracking-wider ${textMuted}`}>Total</div>
+                    <div className="text-[13px] font-mono font-bold text-amber-400">{formatTokens(d.sessionTokens)}</div>
+                  </div>
+                  <div className={`rounded-lg p-2 ${colors?.bg?.secondary || 'bg-white/5'}`}>
+                    <div className={`text-[9px] uppercase tracking-wider ${textMuted}`}>Input</div>
+                    <div className="text-[13px] font-mono font-bold text-blue-400">{formatTokens(m?.inputTokens || 0)}</div>
+                  </div>
+                  <div className={`rounded-lg p-2 ${colors?.bg?.secondary || 'bg-white/5'}`}>
+                    <div className={`text-[9px] uppercase tracking-wider ${textMuted}`}>Output</div>
+                    <div className="text-[13px] font-mono font-bold text-purple-400">{formatTokens(m?.outputTokens || 0)}</div>
+                  </div>
+                </div>
+
+                {/* Context Window */}
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <span className={`text-[9px] uppercase tracking-wider ${textMuted}`}>Context Window</span>
+                    <span className={`text-[12px] font-mono font-bold ${ctxColor}`}>{ctxPct}%</span>
+                  </div>
+                  <div className={`h-2 rounded-full ${mi.tokenBarTrack || 'bg-gray-700/40'} overflow-hidden`}>
+                    <div className={`h-full rounded-full ${ctxBarColor} transition-all`} style={{ width: `${Math.min(ctxPct, 100)}%` }} />
+                  </div>
+                  {m?.lastInputTokens > 0 && (
+                    <div className={`text-[9px] ${textMuted} mt-0.5`}>{m.lastInputTokens.toLocaleString()} tokens used</div>
+                  )}
+                </div>
+
+                {/* Git Diff */}
+                {m?.gitDiff && (
+                  <div>
+                    <div className={`text-[9px] uppercase tracking-wider ${textMuted} mb-1.5`}>Git Changes</div>
+                    <div className="flex items-center gap-3">
+                      <span className="text-[13px] font-mono font-bold text-green-400">+{m.gitDiff.additions.toLocaleString()}</span>
+                      <span className="text-[13px] font-mono font-bold text-red-400">-{m.gitDiff.deletions.toLocaleString()}</span>
+                      <span className={`text-[11px] ${textMuted}`}>{m.gitDiff.files} files</span>
+                    </div>
+                  </div>
+                )}
+
+                {/* Duration */}
+                {m && getDuration(m) && (
+                  <div className="flex items-center justify-between">
+                    <span className={`text-[9px] uppercase tracking-wider ${textMuted}`}>Duration</span>
+                    <span className="text-[12px] font-mono text-gray-300">{getDuration(m)}</span>
+                  </div>
+                )}
+
+                {/* Team */}
+                {d.teamInfo && (
+                  <div>
+                    <div className={`text-[9px] uppercase tracking-wider ${textMuted} mb-1`}>Team</div>
+                    <span className="text-[11px] px-2 py-1 rounded-full bg-indigo-500/15 text-indigo-400 border border-indigo-500/20">
+                      👥 {d.teamInfo.name}
+                    </span>
+                  </div>
+                )}
+
+                {/* Subagents */}
+                {d.tasks.length > 0 && (
+                  <div>
+                    <div className={`text-[9px] uppercase tracking-wider ${textMuted} mb-1.5`}>Subagents ({d.tasks.length})</div>
+                    <div className="space-y-1">
+                      {d.tasks.map((task, i) => {
+                        const ts = getStatus(task.status);
+                        const tm = task.model ? getModel(task.model) : null;
+                        const tTokens = task.tokens || (task.inputTokens || 0) + (task.outputTokens || 0);
+                        return (
+                          <div key={i} className={`flex items-center gap-1.5 px-2 py-1 rounded ${colors?.bg?.secondary || 'bg-white/5'}`}>
+                            <span className={`text-[10px] ${ts.color}`}>{ts.icon}</span>
+                            {tm && <span className={`text-[9px] px-1 py-0.5 rounded ${tm.color} ${tm.bg}`}>{tm.name}</span>}
+                            {task.agentName && <span className={`text-[10px] ${textMuted} truncate flex-1`}>{task.agentName}</span>}
+                            {!task.agentName && <span className={`text-[10px] ${textMuted} truncate flex-1`}>{task.id?.slice(0, 8) || '—'}</span>}
+                            {tTokens > 0 && <span className="text-[9px] font-mono text-amber-500 shrink-0">{formatTokens(tTokens)}</span>}
+                            {getDuration(task) && <span className={`text-[9px] font-mono ${textMuted} shrink-0`}>{getDuration(task)}</span>}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

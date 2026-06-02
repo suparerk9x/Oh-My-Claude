@@ -13,7 +13,7 @@ describe('AgentCard', () => {
     id: 'agent-1',
     type: 'main',
     status: 'active',
-    model: 'claude-sonnet-4-5-20250929',
+    model: 'claude-sonnet-4-6',
     tokens: 1500,
     inputTokens: 1000,
     outputTokens: 500,
@@ -39,12 +39,22 @@ describe('AgentCard', () => {
 
   describe('Model badges', () => {
     it('displays Opus badge for opus model', () => {
-      render(<AgentCard agent={createAgent({ model: 'claude-opus-4-5-20251101' })} colors={defaultColors} />);
+      render(<AgentCard agent={createAgent({ model: 'claude-opus-4-8' })} colors={defaultColors} />);
       expect(screen.getByText(/Opus/)).toBeInTheDocument();
     });
 
+    it('displays exact Opus 4.8 version for claude-opus-4-8', () => {
+      render(<AgentCard agent={createAgent({ model: 'claude-opus-4-8' })} colors={defaultColors} />);
+      expect(screen.getByText(/Opus 4\.8/)).toBeInTheDocument();
+    });
+
+    it('displays Opus 4.8 for the [1m] suffix variant', () => {
+      render(<AgentCard agent={createAgent({ model: 'claude-opus-4-8[1m]' })} colors={defaultColors} />);
+      expect(screen.getByText(/Opus 4\.8/)).toBeInTheDocument();
+    });
+
     it('displays Sonnet badge for sonnet model', () => {
-      render(<AgentCard agent={createAgent({ model: 'claude-sonnet-4-5-20250929' })} colors={defaultColors} />);
+      render(<AgentCard agent={createAgent({ model: 'claude-sonnet-4-6' })} colors={defaultColors} />);
       expect(screen.getByText(/Sonnet/)).toBeInTheDocument();
     });
 

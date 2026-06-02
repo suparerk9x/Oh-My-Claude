@@ -14,15 +14,51 @@ import { promisify } from 'util';
 const execAsync = promisify(exec);
 import { z } from 'zod';
 
+// Safe readline: event-based (not for-await) with proper error handlers on both stream and rl.
+// Prevents silent crashes from Windows file locking / deleted files mid-read.
+function safeReadLines(filePath, onLine) {
+  return new Promise((resolve, reject) => {
+    const stream = fs.createReadStream(filePath, { highWaterMark: 64 * 1024 });
+    let streamError = null;
+
+    stream.on('error', (err) => {
+      streamError = err;
+    });
+
+    const rl = createInterface({ input: stream, crlfDelay: Infinity });
+
+    rl.on('line', (line) => {
+      try { onLine(line); } catch { /* skip bad line */ }
+    });
+
+    rl.on('close', () => {
+      if (streamError) reject(streamError);
+      else resolve();
+    });
+
+    rl.on('error', (err) => {
+      reject(err);
+    });
+  });
+}
+
 // Model context window limits (tokens)
 const MODEL_CONTEXT_LIMITS = {
-  'opus': 200000, 'sonnet': 200000, 'haiku': 200000,
-  'claude-opus-4-6': 200000, 'claude-sonnet-4-5-20250929': 200000, 'claude-haiku-4-5-20251001': 200000,
+  'opus': 1000000, 'sonnet': 1000000, 'haiku': 200000,
+  'claude-opus-4-8': 1000000, 'claude-opus-4-7': 1000000, 'claude-opus-4-6': 1000000, 'claude-sonnet-4-6': 1000000, 'claude-sonnet-4-5-20250929': 1000000, 'claude-haiku-4-5-20251001': 200000,
 };
-const DEFAULT_CONTEXT_LIMIT = 200000;
+const DEFAULT_CONTEXT_LIMIT = 1000000;
+
+// Single source of truth for context window limit by model
+function getContextLimit(model){ return /haiku/i.test(model||'') ? 200000 : 1000000; }
 
 // Claude projects directory
 const CLAUDE_PROJECTS_DIR = path.join(process.env.USERPROFILE || process.env.HOME, '.claude', 'projects');
+
+// Claude Code OAuth credential file — lets the server read session/weekly usage directly
+// from Anthropic's usage endpoint (no Chrome extension needed). Claude Code refreshes this file.
+const CC_CREDENTIALS_PATH = path.join(process.env.USERPROFILE || process.env.HOME || '', '.claude', '.credentials.json');
+const CC_USAGE_ENDPOINT = 'https://api.anthropic.com/api/oauth/usage';
 
 // Security configuration
 const ALLOWED_ORIGINS = process.env.ALLOWED_ORIGINS?.split(',') || [
@@ -96,6 +132,16 @@ const eventSchema = z.object({
   inputTokens: z.number().optional().nullable(),
   outputTokens: z.number().optional().nullable(),
   error: z.any().optional().nullable(),
+  isError: z.boolean().optional().nullable(),
+  errorSummary: z.string().optional().nullable(),
+  effort: z.string().optional().nullable(),
+  permissionMode: z.string().optional().nullable(),
+  durationMs: z.number().optional().nullable(),
+  trigger: z.string().optional().nullable(),
+  sessionSource: z.string().optional().nullable(),
+  backgroundTasks: z.any().optional().nullable(),
+  sessionCrons: z.any().optional().nullable(),
+  lastAssistantMessage: z.string().optional().nullable(),
   raw: z.any().optional(),
   source: z.string().optional(),
 });
@@ -134,6 +180,11 @@ wss.on('connection', (ws) => {
   clients.add(ws);
   console.log(`[WS] Client connected (${clients.size} total)`);
 
+  ws.on('error', (err) => {
+    console.error('[WS] Client error:', err.message);
+    clients.delete(ws);
+  });
+
   // Send recent events + stats on connect (async)
   (async () => {
     const initData = {
@@ -158,10 +209,21 @@ wss.on('connection', (ws) => {
 
 // Broadcast to all clients
 function broadcast(data) {
-  const message = JSON.stringify(data);
+  let message;
+  try {
+    message = JSON.stringify(data);
+  } catch (err) {
+    console.error('[WS] Failed to serialize broadcast:', err.message);
+    return;
+  }
   clients.forEach((client) => {
-    if (client.readyState === 1) {
-      client.send(message);
+    try {
+      if (client.readyState === 1) {
+        client.send(message);
+      }
+    } catch (err) {
+      console.error('[WS] Send failed, removing client:', err.message);
+      clients.delete(client);
     }
   });
 }
@@ -196,6 +258,8 @@ let claudeUsage = {
   seven_day: null,
   seven_day_sonnet: null,
   seven_day_opus: null,
+  seven_day_cowork: null,
+  extra_usage: null,
   lastSync: null,
   source: null
 };
@@ -203,12 +267,14 @@ let claudeUsage = {
 // Normalize short model names (from Task tool enum) to full model IDs
 function normalizeModel(model) {
   if (!model) return model;
+  // Strip a trailing window tag like "[1m]" -> "claude-opus-4-8[1m]" becomes "claude-opus-4-8"
+  model = model.replace(/\[[^\]]*\]$/, '');
   const m = model.toLowerCase();
   // Already has version digits like "claude-haiku-4-5-20251001"
   if (/(?:opus|sonnet|haiku)-\d/.test(m)) return model;
   // Map short/partial names to full IDs
-  if (m.includes('opus')) return 'claude-opus-4-6';
-  if (m.includes('sonnet')) return 'claude-sonnet-4-5-20250929';
+  if (m.includes('opus')) return 'claude-opus-4-8';
+  if (m.includes('sonnet')) return 'claude-sonnet-4-6';
   if (m.includes('haiku')) return 'claude-haiku-4-5-20251001';
   return model;
 }
@@ -273,25 +339,22 @@ async function readSubagentTokens(transcriptPath) {
 
     let inputTokens = 0;
     let outputTokens = 0;
-    let lastInputTokens = 0; // last API call's input_tokens = current context window fill
-    const rl = createInterface({
-      input: fs.createReadStream(transcriptPath, { highWaterMark: 64 * 1024 }),
-      crlfDelay: Infinity
+    let lastInputTokens = 0;
+    let model = null; // real model, read from the subagent's own transcript (verified, not guessed)
+
+    await safeReadLines(transcriptPath, (line) => {
+      if (!line.includes('"usage"')) return;
+      const entry = JSON.parse(line);
+      if (entry.type === 'assistant' && entry.message?.usage && entry.message.model !== '<synthetic>') {
+        const u = entry.message.usage;
+        inputTokens += (u.input_tokens || 0) + (u.cache_read_input_tokens || 0);
+        outputTokens += u.output_tokens || 0;
+        lastInputTokens = (u.input_tokens || 0) + (u.cache_read_input_tokens || 0) + (u.cache_creation_input_tokens || 0);
+        if (entry.message.model) model = entry.message.model; // last real model wins
+      }
     });
-    for await (const line of rl) {
-      if (!line.includes('"usage"')) continue; // fast skip
-      try {
-        const entry = JSON.parse(line);
-        if (entry.type === 'assistant' && entry.message?.usage && entry.message.model !== '<synthetic>') {
-          const u = entry.message.usage;
-          inputTokens += (u.input_tokens || 0) + (u.cache_read_input_tokens || 0);
-          outputTokens += u.output_tokens || 0;
-          // Context window fill = input only (matches Claude Code's formula, no output_tokens)
-          lastInputTokens = (u.input_tokens || 0) + (u.cache_read_input_tokens || 0) + (u.cache_creation_input_tokens || 0);
-        }
-      } catch {}
-    }
-    const result = { mtimeMs: stat.mtimeMs, tokens: inputTokens + outputTokens, inputTokens, outputTokens, lastInputTokens };
+
+    const result = { mtimeMs: stat.mtimeMs, tokens: inputTokens + outputTokens, inputTokens, outputTokens, lastInputTokens, model };
     subagentTokenCache.set(transcriptPath, result);
     return result;
   } catch {
@@ -342,8 +405,8 @@ function parseAgentTranscript(transcriptPath) {
           model = entry.message.model;
         }
 
-        // Sum tokens from usage
-        if (entry.message?.usage) {
+        // Sum tokens from usage (skip synthetic messages)
+        if (entry.message?.usage && entry.message.model !== '<synthetic>') {
           const usage = entry.message.usage;
           totalInputTokens += (usage.input_tokens || 0) + (usage.cache_read_input_tokens || 0);
           totalOutputTokens += usage.output_tokens || 0;
@@ -576,7 +639,7 @@ function processEvent(event) {
       // Find matching pending task by subagent_type or agentName
       // When Task tool uses `name` param (e.g. name:"scan-backend"), Claude Code
       // sets agent_type to that name, but subagent_type stays "general-purpose"
-      const agentType = event.agentType || event.raw?.subagent_type;
+      const agentType = event.agentType;
       pendingTask = processEvent.pendingTasks.find(t =>
         t.subagentType?.toLowerCase() === agentType?.toLowerCase() ||
         t.agentName?.toLowerCase() === agentType?.toLowerCase() ||
@@ -594,22 +657,24 @@ function processEvent(event) {
       // Use the session that spawned this Task as the parent
       parentId = `main_${pendingTask.sessionId}`;
     }
+    if (!parentId && event.sessionId) parentId = 'main_' + event.sessionId;
     if (!parentId) {
       parentId = 'main';
     }
 
-    // Get model: event > pending task > default based on type > inherit from parent
+    // Get model: event > pending task > reliable type default. Otherwise leave UNSET.
+    // SubagentStart carries no model, so we must not guess. Agents like Explore / Plan /
+    // claude-code-guide pin their own model (often Haiku), so inheriting the parent's model
+    // (e.g. Opus) shows a wrong badge that flips to the real model only when the agent stops.
+    // Instead, the verified model is read from the subagent's own transcript while it runs
+    // (readSubagentTokens → applied in getAgents), so we display the real model — or none yet.
     let model = normalizeModel(event.model) || normalizeModel(pendingTask?.model);
     if (!model) {
       const agentType = event.agentType || pendingTask?.subagentType || '';
       if (agentType.toLowerCase() === 'explore') model = 'claude-haiku-4-5-20251001';
-      else if (agentType.toLowerCase() === 'plan') model = 'claude-sonnet-4-5-20250929';
+      else if (agentType.toLowerCase() === 'plan') model = 'claude-sonnet-4-6';
     }
-    if (!model) {
-      // Inherit model from parent agent (Task tool spec: "inherits from parent")
-      const parent = agents.get(parentId);
-      if (parent?.model) model = parent.model;
-    }
+    // NOTE: deliberately no parent-model inheritance fallback (caused false "Opus" badges).
 
     // Use parent's sessionId for grouping (subagent should be grouped with parent)
     const effectiveSessionId = pendingTask?.sessionId || event.sessionId;
@@ -635,6 +700,8 @@ function processEvent(event) {
       id: agentId,
       type: event.agentType || pendingTask?.subagentType || existing.type || 'subagent',
       model: model || existing.model,
+      // verified = came from an explicit/type-default source (not a guess). Transcript read upgrades it later.
+      modelVerified: model ? true : (existing.modelVerified || false),
       sessionId: effectiveSessionId,
       parentId: parentId,
       startedAt: event.timestamp,
@@ -696,6 +763,7 @@ function processEvent(event) {
       id: agentId,
       type: event.agentType || existing.type || 'subagent',
       model: normalizeModel(transcriptData?.model) || existing.model,
+      modelVerified: transcriptData?.model ? true : (existing.modelVerified || false),
       // Preserve the sessionId from SubagentStart (which has correct parent grouping)
       sessionId: existing.sessionId || event.sessionId,
       parentId: event.parentAgentId || existing.parentId || 'main',
@@ -711,7 +779,8 @@ function processEvent(event) {
       duration: duration,
       durationFormatted: formatDuration(duration),
       toolsUsed: mergedToolsUsed,
-      transcriptPath: actualTranscriptPath || transcriptPath
+      transcriptPath: actualTranscriptPath || transcriptPath,
+      lastAssistantMessage: event.lastAssistantMessage ? event.lastAssistantMessage.slice(0, 280) : existing.lastAssistantMessage
     });
     console.log(`[AGENT] Agent ${agentId} stopped (${formatDuration(duration) || 'unknown duration'}, ${transcriptData?.tokens || 0} tokens, tools: ${mergedToolsUsed.join(', ') || 'none'})`);
   }
@@ -944,7 +1013,7 @@ function processEvent(event) {
     const mainAgentId = `main_${event.sessionId}`;
 
     if (!agents.has(mainAgentId)) {
-      const defaultModel = normalizeModel(event.model) || 'claude-sonnet-4-5-20250929';
+      const defaultModel = normalizeModel(event.model) || 'claude-opus-4-8';
       // Capture git HEAD at session start to track total session diff
       let initialCommit = null;
       const cwd = event.cwd;
@@ -1065,7 +1134,15 @@ function processEvent(event) {
         model: updatedModel,
         lastTask: activity,
         cwd: event.cwd || main.cwd,
-        tokens: main.tokens + (event.inputTokens || 0) + (event.outputTokens || 0)
+        tokens: main.tokens + (event.inputTokens || 0) + (event.outputTokens || 0),
+        // Tier-1 signals (Claude Code 2.1.154): background jobs, scheduled crons, last turn message, TODO list
+        ...(event.backgroundTasks != null ? { backgroundTasks: event.backgroundTasks } : {}),
+        ...(event.sessionCrons != null ? { sessionCrons: event.sessionCrons } : {}),
+        ...(event.lastAssistantMessage ? { lastAssistantMessage: event.lastAssistantMessage.slice(0, 280) } : {}),
+        ...(event.effort ? { effort: event.effort } : {}),
+        ...(event.toolName === 'TodoWrite' && Array.isArray(event.toolInput?.todos)
+          ? { todos: event.toolInput.todos.map(t => ({ content: String(t.content || '').slice(0, 100), status: t.status, activeForm: String(t.activeForm || '').slice(0, 100) })) }
+          : {})
       };
       // Add stoppedAt when transitioning to stopped
       if (reactivatedStatus === 'stopped' && !main.stoppedAt) {
@@ -1099,7 +1176,9 @@ function processEvent(event) {
     const sid = event.sessionId;
     const type = event.type;
     const tool = event.toolName;
-    if (type === 'UserPromptSubmit' || type === 'PostToolUse') {
+    if (type === 'PostToolUse' && event.isError) {
+      smartStatusMap[sid] = { status: 'failed', label: 'Error', icon: '❌', color: 'text-red-400' };
+    } else if (type === 'UserPromptSubmit' || type === 'PostToolUse') {
       smartStatusMap[sid] = { status: 'thinking', label: 'Thinking', icon: '🧠', color: 'text-violet-400' };
     } else if (type === 'PreToolUse') {
       if (tool === 'Read' || tool === 'Glob' || tool === 'Grep') {
@@ -1189,10 +1268,10 @@ async function resolveSessionPath(sessionId) {
 async function readSessionContext(sessionId) {
   const cached = sessionContextCache.get(sessionId);
   if (cached && (Date.now() - cached.timestamp) < SESSION_CONTEXT_CACHE_TTL) {
-    return cached.lastInputTokens;
+    return { lastInputTokens: cached.lastInputTokens, meta: cached.meta || null };
   }
   const transcriptPath = await resolveSessionPath(sessionId);
-  if (!transcriptPath) return 0;
+  if (!transcriptPath) return { lastInputTokens: 0, meta: null };
   try {
     const fd = await fs.promises.open(transcriptPath, 'r');
     const stats = await fd.stat();
@@ -1211,14 +1290,21 @@ async function readSessionContext(sessionId) {
         if (parsed.type === 'assistant' && parsed.message?.usage && parsed.message.model !== '<synthetic>') {
           const u = parsed.message.usage;
           const lastInputTokens = (u.input_tokens || 0) + (u.cache_read_input_tokens || 0) + (u.cache_creation_input_tokens || 0);
-          sessionContextCache.set(sessionId, { lastInputTokens, timestamp: Date.now() });
-          return lastInputTokens;
+          // Entry-level metadata is present on every transcript line — capture from this one
+          const meta = {
+            gitBranch: parsed.gitBranch || null,
+            ccVersion: parsed.version || null,
+            entrypoint: parsed.entrypoint || null,
+            stopReason: parsed.message?.stop_reason || null
+          };
+          sessionContextCache.set(sessionId, { lastInputTokens, meta, timestamp: Date.now() });
+          return { lastInputTokens, meta };
         }
       } catch {}
     }
-    sessionContextCache.set(sessionId, { lastInputTokens: 0, timestamp: Date.now() });
-    return 0;
-  } catch { return 0; }
+    sessionContextCache.set(sessionId, { lastInputTokens: 0, meta: null, timestamp: Date.now() });
+    return { lastInputTokens: 0, meta: null };
+  } catch { return { lastInputTokens: 0, meta: null }; }
 }
 
 // Read cumulative tokens from a session transcript file using STREAMING
@@ -1233,42 +1319,56 @@ async function readSessionTokens(sessionId) {
   if (!transcriptPath) return null;
 
   try {
-    // Use readline streaming instead of loading entire file
-    const rl = createInterface({
-      input: fs.createReadStream(transcriptPath, { highWaterMark: 64 * 1024 }),
-      crlfDelay: Infinity
-    });
-
     let inputTokens = 0;
     let outputTokens = 0;
     let cacheReadTokens = 0;
     let cacheCreationTokens = 0;
+    // Tier-2 session stats (same single stream — no extra I/O)
+    let webSearches = 0;
+    let webFetches = 0;
+    let cacheCreation1h = 0;
+    let cacheCreation5m = 0;
+    const filesTouched = new Set();
+    let hookTotal = 0, hookFailures = 0, hookMaxMs = 0, hookSlowest = null;
 
-    for await (const line of rl) {
-      if (!line.trim()) continue;
-      try {
-        const parsed = JSON.parse(line);
-        if (parsed.message?.usage) {
-          const usage = parsed.message.usage;
-          inputTokens += usage.input_tokens || 0;
-          outputTokens += usage.output_tokens || 0;
-          cacheReadTokens += usage.cache_read_input_tokens || 0;
-          cacheCreationTokens += usage.cache_creation_input_tokens || 0;
-        }
-      } catch {
-        // Skip invalid lines
+    await safeReadLines(transcriptPath, (line) => {
+      if (!line.trim()) return;
+      const parsed = JSON.parse(line);
+      if (parsed.message?.usage && parsed.message.model !== '<synthetic>') {
+        const usage = parsed.message.usage;
+        inputTokens += usage.input_tokens || 0;
+        outputTokens += usage.output_tokens || 0;
+        cacheReadTokens += usage.cache_read_input_tokens || 0;
+        cacheCreationTokens += usage.cache_creation_input_tokens || 0;
+        webSearches += usage.server_tool_use?.web_search_requests || 0;
+        webFetches += usage.server_tool_use?.web_fetch_requests || 0;
+        cacheCreation1h += usage.cache_creation?.ephemeral_1h_input_tokens || 0;
+        cacheCreation5m += usage.cache_creation?.ephemeral_5m_input_tokens || 0;
+      } else if (parsed.type === 'file-history-snapshot') {
+        const backups = parsed.snapshot?.trackedFileBackups;
+        if (backups) for (const fp of Object.keys(backups)) filesTouched.add(fp);
+      } else if (parsed.type === 'attachment' && parsed.attachment?.hookName) {
+        const at = parsed.attachment;
+        hookTotal++;
+        if (at.exitCode != null && at.exitCode !== 0) hookFailures++;
+        if ((at.durationMs || 0) > hookMaxMs) { hookMaxMs = at.durationMs || 0; hookSlowest = at.hookName; }
       }
-    }
+    });
 
     const data = {
       inputTokens,
       outputTokens,
       cacheReadTokens,
       cacheCreationTokens,
-      totalTokens: inputTokens + outputTokens
+      totalTokens: inputTokens + outputTokens,
+      webSearches,
+      webFetches,
+      cacheCreation1h,
+      cacheCreation5m,
+      filesTouched: filesTouched.size,
+      hookHealth: hookTotal > 0 ? { total: hookTotal, failures: hookFailures, maxMs: hookMaxMs, slowest: hookSlowest } : null
     };
 
-    // Cache the result
     sessionTokenCache.set(sessionId, { data, timestamp: Date.now() });
     return data;
   } catch (err) {
@@ -1339,6 +1439,10 @@ function getAgentsLightweight() {
       if (agent.type === 'main') {
         result.gitDiff = agent.gitDiff || null;
       }
+      // Mirror getAgents: suppress unverified model for still-running subagents (no guessed badge)
+      if (agent.type !== 'main' && (agent.status === 'active' || agent.status === 'idle' || agent.status === 'stale') && !agent.modelVerified) {
+        result.model = null;
+      }
       return result;
     })
     .sort((a, b) => {
@@ -1358,12 +1462,13 @@ async function getAgents() {
 
   // Update main agents' model based on actual usage
   if (primaryModel) {
-    const modelName = primaryModel === 'opus' ? 'claude-opus-4-6' :
-                      primaryModel === 'sonnet' ? 'claude-sonnet-4-5-20250929' :
+    const modelName = primaryModel === 'opus' ? 'claude-opus-4-8' :
+                      primaryModel === 'sonnet' ? 'claude-sonnet-4-6' :
                       primaryModel === 'haiku' ? 'claude-haiku-4-5-20251001' : null;
     if (modelName) {
       for (const [id, agent] of agents.entries()) {
-        if (agent.type === 'main') {
+        // Skip overwrite if agent already has a versioned real id (preserves transcript-derived model)
+        if (agent.type === 'main' && !/(?:opus|sonnet|haiku)-\d/.test(agent.model)) {
           agents.set(id, { ...agent, model: modelName });
         }
       }
@@ -1378,16 +1483,18 @@ async function getAgents() {
   // Fetch session tokens + context % for all main agents in parallel
   const mainAgents = agentList.filter(a => a.type === 'main' && a.sessionId);
   const tokenPromises = mainAgents.map(async (agent) => {
-    const [sessionTokens, lastInputTokens] = await Promise.all([
+    const [sessionTokens, ctx] = await Promise.all([
       readSessionTokens(agent.sessionId),
-      readSessionContext(agent.sessionId), // fast tail-read (3s cache)
+      readSessionContext(agent.sessionId), // fast tail-read — { lastInputTokens, meta }
     ]);
-    return { sessionId: agent.sessionId, tokens: sessionTokens, lastInputTokens };
+    return { sessionId: agent.sessionId, tokens: sessionTokens, lastInputTokens: ctx.lastInputTokens, meta: ctx.meta };
   });
 
-  const tokenResults = await Promise.all(tokenPromises);
+  const tokenResults = (await Promise.allSettled(tokenPromises))
+    .filter(r => r.status === 'fulfilled').map(r => r.value);
   const sessionTokenMap = new Map(tokenResults.map(r => [r.sessionId, r.tokens]));
   const sessionContextMap = new Map(tokenResults.map(r => [r.sessionId, r.lastInputTokens]));
+  const sessionMetaMap = new Map(tokenResults.map(r => [r.sessionId, r.meta]));
 
   // Fetch tokens for subagents with transcript paths (including stopped — for contextPct)
   const activeSubagents = agentList.filter(a => a.type !== 'main' && a.transcriptPath && (a.status !== 'stopped' || !a.contextPct));
@@ -1395,7 +1502,8 @@ async function getAgents() {
     const tokens = await readSubagentTokens(agent.transcriptPath);
     return { id: agent.id, tokens };
   });
-  const subagentTokenResults = await Promise.all(subagentTokenPromises);
+  const subagentTokenResults = (await Promise.allSettled(subagentTokenPromises))
+    .filter(r => r.status === 'fulfilled').map(r => r.value);
   const subagentTokenMap = new Map(subagentTokenResults.filter(r => r.tokens).map(r => [r.id, r.tokens]));
 
   // Fetch git diff stats for main agents in parallel (non-blocking)
@@ -1404,7 +1512,8 @@ async function getAgents() {
     const freshDiff = await getGitDiffStats(agent.cwd, agent.initialCommit);
     return { id: agent.id, gitDiff: freshDiff };
   });
-  const gitDiffResults = await Promise.all(gitDiffPromises);
+  const gitDiffResults = (await Promise.allSettled(gitDiffPromises))
+    .filter(r => r.status === 'fulfilled').map(r => r.value);
   const gitDiffMap = new Map(gitDiffResults.map(r => [r.id, r.gitDiff]));
 
   return agentList
@@ -1427,10 +1536,29 @@ async function getAgents() {
           result.inputTokens = sessionTokens.inputTokens;
           result.outputTokens = sessionTokens.outputTokens;
           result.cacheReadTokens = sessionTokens.cacheReadTokens;
+          // Tier-2 session stats
+          result.webSearches = sessionTokens.webSearches || 0;
+          result.webFetches = sessionTokens.webFetches || 0;
+          result.cacheCreation1h = sessionTokens.cacheCreation1h || 0;
+          result.cacheCreation5m = sessionTokens.cacheCreation5m || 0;
+          result.filesTouched = sessionTokens.filesTouched || 0;
+          result.hookHealth = sessionTokens.hookHealth || null;
+          const curT = agents.get(agent.id);
+          if (curT) agents.set(agent.id, { ...curT, webSearches: result.webSearches, webFetches: result.webFetches, cacheCreation1h: result.cacheCreation1h, cacheCreation5m: result.cacheCreation5m, filesTouched: result.filesTouched, hookHealth: result.hookHealth });
         }
-        // Use fast tail-read context % (3s cache, reads last 64KB only)
+        // Use fast tail-read context % (cache, reads last 64KB only)
         const lastInput = sessionContextMap.get(agent.sessionId) || 0;
         if (lastInput > 0) result.lastInputTokens = lastInput;
+        // Attach Claude Code session meta (git branch, CC version, entrypoint, last stop_reason)
+        const meta = sessionMetaMap.get(agent.sessionId);
+        if (meta) {
+          if (meta.gitBranch) result.gitBranch = meta.gitBranch;
+          if (meta.ccVersion) result.ccVersion = meta.ccVersion;
+          if (meta.entrypoint) result.entrypoint = meta.entrypoint;
+          result.stopReason = meta.stopReason || null;
+          const cur = agents.get(agent.id);
+          if (cur) agents.set(agent.id, { ...cur, gitBranch: result.gitBranch, ccVersion: result.ccVersion, entrypoint: result.entrypoint, stopReason: result.stopReason });
+        }
       }
 
       // Add live tokens for active subagents (from transcript reading)
@@ -1440,9 +1568,17 @@ async function getAgents() {
         result.inputTokens = st.inputTokens;
         result.outputTokens = st.outputTokens;
         result.lastInputTokens = st.lastInputTokens;
-        // Persist back so lightweight reads also have tokens
+        // Verified model from the subagent's own transcript overrides any spawn-time default
+        const realModel = normalizeModel(st.model);
+        if (realModel) { result.model = realModel; result.modelVerified = true; }
+        // Persist back so lightweight reads also have tokens + the verified model
         const current = agents.get(agent.id);
-        if (current) agents.set(agent.id, { ...current, tokens: st.tokens, inputTokens: st.inputTokens, outputTokens: st.outputTokens, lastInputTokens: st.lastInputTokens });
+        if (current) agents.set(agent.id, { ...current, tokens: st.tokens, inputTokens: st.inputTokens, outputTokens: st.outputTokens, lastInputTokens: st.lastInputTokens, ...(realModel ? { model: realModel, modelVerified: true } : {}) });
+      }
+
+      // Never show an UNVERIFIED model for a still-running subagent — better no badge than a wrong guess
+      if (agent.type !== 'main' && (agent.status === 'active' || agent.status === 'idle' || agent.status === 'stale') && !result.modelVerified) {
+        result.model = null;
       }
 
       // Calculate context window usage %
@@ -1571,7 +1707,9 @@ function getEventHash(event) {
   }
 
   // For non-tool events (SessionStart, Stop, etc.), use content-based hash WITHOUT timestamp
-  const key = `${event.type}|${event.sessionId || ''}|${event.toolName || ''}|${JSON.stringify(event.toolInput || {}).slice(0, 100)}`;
+  // Include agent id so parallel subagent lifecycle events (same type/session) don't collide
+  const agentKey = event.raw?.agent_id || event.agentId || '';
+  const key = `${event.type}|${event.sessionId || ''}|${agentKey}|${event.toolName || ''}|${JSON.stringify(event.toolInput || {}).slice(0, 100)}`;
   let hash = 0;
   for (let i = 0; i < key.length; i++) {
     hash = ((hash << 5) - hash) + key.charCodeAt(i);
@@ -1599,13 +1737,22 @@ const STATUSLINE_CONTEXT_TTL = 10000; // Trust statusLine data for 10 seconds
 app.post('/context-update', (req, res) => {
   try {
     const { sessionId, contextWindow } = req.body;
-    if (!sessionId || !contextWindow) return res.status(400).json({ error: 'Missing sessionId or contextWindow' });
+    if (!sessionId) return res.status(400).json({ error: 'Missing sessionId' });
 
-    const usedPct = contextWindow.used_percentage;
+    // Dual-shape: prefer authoritative used_percentage (statusline_wrapper.js path);
+    // else compute from lastInputTokens against the model's context limit.
+    let usedPct = null;
+    let lastInputTokens = null;
+    if (contextWindow?.used_percentage != null) {
+      usedPct = contextWindow.used_percentage;
+    } else if (req.body.lastInputTokens != null) {
+      lastInputTokens = req.body.lastInputTokens;
+      usedPct = Math.round(lastInputTokens / getContextLimit(normalizeModel(req.body.model)) * 100);
+    }
     if (usedPct == null) return res.json({ success: true });
 
     // Cache the real-time context % from Claude Code's in-memory state
-    statusLineContextCache.set(sessionId, { contextPct: usedPct, timestamp: Date.now() });
+    statusLineContextCache.set(sessionId, { contextPct: usedPct, lastInputTokens, timestamp: Date.now() });
 
     // Find main agent with this sessionId and update context data
     for (const [id, agent] of agents.entries()) {
@@ -1613,6 +1760,7 @@ app.post('/context-update', (req, res) => {
         agents.set(id, {
           ...agent,
           contextPct: usedPct,
+          ...(lastInputTokens != null ? { lastInputTokens } : {}),
           lastSeen: new Date().toISOString()
         });
         break;
@@ -1655,6 +1803,15 @@ app.post('/events', eventLimiter, (req, res) => {
       ...parseResult.data,
       receivedAt: new Date().toISOString()
     };
+
+    // Compute failed-tool flags server-side BEFORE raw.tool_input is stripped
+    const tr = event.raw?.tool_response;
+    if (event.type === 'PostToolUse' && tr && tr.is_error) {
+      event.isError = true;
+      let c = tr.content;
+      if (Array.isArray(c)) c = c.map(b => b?.text || b?.content || '').join(' ');
+      event.errorSummary = (typeof c === 'string' ? c : JSON.stringify(c || '')).slice(0, 200);
+    }
 
     processEvent(event);
 
@@ -1772,7 +1929,11 @@ app.delete('/agents/stopped', (req, res) => {
   res.json({ success: true, cleared });
 });
 
-// Receive Claude.ai usage from extension
+// Receive Claude.ai usage from extension (OPTIONAL FALLBACK).
+// The primary usage source is the OAuth sync below (fetchClaudeCodeUsage), which needs
+// no browser. This endpoint stays for the edge case where Claude Code is NOT on this
+// machine but a browser logged into claude.ai is — the extension can POST usage here.
+// If both run, whichever wrote claudeUsage most recently wins (OAuth refreshes every 60s).
 app.post('/usage', (req, res) => {
   try {
     const { usage, timestamp, source } = req.body;
@@ -1811,6 +1972,19 @@ app.post('/usage', (req, res) => {
 // Get Claude.ai usage
 app.get('/usage', (req, res) => {
   res.json(claudeUsage);
+});
+
+// Restart server (graceful — save state, then exit so process manager restarts)
+app.post('/restart', (req, res) => {
+  console.log('[RESTART] Restart requested via API');
+  saveEvents();
+  saveAgents();
+  res.json({ ok: true, message: 'Server restarting...' });
+  // Give response time to flush, then exit
+  setTimeout(() => {
+    console.log('[RESTART] Exiting for restart...');
+    process.exit(0);
+  }, 500);
 });
 
 // Load existing data
@@ -1887,7 +2061,9 @@ for (const event of events) {
   if (!sid) continue;
   const type = event.type;
   const tool = event.toolName;
-  if (type === 'UserPromptSubmit' || type === 'PostToolUse') {
+  if (type === 'PostToolUse' && event.isError) {
+    smartStatusMap[sid] = { status: 'failed', label: 'Error', icon: '❌', color: 'text-red-400' };
+  } else if (type === 'UserPromptSubmit' || type === 'PostToolUse') {
     smartStatusMap[sid] = { status: 'thinking', label: 'Thinking', icon: '🧠', color: 'text-violet-400' };
   } else if (type === 'PreToolUse') {
     if (tool === 'Read' || tool === 'Glob' || tool === 'Grep') {
@@ -1922,19 +2098,78 @@ console.log(`[LOAD] Rebuilt smartStatus for ${Object.keys(smartStatusMap).length
 // Pre-warm stats cache so first WebSocket client doesn't wait for cold-cache scan
 readStatsCache().then(() => console.log('[INIT] Stats cache pre-warmed')).catch(() => {});
 
-// Periodic stats broadcast (async)
+// Periodic stats broadcast (async, crash-safe, non-overlapping)
+let broadcastInProgress = false;
 setInterval(async () => {
-  broadcast({
-    type: 'stats',
-    stats: await getStats(),
-    agents: await getAgents(),
-    sessions: getSessions(),
-    usage: claudeUsage,
-    smartStatus: smartStatusMap,
-    teams: getTeams(),
-    teamComms: getRecentTeamComms()
-  });
-}, 5000);
+  if (broadcastInProgress) {
+    console.warn('[Broadcast] Skipping — previous broadcast still in progress');
+    return;
+  }
+  broadcastInProgress = true;
+  try {
+    broadcast({
+      type: 'stats',
+      stats: await getStats(),
+      agents: await getAgents(),
+      sessions: getSessions(),
+      usage: claudeUsage,
+      smartStatus: smartStatusMap,
+      teams: getTeams(),
+      teamComms: getRecentTeamComms()
+    });
+  } catch (err) {
+    console.error('[Broadcast] Periodic update failed:', err.message);
+  } finally {
+    broadcastInProgress = false;
+  }
+}, 10000);
+
+// ── Claude Code usage sync (extension-free) ───────────────────────
+// Reads the local OAuth token Claude Code already maintains and queries Anthropic's
+// usage endpoint — same numbers shown in Claude Code's "Account & Usage" panel
+// (5-hour %, weekly %, weekly Sonnet/Opus, extra usage). Re-reads the token each cycle
+// so it stays valid after Claude Code refreshes it. Falls back silently on error.
+async function fetchClaudeCodeUsage() {
+  try {
+    if (!fs.existsSync(CC_CREDENTIALS_PATH)) return;
+    const raw = JSON.parse(fs.readFileSync(CC_CREDENTIALS_PATH, 'utf-8'));
+    const oauth = raw.claudeAiOauth || raw;
+    const token = oauth.accessToken || oauth.access_token;
+    if (!token) return;
+
+    const res = await fetch(CC_USAGE_ENDPOINT, {
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'anthropic-beta': 'oauth-2025-04-20',
+        'Content-Type': 'application/json'
+      },
+      signal: AbortSignal.timeout(8000)
+    });
+    if (!res.ok) {
+      // 401 => token rotated/expired; Claude Code will refresh it. Keep last-known, retry next cycle.
+      console.warn(`[USAGE] OAuth usage fetch failed: HTTP ${res.status}`);
+      return;
+    }
+    const u = await res.json();
+    // Endpoint shape matches the dashboard's existing claudeUsage shape 1:1
+    claudeUsage = {
+      five_hour: u.five_hour || null,
+      seven_day: u.seven_day || null,
+      seven_day_sonnet: u.seven_day_sonnet || null,
+      seven_day_opus: u.seven_day_opus || null,
+      seven_day_cowork: u.seven_day_cowork || null,
+      extra_usage: u.extra_usage || null,
+      lastSync: new Date().toISOString(),
+      source: 'claude-code-oauth'
+    };
+    broadcast({ type: 'usage', usage: claudeUsage });
+    console.log(`[USAGE] Synced from Claude Code OAuth — 5h ${u.five_hour?.utilization ?? '?'}%, 7d ${u.seven_day?.utilization ?? '?'}%`);
+  } catch (err) {
+    console.warn('[USAGE] OAuth usage fetch error:', err.message);
+  }
+}
+setTimeout(fetchClaudeCodeUsage, 2000);           // initial fetch shortly after boot
+setInterval(fetchClaudeCodeUsage, 60 * 1000);     // refresh every 60s
 
 // Start server
 server.listen(PORT, () => {
@@ -1951,11 +2186,70 @@ server.listen(PORT, () => {
    GET  /agents     - Get active agents
    GET  /sessions   - Get sessions
    GET  /teams      - Get team data
-   POST /usage      - Receive Claude.ai usage (from extension)
    GET  /usage      - Get Claude.ai usage
+   POST /usage      - Receive usage (optional extension fallback)
    GET  /health     - Health check
 
    Waiting for events from Claude Code hooks...
-   Install Chrome extension for Claude.ai usage sync.
+   Usage % syncs automatically from Claude Code's OAuth token — no browser needed.
+   (Chrome extension remains available as a fallback if Claude Code isn't on this machine.)
 `);
+});
+
+// ── Server error handling ─────────────────────────────────────────
+
+server.on('error', (err) => {
+  console.error('[SERVER] HTTP server error:', err.message);
+});
+
+wss.on('error', (err) => {
+  console.error('[SERVER] WebSocket server error:', err.message);
+});
+
+// ── Global crash prevention ───────────────────────────────────────
+
+process.on('uncaughtException', (err) => {
+  logCrash(`[FATAL] Uncaught exception: ${err.message}\n${err.stack}`);
+});
+
+process.on('unhandledRejection', (reason) => {
+  logCrash(`[FATAL] Unhandled rejection: ${reason}`);
+});
+
+// Crash log file — write directly to disk (survives even if console is broken)
+const CRASH_LOG = path.join(__dirname, 'crash.log');
+function logCrash(msg) {
+  const line = `[${new Date().toISOString()}] ${msg}\n`;
+  try { fs.appendFileSync(CRASH_LOG, line); } catch {}
+  console.error(msg);
+}
+
+// Log when process is about to exit (helps diagnose silent crashes)
+process.on('exit', (code) => {
+  logCrash(`[EXIT] Process exiting with code ${code}`);
+});
+
+// Periodic heap + uptime check
+const startTime = Date.now();
+setInterval(() => {
+  const heap = process.memoryUsage();
+  const heapMB = Math.round(heap.heapUsed / 1048576);
+  const rssMB = Math.round(heap.rss / 1048576);
+  const uptimeMin = Math.round((Date.now() - startTime) / 60000);
+  if (heapMB > 400) {
+    console.warn(`[MEMORY] HIGH: heap ${heapMB}MB, RSS ${rssMB}MB — risk of OOM crash`);
+  }
+  // Log heartbeat to crash.log every 5 minutes so we know when it was last alive
+  if (uptimeMin > 0 && uptimeMin % 5 === 0) {
+    logCrash(`[HEARTBEAT] alive ${uptimeMin}m, heap ${heapMB}MB, RSS ${rssMB}MB`);
+  }
+}, 30000);
+
+process.on('SIGTERM', () => {
+  logCrash('[SIGNAL] Received SIGTERM');
+});
+
+process.on('SIGINT', () => {
+  logCrash('[SIGNAL] Received SIGINT');
+  process.exit(0);
 });

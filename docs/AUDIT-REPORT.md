@@ -1,8 +1,12 @@
 # Oh My Claude - Code Audit Report
 
 **Date:** 2026-02-20
-**Audited by:** Claude Opus 4.6 (5 parallel agents)
+**Audited by:** Claude Opus 4.8 (5 parallel agents)
 **Scope:** Full codebase review - backend, frontend, extension, utilities, HelpGuide
+
+---
+
+> **OBSOLETE GUIDANCE — `PostToolUseFailure`:** Claude Code 2.1.154 does **not** emit a `PostToolUseFailure` event. Tool failures are detected on the regular `PostToolUse` event via `tool_response.is_error` (the server now sets a top-level `isError` boolean + `errorSummary`). The `PostToolUseFailure` references below (issues #21 / fix #8) are kept for historical accuracy but should not be treated as current guidance.
 
 ---
 
@@ -72,7 +76,7 @@
 |---|-------|--------|
 | 19 | Mini window size | 220x450 should be 280x400 |
 | 20 | PostToolUse false field | success field does not exist |
-| 21 | Tool Failed type | Should be PostToolUseFailure |
+| 21 | Tool Failed type | ~~Should be PostToolUseFailure~~ — OBSOLETE: no such event in 2.1.154; detect via PostToolUse `tool_response.is_error` |
 | 22 | SubagentStop fields | tokens/duration/toolsUsed are server-derived |
 
 ---
@@ -118,7 +122,7 @@
 5. HelpGuide.jsx: Agent timeouts corrected (EN + TH)
 6. HelpGuide.jsx: Mini size 220x450 -> 280x400
 7. HelpGuide.jsx: PostToolUse removed false success field
-8. HelpGuide.jsx: Tool Failed -> PostToolUseFailure
+8. HelpGuide.jsx: Tool Failed -> PostToolUseFailure (NOTE: obsolete in 2.1.154 — failures now detected via PostToolUse `tool_response.is_error`)
 9. HelpGuide.jsx: SubagentStop fields corrected
 10. HelpGuide.jsx: Added agents.json to file structure
 11. HelpGuide.jsx: Stop event added stopReason

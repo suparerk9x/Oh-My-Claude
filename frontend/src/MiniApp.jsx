@@ -155,7 +155,9 @@ export default function MiniApp({ onSwitchToFull }) {
           const tool = evt.toolName;
           setSmartStatus(prev => {
             const next = { ...prev };
-            if (type === 'UserPromptSubmit' || type === 'PostToolUse') {
+            if (type === 'PostToolUse' && evt.isError) {
+              next[sid] = { status: 'failed', label: 'Error', icon: '❌', color: 'text-red-400' };
+            } else if (type === 'UserPromptSubmit' || type === 'PostToolUse') {
               next[sid] = { status: 'thinking', label: 'Thinking', icon: '\u{1F9E0}', color: 'text-violet-400' };
             } else if (type === 'PreToolUse') {
               if (tool === 'Read' || tool === 'Glob' || tool === 'Grep') {

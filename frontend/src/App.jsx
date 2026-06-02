@@ -63,7 +63,7 @@ export default function App() {
   const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'dark');
   const [agentViewMode, setAgentViewMode] = useState(() => localStorage.getItem('agentViewMode') || 'full');
   const [isAgentsCollapsed, setIsAgentsCollapsed] = useState(() => localStorage.getItem('agentsCollapsed') === 'true');
-  const [showHelp, setShowHelp] = useState(false);
+  const [showHelp, setShowHelp] = useState(() => new URLSearchParams(window.location.search).has('guide'));
   const [demoMode, setDemoMode] = useState(() => localStorage.getItem('demoMode') === 'true');
   const demo = useDemoReplay(demoMode);
 
@@ -381,8 +381,8 @@ export default function App() {
     return map;
   }, [displayEvents, colors]);
 
-  // Token percentages - ONLY from Chrome extension (claudeUsage)
-  // If no extension data, show N/A (null = N/A)
+  // Token percentages - ONLY from claudeUsage (Claude Code OAuth sync, or the fallback extension)
+  // If no usage data, show N/A (null = N/A)
   const tokens = DEMO_TOKENS || (stats?.tokens || {});
   const hasRealUsage = demoMode || claudeUsage?.five_hour != null;
   // Only show Sync indicator if extension synced within last 2 minutes
@@ -426,7 +426,7 @@ export default function App() {
     document.title = parts.join(' \u00b7 ');
   }, [displayAgents, smartStatus, sessionPct]);
 
-  // Session reset time - only from Chrome extension
+  // Session reset time - only from claudeUsage (OAuth sync or fallback extension)
   const getSessionResetTime = () => {
     if (demoMode) return '3h 8m';
     if (!claudeUsage?.five_hour?.resets_at) return 'N/A';
@@ -443,7 +443,7 @@ export default function App() {
     return 'soon';
   };
 
-  // Weekly reset time - only from Chrome extension
+  // Weekly reset time - only from claudeUsage (OAuth sync or fallback extension)
   const getWeeklyAllModelsReset = () => {
     if (demoMode) return '6d 1h';
     if (!claudeUsage?.seven_day?.resets_at) return 'N/A';
@@ -474,7 +474,7 @@ export default function App() {
     if (selectedEventType) {
       if (selectedEventType === 'tools' && e.type !== 'PreToolUse') return false;
       if (selectedEventType === 'success' && e.type !== 'PostToolUse') return false;
-      if (selectedEventType === 'errors' && e.type !== 'PostToolUseFailure') return false;
+      if (selectedEventType === 'errors' && !((e.type === 'PostToolUse' && e.isError) || e.type === 'PostToolUseFailure')) return false;
       if (selectedEventType === 'prompts' && e.type !== 'UserPromptSubmit') return false;
     }
     return true;
@@ -602,14 +602,14 @@ export default function App() {
             </div>
           )}
           {!demoMode && (isSyncActive ? (
-            <div className={`flex items-center gap-1.5 text-xs ${colors.status.info}`} title="Synced from Claude.ai via extension">
+            <div className={`flex items-center gap-1.5 text-xs ${colors.status.info}`} title="Usage % synced from Claude Code (OAuth), or the optional extension">
               <svg className="w-3.5 h-3.5 animate-spin" style={{animationDuration: '20s'}} fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
                 <path d="M21 2v6h-6M3 12a9 9 0 0 1 15-6.7L21 8M3 22v-6h6M21 12a9 9 0 0 1-15 6.7L3 16" />
               </svg>
               <span className="font-medium">Houston, We Have Sync</span>
             </div>
           ) : (
-            <div className={`flex items-center gap-1.5 text-xs ${colors.status.error}`} title="Extension not syncing - enable Chrome extension on claude.ai">
+            <div className={`flex items-center gap-1.5 text-xs ${colors.status.error}`} title="No usage data - make sure Claude Code is logged in on this machine (or enable the fallback extension)">
               <span className="text-sm">💀</span>
               <span className="font-medium">RIP Sync</span>
             </div>
@@ -668,18 +668,13 @@ export default function App() {
               </svg>
             )}
           </button>
-          {/* Medium pop-out */}
+          {/* Medium switch — popup (300px) even in PWA; user closes the host window manually */}
           <button
             onClick={() => {
-              if (isPWA) {
-                setMediumMode(true);
-                try { window.resizeTo(450, 870); } catch {}
-              } else {
-                window.open('/medium.html', '_blank', 'popup,width=450,height=870');
-              }
+              window.open('/medium.html', '_blank', 'popup,width=300,height=870');
             }}
             className={`p-1 rounded-lg ${colors.button.base} border transition-all ${colors.button.text} h-7 w-7 flex items-center justify-center`}
-            title={isPWA ? "Switch to Medium View" : "Open Medium View (popup)"}
+            title="Open Medium View (300px popup)"
           >
             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 5a1 1 0 011-1h4a1 1 0 011 1v14a1 1 0 01-1 1H5a1 1 0 01-1-1V5z" />
@@ -767,6 +762,14 @@ export default function App() {
                 resetType="rolling"
                 colors={colors}
               />
+              {claudeUsage?.seven_day_opus?.utilization != null && (
+                <TokenGauge
+                  label="Opus wk"
+                  pct={claudeUsage.seven_day_opus.utilization}
+                  resetType="rolling"
+                  colors={colors}
+                />
+              )}
             </div>
 
             {/* Divider */}
@@ -827,7 +830,7 @@ export default function App() {
                     <span className="text-[7px]">✅</span><span className={`font-mono ${colors.semantic?.emerald?.text || 'text-emerald-400'}`}>{sessionEvents.filter(e => e.type === 'PostToolUse').length}</span>
                   </button>
                   <button onClick={() => setSelectedEventType(selectedEventType === 'errors' ? null : 'errors')} className={`px-0.5 py-0.5 rounded transition-all whitespace-nowrap ${selectedEventType === 'errors' ? `${colors.semantic?.red?.bg || 'bg-red-500/20'} ring-1 ${colors.semantic?.red?.ring || 'ring-red-500/50'}` : (colors.semantic?.red?.bgHover || 'hover:bg-red-500/10')}`} title="Errors">
-                    <span className="text-[7px]">❌</span><span className={`font-mono ${colors.semantic?.red?.text || 'text-red-400'}`}>{sessionEvents.filter(e => e.type === 'PostToolUseFailure').length}</span>
+                    <span className="text-[7px]">❌</span><span className={`font-mono ${colors.semantic?.red?.text || 'text-red-400'}`}>{sessionEvents.filter(e => (e.type === 'PostToolUse' && e.isError) || e.type === 'PostToolUseFailure').length}</span>
                   </button>
                   <button onClick={() => setSelectedEventType(selectedEventType === 'prompts' ? null : 'prompts')} className={`px-0.5 py-0.5 rounded transition-all whitespace-nowrap ${selectedEventType === 'prompts' ? `${colors.semantic?.amber?.bg || 'bg-amber-500/20'} ring-1 ${colors.semantic?.amber?.ring || 'ring-amber-500/50'}` : (colors.semantic?.amber?.bgHover || 'hover:bg-amber-500/10')}`} title="Prompts">
                     <span className="text-[7px]">💬</span><span className={`font-mono ${colors.semantic?.amber?.text || 'text-amber-400'}`}>{sessionEvents.filter(e => e.type === 'UserPromptSubmit').length}</span>
@@ -945,7 +948,7 @@ export default function App() {
                 <span className="text-[7px]">✅</span><span className={`font-mono ${colors.semantic?.emerald?.text || 'text-emerald-400'}`}>{eventCounts.PostToolUse || 0}</span>
               </button>
               <button onClick={() => setSelectedEventType(selectedEventType === 'errors' ? null : 'errors')} className={`px-0.5 py-0.5 rounded transition-all whitespace-nowrap ${selectedEventType === 'errors' ? `${colors.semantic?.red?.bg || 'bg-red-500/20'} ring-1 ${colors.semantic?.red?.ring || 'ring-red-500/50'}` : (colors.semantic?.red?.bgHover || 'hover:bg-red-500/10')}`} title="Errors">
-                <span className="text-[7px]">❌</span><span className={`font-mono ${colors.semantic?.red?.text || 'text-red-400'}`}>{eventCounts.PostToolUseFailure || 0}</span>
+                <span className="text-[7px]">❌</span><span className={`font-mono ${colors.semantic?.red?.text || 'text-red-400'}`}>{displayEvents.filter(e => (e.type === 'PostToolUse' && e.isError) || e.type === 'PostToolUseFailure').length || 0}</span>
               </button>
               <button onClick={() => setSelectedEventType(selectedEventType === 'prompts' ? null : 'prompts')} className={`px-0.5 py-0.5 rounded transition-all whitespace-nowrap ${selectedEventType === 'prompts' ? `${colors.semantic?.amber?.bg || 'bg-amber-500/20'} ring-1 ${colors.semantic?.amber?.ring || 'ring-amber-500/50'}` : (colors.semantic?.amber?.bgHover || 'hover:bg-amber-500/10')}`} title="Prompts">
                 <span className="text-[7px]">💬</span><span className={`font-mono ${colors.semantic?.amber?.text || 'text-amber-400'}`}>{eventCounts.UserPromptSubmit || 0}</span>

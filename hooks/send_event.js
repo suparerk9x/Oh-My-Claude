@@ -72,6 +72,20 @@ process.stdin.on('end', () => {
       // Error info
       error: hookData.error || null,
 
+      // Extended hook metadata
+      effort: hookData.effort?.level || null,
+      permissionMode: hookData.permission_mode || null,
+      durationMs: hookData.duration_ms || null,
+      trigger: hookData.trigger || null,
+      sessionSource: hookData.source || null,
+
+      // Background jobs / scheduled crons / last turn message (Stop, SubagentStop)
+      backgroundTasks: Array.isArray(hookData.background_tasks)
+        ? hookData.background_tasks.map(t => ({ id: t.id, type: t.type, status: t.status, description: t.description, command: (t.command || '').slice(0, 120) }))
+        : null,
+      sessionCrons: Array.isArray(hookData.session_crons) ? hookData.session_crons : null,
+      lastAssistantMessage: hookData.last_assistant_message ? String(hookData.last_assistant_message).slice(0, 400) : null,
+
       // Raw data for debugging
       raw: hookData
     };
@@ -90,8 +104,8 @@ process.stdin.on('end', () => {
 
 /**
  * Read the last 32KB of the transcript file and extract the latest context window fill.
- * Matches Claude Code's formula: (input_tokens + cache_creation + cache_read) / 200000 * 100
- * Sends the result to /context-update on the backend.
+ * Computes lastInputTokens = input_tokens + cache_creation + cache_read and POSTs it with the
+ * model id to /context-update; the server now computes the % per-model (1M vs 200k limit).
  */
 function sendContextUpdate(sessionId, transcriptPath) {
   try {
@@ -114,14 +128,13 @@ function sendContextUpdate(sessionId, transcriptPath) {
         if (parsed.type === 'assistant' && parsed.message?.usage && parsed.message.model !== '<synthetic>') {
           const u = parsed.message.usage;
           const lastInputTokens = (u.input_tokens || 0) + (u.cache_read_input_tokens || 0) + (u.cache_creation_input_tokens || 0);
-          const contextLimit = 200000;
-          const usedPct = Math.round((lastInputTokens / contextLimit) * 100);
 
-          // Send to /context-update
+          // Send to /context-update — server computes the % per-model
           pendingRequests++;
           const payload = JSON.stringify({
             sessionId,
-            contextWindow: { used_percentage: usedPct, remaining_percentage: 100 - usedPct }
+            lastInputTokens,
+            model: (parsed.message.model || null)
           });
           const req = http.request({
             hostname: '127.0.0.1', port: 4824,

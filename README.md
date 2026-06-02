@@ -34,7 +34,7 @@
 
 ### 🤖 "What are my agents doing?"
 
-- Opus 4.6 spawns team agents — code-reviewer, worker, reviewer-2 — but **what are they actually doing?**
+- Opus 4.8 spawns team agents — code-reviewer, worker, reviewer-2 — but **what are they actually doing?**
 - Wanted to see: who's active, what tool they're using, how many tokens each one burns
 - **Team Comms** — they literally talk to each other (broadcasts, DMs, task assignments). Fun to watch
 - **Subagents** — watch them spawn, do work, and die. Circle of AI life
@@ -61,7 +61,7 @@ Started as "how much quota left?" → became a window into how Claude Code works
 | **Dark / Light Theme** | Comprehensive theme system with semantic color tokens — fully readable in both modes |
 | **Notifications** | Desktop notifications for events (bell toggle) |
 | **Bilingual Guide** | Built-in help guide in English & Thai (11 sections) |
-| **Chrome Extension** | Sync usage % directly from Claude.ai — **strongly recommended** |
+| **Auto Usage Sync** | Session/weekly % synced automatically from Claude Code's OAuth token — no browser or extension needed |
 | **Demo Mode** | Replay 1,006 real events with retro tape counter UI |
 
 ### Usage Status Indicator
@@ -257,9 +257,9 @@ Add the `hooks` section — replace `<PATH>` with your Oh-My-Claude folder path:
 | Windows | `node "D:/Projects/Oh-My-Claude/hooks/send_event.js" --event-type PreToolUse` |
 | macOS | `node "/Users/john/Oh-My-Claude/hooks/send_event.js" --event-type PreToolUse` |
 
-### Step 3: Install Chrome Extension
+### Step 3: Usage % Sync (Automatic)
 
-> **Strongly recommended** — this is how the Token Usage panel gets session/weekly % and countdown timers. See [Chrome Extension](#-chrome-extension-strongly-recommended) section for details.
+> Session/weekly % and countdown timers sync automatically from Claude Code's OAuth token on this machine — **nothing to install**. Just keep Claude Code logged in (the `claude` CLI). If Claude Code runs on a *different* machine than this dashboard, see the optional [Chrome Extension](#-chrome-extension-optional-fallback) fallback.
 
 ### Step 4: Start
 
@@ -290,11 +290,11 @@ Open **http://localhost:4825** — you should see:
 
 ```mermaid
 flowchart TD
-    CC["💻 Claude Code\nTerminal / IDE"]
-    CE["🌐 Chrome Extension\nFetches from claude.ai"]
+    CC["💻 Claude Code\nHooks (events) + OAuth (usage %)"]
+    CE["🌐 Chrome Extension\nOptional usage fallback"]
 
-    CC -->|"Hooks send events"| BS
-    CE -->|"Sync usage %"| BS
+    CC -->|"Events + usage %"| BS
+    CE -.->|"Usage % (fallback)"| BS
 
     BS["🖥️ Backend Server\nExpress + WebSocket · port 4824"]
 
@@ -314,17 +314,18 @@ flowchart TD
 **Data Flow:**
 
 1. **Claude Code** → Hooks fire events (PreToolUse, PostToolUse, SessionStart, SessionEnd, etc.) → Backend
-2. **Chrome Extension** → Fetches usage % from claude.ai → Backend (every 1 min)
-3. **Backend** → Aggregates all data → Broadcasts via WebSocket
-4. **Dashboard** → Receives via WebSocket → Renders in real-time
+2. **Claude Code OAuth** → Backend reads the local OAuth token and queries Anthropic for usage % (every 1 min, no browser) → these are the same numbers as Claude Code's "Account & Usage" panel
+3. **Chrome Extension** *(optional fallback)* → Fetches usage % from claude.ai → Backend, only used when Claude Code isn't on this machine
+4. **Backend** → Aggregates all data → Broadcasts via WebSocket
+5. **Dashboard** → Receives via WebSocket → Renders in real-time
 
 ---
 
-## 🌐 Chrome Extension (Strongly Recommended)
+## 🌐 Chrome Extension (Optional Fallback)
 
-> **This is how the Token Usage panel gets its data.** Without the extension, you won't see session/weekly usage percentages or countdown timers — the core feature that prevents token burnout.
+> **You usually don't need this.** Usage % syncs automatically from Claude Code's OAuth token on the same machine (see Step 3). The extension is only useful when Claude Code runs on a *different* machine than this dashboard — it borrows a logged-in claude.ai browser session instead of a local token.
 
-Syncs your Claude.ai usage percentage to the dashboard every minute, automatically.
+Syncs your Claude.ai usage percentage to the dashboard every minute via the browser.
 
 ### Install
 
@@ -491,7 +492,7 @@ Oh-My-Claude/
 ├── scripts/
 │   └── prepare-demo-data.js  # Convert real events → demo dataset
 │
-├── extension/                # Chrome extension (strongly recommended)
+├── extension/                # Chrome extension (optional usage fallback)
 │   ├── manifest.json         # Manifest V3
 │   ├── background.js         # Background sync worker
 │   ├── content.js            # Fetches usage from claude.ai
@@ -616,7 +617,8 @@ curl http://localhost:4824/health
 |---------|----------|
 | Dashboard shows **OFF** | 1. Check backend: `curl http://localhost:4824/health` <br> 2. Check browser console for WebSocket errors <br> 3. Hard refresh: `Ctrl+Shift+R` |
 | No events appearing | 1. Verify hooks in `~/.claude/settings.json` <br> 2. Check path uses forward slashes `/` <br> 3. Restart Claude Code terminal |
-| Extension not syncing | 1. Must be logged into claude.ai <br> 2. Check extension enabled at `chrome://extensions/` <br> 3. Check backend console for "Usage received" |
+| Usage % shows 0 / not updating | 1. Make sure Claude Code is logged in on this machine <br> 2. `~/.claude/.credentials.json` must exist <br> 3. Check backend console for `[USAGE] Synced from Claude Code OAuth` |
+| Extension not syncing (fallback only) | 1. Must be logged into claude.ai <br> 2. Check extension enabled at `chrome://extensions/` <br> 3. Check backend console for "Usage received" |
 | PWA not installable | 1. Must access via `http://localhost:4825` (not IP) <br> 2. Use Chrome or Edge <br> 3. Check DevTools → Application → Manifest |
 | Demo mode not working | 1. Open Guide → click Demo button <br> 2. Check browser console for errors <br> 3. Ensure `frontend/src/data/demoData.js` exists |
 

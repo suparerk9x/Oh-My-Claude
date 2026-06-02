@@ -195,15 +195,15 @@ function OverviewSection({ lang, theme = 'dark' }) {
       architectureTitle: 'System Architecture',
       archDesc: 'How data flows through the system:',
       archClaudeCode: 'Claude Code',
-      archClaudeCodeDesc: 'Terminal / IDE',
+      archClaudeCodeDesc: 'Hooks + OAuth usage',
       archChromeExt: 'Chrome Extension',
-      archChromeExtDesc: 'Scrapes claude.ai',
+      archChromeExtDesc: 'Optional fallback',
       archBackend: 'Backend Server',
       archBackendDesc: 'Express + WebSocket',
       archDashboard: 'Dashboard',
       archDashboardDesc: 'React UI',
-      archFlow1: 'Hooks send events',
-      archFlow2: 'Sync usage %',
+      archFlow1: 'Events + usage %',
+      archFlow2: 'Usage % (backup)',
       archFlow3: 'WebSocket live updates',
       archData: 'Data stored',
       archDataItems: ['Events', 'Agents', 'Sessions', 'Usage %'],
@@ -254,15 +254,15 @@ function OverviewSection({ lang, theme = 'dark' }) {
       architectureTitle: 'System Architecture',
       archDesc: 'การไหลของข้อมูลในระบบ:',
       archClaudeCode: 'Claude Code',
-      archClaudeCodeDesc: 'Terminal / IDE',
+      archClaudeCodeDesc: 'Hooks + OAuth usage',
       archChromeExt: 'Chrome Extension',
-      archChromeExtDesc: 'ดึงจาก claude.ai',
+      archChromeExtDesc: 'ทางเลือกสำรอง',
       archBackend: 'Backend Server',
       archBackendDesc: 'Express + WebSocket',
       archDashboard: 'Dashboard',
       archDashboardDesc: 'React UI',
-      archFlow1: 'Hooks ส่ง events',
-      archFlow2: 'Sync usage %',
+      archFlow1: 'Events + usage %',
+      archFlow2: 'Usage % (สำรอง)',
       archFlow3: 'WebSocket live updates',
       archData: 'เก็บข้อมูล',
       archDataItems: ['Events', 'Agents', 'Sessions', 'Usage %'],
@@ -549,7 +549,7 @@ function SetupSection({ lang, theme = 'dark' }) {
   const t = {
     en: {
       title: 'Setting Up Oh My Claude',
-      desc: 'The system consists of 4 main parts: Backend Server, Frontend Dashboard, Claude Code Hooks, and Chrome Extension (strongly recommended)',
+      desc: 'Three core parts: Backend Server, Frontend Dashboard, and Claude Code Hooks. Usage % syncs automatically from Claude Code\'s OAuth token — no browser needed. The Chrome Extension is an optional fallback.',
       fileStructure: 'File Structure',
       installSteps: 'Installation Steps',
       step1: 'Install Dependencies',
@@ -560,14 +560,14 @@ function SetupSection({ lang, theme = 'dark' }) {
       step2FileWin: 'C:\\Users\\<username>\\.claude\\settings.json',
       step2Note: 'Replace <PATH> with your oh-my-claude folder path',
       step2Hooks: ['PreToolUse', 'PostToolUse', 'SubagentStart', 'SubagentStop', 'UserPromptSubmit', 'PermissionRequest', 'Stop', 'PreCompact', 'Notification', 'SessionStart', 'SessionEnd', 'TeammateIdle', 'TaskCompleted'],
-      step3: 'Install Chrome Extension',
-      step3For: 'Strongly Recommended - for Token Usage tracking',
-      step3Desc: 'Pull Session % and Weekly % directly from Claude.ai:',
+      step3: 'Chrome Extension (Optional Fallback)',
+      step3For: 'Optional — usage % already syncs automatically',
+      step3Desc: 'Skip this unless you need a fallback. Usage % already syncs from Claude Code\'s OAuth token on this machine (no browser needed). Use the extension only if Claude Code runs on a different machine than this dashboard — it pulls Session % and Weekly % from a logged-in claude.ai browser session instead:',
       step3Steps: ['Open chrome://extensions/', 'Enable "Developer mode"', 'Click "Load unpacked"', 'Select extension/ folder', 'Open claude.ai once to login (grabs your session)'],
-      step3Note: 'Extension syncs usage data every 1 minute → Shows',
+      step3Note: 'When active, the extension syncs every 1 minute → Shows',
       step3Badge: 'Sync',
       step3Badge2: 'badge in header',
-      step3Warn: 'First login to claude.ai is required so the extension can grab your session cookie. After that, sync works in the background — no need to keep the tab open.',
+      step3Warn: 'If you use the extension, the first login to claude.ai is required so it can grab your session cookie. After that, sync works in the background — no need to keep the tab open.',
       step4: 'Start the Dashboard',
       step4Desc: 'Run both backend and frontend:',
       step4Note: 'Dashboard opens at',
@@ -583,7 +583,7 @@ function SetupSection({ lang, theme = 'dark' }) {
     },
     th: {
       title: 'การติดตั้ง Oh My Claude',
-      desc: 'ระบบประกอบด้วย 4 ส่วนหลัก: Backend Server, Frontend Dashboard, Claude Code Hooks และ Chrome Extension (แนะนำอย่างยิ่ง)',
+      desc: 'มี 3 ส่วนหลัก: Backend Server, Frontend Dashboard และ Claude Code Hooks — usage % sync อัตโนมัติจาก OAuth token ของ Claude Code โดยไม่ต้องเปิด browser ส่วน Chrome Extension เป็นทางเลือกสำรอง',
       fileStructure: 'File Structure',
       installSteps: 'ขั้นตอนการติดตั้ง',
       step1: 'ติดตั้ง Dependencies',
@@ -594,14 +594,14 @@ function SetupSection({ lang, theme = 'dark' }) {
       step2FileWin: 'C:\\Users\\<username>\\.claude\\settings.json',
       step2Note: 'แทนที่ <PATH> ด้วย path ไปยัง folder oh-my-claude ของคุณ',
       step2Hooks: ['PreToolUse', 'PostToolUse', 'SubagentStart', 'SubagentStop', 'UserPromptSubmit', 'PermissionRequest', 'Stop', 'PreCompact', 'Notification', 'SessionStart', 'SessionEnd', 'TeammateIdle', 'TaskCompleted'],
-      step3: 'ติดตั้ง Chrome Extension',
-      step3For: 'แนะนำอย่างยิ่ง - สำหรับดู Token Usage',
-      step3Desc: 'ดึง Session % และ Weekly % จาก Claude.ai โดยตรง:',
+      step3: 'Chrome Extension (ทางเลือกสำรอง)',
+      step3For: 'Optional — usage % sync อัตโนมัติอยู่แล้ว',
+      step3Desc: 'ข้ามขั้นตอนนี้ได้ ถ้าไม่ต้องการ fallback — usage % sync จาก OAuth token ของ Claude Code บนเครื่องนี้อยู่แล้ว (ไม่ต้องเปิด browser) ใช้ extension เฉพาะกรณีที่ Claude Code อยู่คนละเครื่องกับ dashboard เท่านั้น โดยมันจะดึง Session % และ Weekly % จาก session ของ claude.ai ที่ login ใน browser แทน:',
       step3Steps: ['เปิด chrome://extensions/', 'เปิด "Developer mode"', 'คลิก "Load unpacked"', 'เลือก folder extension/', 'เปิด claude.ai สักครั้งเพื่อ login (extension จะจับ session ไว้)'],
-      step3Note: 'Extension sync ข้อมูลทุก 1 นาที → แสดง',
+      step3Note: 'เมื่อใช้งาน extension จะ sync ทุก 1 นาที → แสดง',
       step3Badge: 'Sync',
       step3Badge2: 'badge ที่ header',
-      step3Warn: 'ต้อง login เข้า claude.ai ครั้งแรกเพื่อให้ extension จับ session cookie ได้ หลังจากนั้น sync ทำงานใน background ได้เลย — ไม่ต้องเปิด tab ค้างไว้',
+      step3Warn: 'ถ้าใช้ extension ต้อง login เข้า claude.ai ครั้งแรกเพื่อให้จับ session cookie ได้ หลังจากนั้น sync ทำงานใน background ได้เลย — ไม่ต้องเปิด tab ค้างไว้',
       step4: 'เริ่มใช้งาน Dashboard',
       step4Desc: 'รัน backend และ frontend:',
       step4Note: 'Dashboard เปิดที่',
@@ -640,7 +640,7 @@ function SetupSection({ lang, theme = 'dark' }) {
           <div className={`pl-8 ${colors.text.dimmed}`}>└── <span className="text-amber-500">vite.config.js</span> <span className={colors.text.faint}>← port 4825</span></div>
           <div className={`pl-4 ${colors.text.dimmed}`}>├── <span className="text-violet-500">hooks/</span></div>
           <div className={`pl-8 ${colors.text.dimmed}`}>└── <span className="text-emerald-500">send_event.js</span> <span className={colors.text.faint}>← Hook script (sends to backend)</span></div>
-          <div className={`pl-4 ${colors.text.dimmed}`}>├── <span className="text-cyan-500">extension/</span> <span className={colors.text.faint}>← Chrome Extension (recommended)</span></div>
+          <div className={`pl-4 ${colors.text.dimmed}`}>├── <span className="text-cyan-500">extension/</span> <span className={colors.text.faint}>← Chrome Extension (optional fallback)</span></div>
           <div className={`pl-4 ${colors.text.dimmed}`}>└── <span className="text-amber-500">start.bat</span> <span className={colors.text.faint}>← Quick start (Windows)</span></div>
         </div>
       </div>
@@ -851,7 +851,7 @@ function StatusSection({ lang, theme = 'dark' }) {
       connTitle: 'Connection Status',
       liveDesc: 'Connected to backend server via WebSocket',
       offDesc: 'Disconnected, reconnecting every 2 seconds',
-      syncDesc: 'Receiving usage data from Claude.ai via Chrome Extension',
+      syncDesc: 'Receiving Claude.ai usage % (via Claude Code OAuth, or the optional extension)',
       usageTitle: 'Usage Status',
       usageDesc: 'Based on Session usage percentage (5-hour window):',
       normal: 'Normal',
@@ -864,7 +864,7 @@ function StatusSection({ lang, theme = 'dark' }) {
       connTitle: 'Connection Status',
       liveDesc: 'เชื่อมต่อ backend server ผ่าน WebSocket',
       offDesc: 'ไม่ได้เชื่อมต่อ, reconnect ทุก 2 วินาที',
-      syncDesc: 'รับข้อมูล usage จาก Claude.ai ผ่าน Chrome Extension',
+      syncDesc: 'รับ usage % ของ Claude.ai (ผ่าน OAuth ของ Claude Code หรือ extension สำรอง)',
       usageTitle: 'Usage Status',
       usageDesc: 'คำนวณจาก Session usage percentage (5-hour window):',
       normal: 'Normal',
@@ -955,9 +955,9 @@ function TokensSection({ lang, theme = 'dark' }) {
       dataSourceDesc: 'Token data comes from two sources:',
       sourceLocal: 'Local Transcripts',
       sourceLocalDesc: 'Read from ~/.claude/projects/ - tokens per session, model breakdown',
-      sourceExternal: 'Chrome Extension',
-      sourceExternalDesc: 'Scrapes Claude.ai every 1 min - Session % and Weekly %',
-      sourceExternalNote: 'Required for accurate usage percentages',
+      sourceExternal: 'Claude Code OAuth',
+      sourceExternalDesc: 'Reads Claude Code\'s local OAuth token, queries Anthropic every 1 min - Session % and Weekly %. No browser needed.',
+      sourceExternalNote: 'Automatic — same numbers as Claude Code\'s Account & Usage panel',
       syncBadge: 'Shows "Sync" badge when active',
       sessionTitle: 'Session Gauge (5-Hour Window)',
       sessionDesc: 'Measures your usage within a rolling 5-hour window. This is the primary rate limit for Claude Code.',
@@ -986,7 +986,7 @@ function TokensSection({ lang, theme = 'dark' }) {
       tips: [
         'Use Haiku for simple tasks to save quota',
         'Check Weekly gauge before starting large projects',
-        'Install Chrome Extension for real-time %'
+        'Usage % syncs automatically from Claude Code — no extension needed'
       ]
     },
     th: {
@@ -994,9 +994,9 @@ function TokensSection({ lang, theme = 'dark' }) {
       dataSourceDesc: 'ข้อมูล Token มาจาก 2 แหล่ง:',
       sourceLocal: 'Local Transcripts',
       sourceLocalDesc: 'อ่านจาก ~/.claude/projects/ - tokens ต่อ session, แยกตาม model',
-      sourceExternal: 'Chrome Extension',
-      sourceExternalDesc: 'ดึงจาก Claude.ai ทุก 1 นาที - Session % และ Weekly %',
-      sourceExternalNote: 'จำเป็นสำหรับ % ที่แม่นยำ',
+      sourceExternal: 'Claude Code OAuth',
+      sourceExternalDesc: 'อ่าน OAuth token ของ Claude Code แล้ว query Anthropic ทุก 1 นาที - Session % และ Weekly % โดยไม่ต้องเปิด browser',
+      sourceExternalNote: 'อัตโนมัติ — ตัวเลขเดียวกับ panel Account & Usage ของ Claude Code',
       syncBadge: 'แสดง "Sync" badge เมื่อทำงาน',
       sessionTitle: 'Session Gauge (5-Hour Window)',
       sessionDesc: 'วัดการใช้งานในช่วง rolling 5 ชั่วโมง นี่คือ rate limit หลักของ Claude Code',
@@ -1025,7 +1025,7 @@ function TokensSection({ lang, theme = 'dark' }) {
       tips: [
         'ใช้ Haiku สำหรับงานง่ายเพื่อประหยัด quota',
         'เช็ค Weekly gauge ก่อนเริ่ม project ใหญ่',
-        'ติดตั้ง Chrome Extension เพื่อดู % แบบ real-time'
+        'usage % sync อัตโนมัติจาก Claude Code — ไม่ต้องติดตั้ง extension'
       ]
     }
   };
@@ -1395,7 +1395,7 @@ function AgentsSection({ lang, theme = 'dark' }) {
       gitDiffDel: 'Lines deleted (removals) — red',
       gitDiffFiles: 'Number of changed files — gray',
       contextTitle: 'Context Window %',
-      contextDesc: 'Shows how full each agent\'s context window is (last API call input tokens / 200k limit). Displayed on main agents and team members.',
+      contextDesc: 'Shows how full each agent\'s context window is (last API call input tokens / model context window (1M for Opus/Sonnet, 200k for Haiku)). Displayed on main agents and team members.',
       contextBadge: 'Badge — "ctx 52%" with fixed width, color-coded: green (<50%), amber (50-79%), red (≥80%)',
       contextGauge: 'Gauge bar — thin progress bar on the project name row with tick marks at 50% and 80%',
       contextBar: 'Team bar — context fill bar on Line 2 alongside token % bar',
@@ -1461,7 +1461,7 @@ function AgentsSection({ lang, theme = 'dark' }) {
       gitDiffDel: 'บรรทัดที่ลบ (removals) — แดง',
       gitDiffFiles: 'จำนวนไฟล์ที่เปลี่ยนแปลง — เทา',
       contextTitle: 'Context Window %',
-      contextDesc: 'แสดง % การใช้ context window ของแต่ละ agent (input tokens ล่าสุด / 200k limit) แสดงบน main agent และ team member',
+      contextDesc: 'แสดง % การใช้ context window ของแต่ละ agent (input tokens ล่าสุด / context window ตามรุ่น (1M สำหรับ Opus/Sonnet, 200k สำหรับ Haiku)) แสดงบน main agent และ team member',
       contextBadge: 'Badge — "ctx 52%" ขนาดคงที่ เปลี่ยนสีตามระดับ: เขียว (<50%), เหลือง (50-79%), แดง (≥80%)',
       contextGauge: 'Gauge bar — แถบบางที่แถว project name มีขีดแบ่งที่ 50% และ 80%',
       contextBar: 'Team bar — แถบ context บนบรรทัด 2 คู่กับ token % bar',
@@ -1624,7 +1624,7 @@ function AgentsSection({ lang, theme = 'dark' }) {
             <div className="px-3 pt-2.5 flex items-center justify-between">
               <div className="flex items-center gap-1.5">
                 <span className="text-[11px] font-mono font-bold text-white w-[16px] text-right">1.</span>
-                <span className="text-[10px] font-medium px-1 py-0.5 rounded bg-violet-500/15 text-violet-400">Opus 4.6</span>
+                <span className="text-[10px] font-medium px-1 py-0.5 rounded bg-violet-500/15 text-violet-400">Opus 4.8</span>
                 <span className="text-[10px] animate-pulse">✍️</span>
                 <span className="text-[9px] font-medium text-orange-400">Writing</span>
               </div>
@@ -1694,7 +1694,7 @@ function AgentsSection({ lang, theme = 'dark' }) {
                       </svg>
                     </span>
                     <span className="font-medium px-1.5 py-0.5 rounded bg-white/15 text-gray-100">Backend-Staff</span>
-                    <span className="font-medium px-1 py-0.5 rounded bg-sky-500/15 text-sky-400">Sonnet 4.5</span>
+                    <span className="font-medium px-1 py-0.5 rounded bg-sky-500/15 text-sky-400">Sonnet 4.6</span>
                     <span className={`px-1 py-0.5 rounded bg-pink-500/15 text-pink-400`}>General-Purpose</span>
                     <span className="text-[8px] px-1 py-0.5 rounded-full bg-orange-500/15 text-orange-400">🔥</span>
                     <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-emerald-500/15">
@@ -1783,7 +1783,7 @@ function AgentsSection({ lang, theme = 'dark' }) {
                       </svg>
                     </span>
                     <span className="font-medium px-1.5 py-0.5 rounded bg-white/15 text-gray-100">Backend-Security</span>
-                    <span className="font-medium px-1 py-0.5 rounded bg-sky-500/15 text-sky-400">Sonnet 4.5</span>
+                    <span className="font-medium px-1 py-0.5 rounded bg-sky-500/15 text-sky-400">Sonnet 4.6</span>
                     <span className={`px-1 py-0.5 rounded bg-pink-500/15 text-pink-400`}>General-Purpose</span>
                     <span className="text-[8px] px-1 py-0.5 rounded-full bg-orange-500/15 text-orange-400">🔥</span>
                     <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-emerald-500/15">
@@ -1855,7 +1855,7 @@ function AgentsSection({ lang, theme = 'dark' }) {
               <div className="px-3 pt-2 flex items-center justify-between">
                 <div className="flex items-center gap-1 text-[10px]">
                   <span className={colors.text.faint}>└</span>
-                  <span className="font-medium px-1 py-0.5 rounded bg-violet-500/15 text-violet-400">Opus 4.6</span>
+                  <span className="font-medium px-1 py-0.5 rounded bg-violet-500/15 text-violet-400">Opus 4.8</span>
                   <span className={`px-1 py-0.5 rounded bg-pink-500/15 text-pink-400`}>Explore</span>
                   <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-gray-500/15">
                     <span className="text-gray-500">○</span>
@@ -1885,7 +1885,7 @@ function AgentsSection({ lang, theme = 'dark' }) {
             <div className="px-3 pt-2.5 flex items-center justify-between">
               <div className="flex items-center gap-1.5">
                 <span className="text-[11px] font-mono font-bold text-white w-[16px] text-right">3.</span>
-                <span className="text-[10px] font-medium px-1 py-0.5 rounded bg-sky-500/15 text-sky-400">Sonnet 4.5</span>
+                <span className="text-[10px] font-medium px-1 py-0.5 rounded bg-sky-500/15 text-sky-400">Sonnet 4.6</span>
                 <span className="text-[10px] animate-pulse">🧠</span>
                 <span className="text-[9px] font-medium text-violet-400">Thinking</span>
               </div>
@@ -2240,7 +2240,7 @@ function MiniModeSection({ lang, theme = 'dark' }) {
       headerTitle: 'Header',
       headerItems: [
         'Connection indicator (green dot = live)',
-        'Extension sync icon (spinning = syncing, skull = offline)',
+        'Usage sync icon (spinning = syncing, skull = offline)',
         'Usage badge (Chill / Warming Up / On Fire / etc.)',
       ],
       gaugeTitle: 'Usage Gauges',
@@ -2251,7 +2251,7 @@ function MiniModeSection({ lang, theme = 'dark' }) {
       agentTitle: 'Agent List',
       agentItems: [
         'Sessions grouped by creation order, active first',
-        'Full model name (Opus 4.6, Sonnet 4.5, Haiku 4.5)',
+        'Full model name (Opus 4.8, Sonnet 4.6, Haiku 4.5)',
         'Live smart status with animated icons (Thinking, Reading, Writing, Executing, Spawning, etc.)',
         'Token usage per session',
         'Project name from working directory',
@@ -2280,7 +2280,7 @@ function MiniModeSection({ lang, theme = 'dark' }) {
       headerTitle: 'Header',
       headerItems: [
         'ไฟสถานะการเชื่อมต่อ (จุดเขียว = เชื่อมต่อแล้ว)',
-        'ไอคอน sync extension (หมุน = กำลัง sync, หัวกระโหลก = ออฟไลน์)',
+        'ไอคอน sync usage (หมุน = กำลัง sync, หัวกระโหลก = ออฟไลน์)',
         'Usage badge (Chill / Warming Up / On Fire / ฯลฯ)',
       ],
       gaugeTitle: 'Usage Gauges',
@@ -2291,7 +2291,7 @@ function MiniModeSection({ lang, theme = 'dark' }) {
       agentTitle: 'รายการ Agent',
       agentItems: [
         'Session จัดกลุ่มตามเวลาสร้าง, active ขึ้นก่อน',
-        'ชื่อ model เต็ม (Opus 4.6, Sonnet 4.5, Haiku 4.5)',
+        'ชื่อ model เต็ม (Opus 4.8, Sonnet 4.6, Haiku 4.5)',
         'Smart status แบบ real-time พร้อมไอคอนเคลื่อนไหว (Thinking, Reading, Writing, Executing, Spawning ฯลฯ)',
         'Token ที่ใช้ต่อ session',
         'ชื่อ project จาก working directory',
@@ -2387,7 +2387,7 @@ function MiniModeSection({ lang, theme = 'dark' }) {
             <div className={`border-b ${colors.card.border} bg-emerald-500/[0.03]`}>
               <div className="flex items-center gap-1 px-2 pt-1 pb-0.5">
                 <span className="text-[10px] font-mono font-bold text-white shrink-0 w-[14px] text-right">1.</span>
-                <span className="text-[9px] font-bold px-1 py-0.5 rounded text-violet-400 bg-violet-500/20 shrink-0">Opus 4.6</span>
+                <span className="text-[9px] font-bold px-1 py-0.5 rounded text-violet-400 bg-violet-500/20 shrink-0">Opus 4.8</span>
                 <span className="text-[11px] shrink-0 animate-pulse">🧠</span>
                 <span className="text-[10px] font-medium text-violet-400">Thinking</span>
                 <div className="flex-1" />
@@ -2403,7 +2403,7 @@ function MiniModeSection({ lang, theme = 'dark' }) {
               <div className="flex flex-wrap items-center gap-1 px-2 pb-1 pl-[42px]">
                 <div className="flex items-center gap-0.5">
                   <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                  <span className="text-[7px] font-bold text-sky-400">Sonnet 4.5</span>
+                  <span className="text-[7px] font-bold text-sky-400">Sonnet 4.6</span>
                   <span className="text-[6px] text-cyan-400/80">researcher</span>
                 </div>
                 <div className="flex items-center gap-0.5">
@@ -2413,7 +2413,7 @@ function MiniModeSection({ lang, theme = 'dark' }) {
                 </div>
                 <div className="flex items-center gap-0.5">
                   <div className="w-1.5 h-1.5 rounded-full bg-gray-500" />
-                  <span className="text-[7px] font-bold text-sky-400">Sonnet 4.5</span>
+                  <span className="text-[7px] font-bold text-sky-400">Sonnet 4.6</span>
                 </div>
               </div>
             </div>
@@ -2422,7 +2422,7 @@ function MiniModeSection({ lang, theme = 'dark' }) {
             <div className={`border-b ${colors.card.border} opacity-50`}>
               <div className="flex items-center gap-1 px-2 pt-1 pb-0.5">
                 <span className="text-[10px] font-mono font-bold text-white shrink-0 w-[14px] text-right">2.</span>
-                <span className="text-[9px] font-bold px-1 py-0.5 rounded text-sky-400 bg-sky-500/20 shrink-0">Sonnet 4.5</span>
+                <span className="text-[9px] font-bold px-1 py-0.5 rounded text-sky-400 bg-sky-500/20 shrink-0">Sonnet 4.6</span>
                 <span className="text-[10px] shrink-0 text-gray-500">○</span>
                 <span className="text-[10px] text-gray-500">Stopped</span>
                 <div className="flex-1" />

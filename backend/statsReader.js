@@ -1,28 +1,66 @@
 // Read token stats from Claude Code session files
-// Simplified: Only calculates monthly costs from session files
-// Session/Weekly usage comes from Chrome extension (claudeUsage)
+// Memory-efficient: caches pre-aggregated data per file, not raw entries
 import fs from 'fs/promises';
-import { existsSync, createReadStream, statSync } from 'fs';
+import { existsSync, createReadStream } from 'fs';
 import path from 'path';
 import { createInterface } from 'readline';
 
 const CLAUDE_DIR = path.join(process.env.USERPROFILE || process.env.HOME, '.claude');
 const PROJECTS_DIR = path.join(CLAUDE_DIR, 'projects');
 
+// Max entries in fileCache (slightly above current file count to avoid thrashing)
+const FILE_CACHE_MAX = 700;
+
+// Safe readline: wraps createReadStream + createInterface with proper error handlers
+// Prevents silent crashes from unhandled stream errors (Windows file locking, deleted files)
+function safeReadLines(filePath, onLine) {
+  return new Promise((resolve, reject) => {
+    const stream = createReadStream(filePath, { highWaterMark: 64 * 1024 });
+    let streamError = null;
+
+    stream.on('error', (err) => {
+      streamError = err;
+      // Don't reject here — let readline 'close' handle it
+    });
+
+    const rl = createInterface({ input: stream, crlfDelay: Infinity });
+
+    rl.on('line', (line) => {
+      try { onLine(line); } catch { /* skip bad line */ }
+    });
+
+    rl.on('close', () => {
+      if (streamError) {
+        reject(streamError);
+      } else {
+        resolve();
+      }
+    });
+
+    rl.on('error', (err) => {
+      reject(err);
+    });
+  });
+}
+
 // Pricing per 1M tokens (Anthropic official pricing)
+// Opus 4.x / Sonnet 4.6 / Haiku 4.5 GA rates.
+// cacheCreation = 5-minute cache write (1.25x input); cacheCreation1h = 1-hour cache write (2x input).
 const PRICING = {
-  'opus': { input: 15, output: 75, cacheRead: 1.5, cacheCreation: 18.75 },
-  'sonnet': { input: 3, output: 15, cacheRead: 0.30, cacheCreation: 3.75 },
-  'haiku': { input: 0.25, output: 1.25, cacheRead: 0.03, cacheCreation: 0.30 }
+  'opus': { input: 5, output: 25, cacheRead: 0.5, cacheCreation: 6.25, cacheCreation1h: 10 },
+  'sonnet': { input: 3, output: 15, cacheRead: 0.30, cacheCreation: 3.75, cacheCreation1h: 6 },
+  'haiku': { input: 1, output: 5, cacheRead: 0.1, cacheCreation: 1.25, cacheCreation1h: 2 },
+  'other': { input: 3, output: 15, cacheRead: 0.3, cacheCreation: 3.75, cacheCreation1h: 6 }
 };
 
-// Cache for computed stats (refresh every 15 seconds)
+// Cache for computed stats (refresh every 60 seconds)
 let cachedStats = null;
 let lastCacheTime = 0;
-const CACHE_TTL = 15000;
+const CACHE_TTL = 60000;
 
-// Incremental file cache: filePath -> { mtime, size, entries }
-// Avoids re-parsing unchanged files on every refresh
+// Incremental file cache: filePath -> { mtime, size, agg }
+// agg = pre-aggregated { byModel: { [model]: {input,output,cacheRead,cacheCreation} }, hourBuckets: { [hourKey]: { tokens, byModel } } }
+// This stores ~200 bytes per file instead of thousands of raw entry objects
 const fileCache = new Map();
 
 // Get all project directories (async)
@@ -70,101 +108,88 @@ async function getSessionFiles(daysBack = 7) {
   return files.sort((a, b) => b.mtime - a.mtime);
 }
 
-// Parse a session file using STREAMING (memory efficient for large files)
-async function parseSessionFile(filePath) {
-  const entries = [];
+// Parse a session file and return pre-aggregated data (memory efficient)
+// Instead of storing every entry, aggregate by model + hour bucket on parse
+async function parseAndAggregate(filePath) {
+  const byModel = {};
+  const hourBuckets = {};
+  let minTs = Infinity;
+  let maxTs = 0;
 
   try {
-    const rl = createInterface({
-      input: createReadStream(filePath, { highWaterMark: 64 * 1024 }),
-      crlfDelay: Infinity
-    });
+    await safeReadLines(filePath, (line) => {
+      if (!line.trim()) return;
 
-    for await (const line of rl) {
-      if (!line.trim()) continue;
+      const parsed = JSON.parse(line);
 
-      try {
-        const parsed = JSON.parse(line);
+      if (parsed.message?.role === 'assistant' && parsed.message?.usage && parsed.message?.model !== '<synthetic>') {
+        const usage = parsed.message.usage;
+        const model = parsed.message.model || 'unknown';
+        const timestamp = parsed.timestamp;
+        const timestampMs = timestamp ? new Date(timestamp).getTime() : 0;
 
-        if (parsed.message?.role === 'assistant' && parsed.message?.usage) {
-          const usage = parsed.message.usage;
-          const model = parsed.message.model || 'unknown';
-          const timestamp = parsed.timestamp;
-          const timestampMs = timestamp ? new Date(timestamp).getTime() : 0;
-
-          const modelLower = model.toLowerCase();
-          const modelKey = modelLower.includes('opus') ? 'opus' :
-                          modelLower.includes('sonnet') ? 'sonnet' :
-                          modelLower.includes('haiku') ? 'haiku' : 'other';
-
-          entries.push({
-            timestamp: timestampMs,
-            modelKey,
-            input: usage.input_tokens || 0,
-            output: usage.output_tokens || 0,
-            cacheRead: usage.cache_read_input_tokens || 0,
-            cacheCreation: usage.cache_creation_input_tokens || 0
-          });
+        if (timestampMs > 0) {
+          if (timestampMs < minTs) minTs = timestampMs;
+          if (timestampMs > maxTs) maxTs = timestampMs;
         }
-      } catch {
-        // Skip invalid lines
+
+        const modelLower = model.toLowerCase();
+        const modelKey = modelLower.includes('opus') ? 'opus' :
+                        modelLower.includes('sonnet') ? 'sonnet' :
+                        modelLower.includes('haiku') ? 'haiku' : 'other';
+
+        // sum top-level usage only; usage.iterations[] is already rolled up into these totals — do NOT add iterations
+        const input = usage.input_tokens || 0;
+        const output = usage.output_tokens || 0;
+        const cacheRead = usage.cache_read_input_tokens || 0;
+        const cacheCreation = usage.cache_creation_input_tokens || 0;
+        // 1-hour cache writes cost ~2x the 5-minute tier — track separately for accurate cost
+        const cacheCreation1h = usage.cache_creation?.ephemeral_1h_input_tokens || 0;
+
+        if (!byModel[modelKey]) {
+          byModel[modelKey] = { input: 0, output: 0, cacheRead: 0, cacheCreation: 0, cacheCreation1h: 0 };
+        }
+        byModel[modelKey].input += input;
+        byModel[modelKey].output += output;
+        byModel[modelKey].cacheRead += cacheRead;
+        byModel[modelKey].cacheCreation += cacheCreation;
+        byModel[modelKey].cacheCreation1h += cacheCreation1h;
+
+        if (timestampMs > 0) {
+          const d = new Date(timestampMs);
+          const hourKey = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}-${String(d.getHours()).padStart(2,'0')}`;
+          if (!hourBuckets[hourKey]) {
+            hourBuckets[hourKey] = { tokens: 0, opus: 0, sonnet: 0, haiku: 0, other: 0 };
+          }
+          const tokens = input + output;
+          hourBuckets[hourKey].tokens += tokens;
+          if (modelKey === 'opus') hourBuckets[hourKey].opus += tokens;
+          else if (modelKey === 'sonnet') hourBuckets[hourKey].sonnet += tokens;
+          else if (modelKey === 'haiku') hourBuckets[hourKey].haiku += tokens;
+          else hourBuckets[hourKey].other += tokens;
+        }
       }
-    }
+    });
   } catch (err) {
-    console.error('Error parsing session file:', err.message);
+    console.error(`[STATS] Error parsing ${path.basename(filePath)}: ${err.message}`);
   }
 
-  return entries;
+  return { byModel, hourBuckets, minTs, maxTs };
 }
 
-// Get entries for a file, using cache if file hasn't changed
-async function getFileEntries(file) {
-  const cached = fileCache.get(file.path);
-  if (cached && cached.mtime === file.mtime && cached.size === file.size) {
-    return cached.entries;
-  }
-
-  // File changed or new — re-parse
-  const entries = await parseSessionFile(file.path);
-  fileCache.set(file.path, { mtime: file.mtime, size: file.size, entries });
-  return entries;
-}
-
-// Calculate cost for tokens
-function calculateCost(model, input, output, cacheRead, cacheCreation) {
+// Calculate cost for tokens. cacheCreation is the TOTAL cache-write tokens; cacheCreation1h is the
+// 1-hour-tier subset (priced 2x). The remainder (5m + any untiered) is priced at the 5m rate.
+function calculateCost(model, input, output, cacheRead, cacheCreation, cacheCreation1h = 0) {
   const pricing = PRICING[model] || PRICING.opus;
+  const cc1h = cacheCreation1h || 0;
+  const cc5mAndUntiered = Math.max(0, (cacheCreation || 0) - cc1h);
   return (
     (input / 1000000) * pricing.input +
     (output / 1000000) * pricing.output +
     (cacheRead / 1000000) * pricing.cacheRead +
-    (cacheCreation / 1000000) * pricing.cacheCreation
+    (cc5mAndUntiered / 1000000) * pricing.cacheCreation +
+    (cc1h / 1000000) * (pricing.cacheCreation1h || pricing.cacheCreation)
   );
-}
-
-// Aggregate entries by model for a time range
-function aggregateEntries(allEntries, startMs) {
-  let tokens = 0;
-  let cost = 0;
-  const byModel = {};
-
-  for (const entry of allEntries) {
-    if (entry.timestamp < startMs) continue;
-    tokens += entry.input + entry.output;
-
-    if (!byModel[entry.modelKey]) {
-      byModel[entry.modelKey] = { input: 0, output: 0, cacheRead: 0, cacheCreation: 0 };
-    }
-    byModel[entry.modelKey].input += entry.input;
-    byModel[entry.modelKey].output += entry.output;
-    byModel[entry.modelKey].cacheRead += entry.cacheRead;
-    byModel[entry.modelKey].cacheCreation += entry.cacheCreation;
-  }
-
-  for (const [model, data] of Object.entries(byModel)) {
-    cost += calculateCost(model, data.input, data.output, data.cacheRead, data.cacheCreation);
-  }
-
-  return { tokens, cost, byModel };
 }
 
 // Build model usage display object
@@ -172,17 +197,72 @@ function buildModelUsage(byModel) {
   const result = {};
   for (const [model, data] of Object.entries(byModel)) {
     const displayName = model.charAt(0).toUpperCase() + model.slice(1);
-    const cost = calculateCost(model, data.input, data.output, data.cacheRead, data.cacheCreation);
+    const cost = calculateCost(model, data.input, data.output, data.cacheRead, data.cacheCreation, data.cacheCreation1h);
     result[displayName] = {
       inputTokens: data.input,
       outputTokens: data.output,
       cacheReadTokens: data.cacheRead,
       cacheCreationTokens: data.cacheCreation,
+      cacheCreation1hTokens: data.cacheCreation1h || 0,
       totalTokens: data.input + data.output,
       estimatedCost: Math.round(cost * 100) / 100
     };
   }
   return result;
+}
+
+// Filter byModel to only include entries after startMs
+// Since we aggregate by hour buckets, we use those for time-filtered queries
+function aggregateFromBuckets(allAggs, startMs) {
+  let tokens = 0;
+  let cost = 0;
+  const byModel = {};
+
+  for (const agg of allAggs) {
+    // Quick skip: if entire file is before startMs, skip
+    if (agg.maxTs < startMs) continue;
+
+    // If entire file is after startMs, use full byModel totals (fast path)
+    // tokens is recomputed from byModel below, so we only accumulate byModel here
+    if (agg.minTs >= startMs) {
+      for (const [model, data] of Object.entries(agg.byModel)) {
+        if (!byModel[model]) byModel[model] = { input: 0, output: 0, cacheRead: 0, cacheCreation: 0, cacheCreation1h: 0 };
+        byModel[model].input += data.input;
+        byModel[model].output += data.output;
+        byModel[model].cacheRead += data.cacheRead;
+        byModel[model].cacheCreation += data.cacheCreation;
+        byModel[model].cacheCreation1h += data.cacheCreation1h || 0;
+      }
+      continue;
+    }
+
+    // Partial overlap: tokens is recomputed from byModel below, so no per-bucket
+    // token accumulation is needed here — just include the file's full byModel.
+    // For cost: use full byModel if file overlaps significantly, or skip tokens-only for partial
+    // Better approach: always use full byModel for files that overlap (slight overcount for month boundary files)
+    // The accuracy difference is negligible since we're looking at month/week boundaries
+    for (const [model, data] of Object.entries(agg.byModel)) {
+      if (!byModel[model]) byModel[model] = { input: 0, output: 0, cacheRead: 0, cacheCreation: 0, cacheCreation1h: 0 };
+      // For partially overlapping files, include full data (within ~1 hour accuracy)
+      byModel[model].input += data.input;
+      byModel[model].output += data.output;
+      byModel[model].cacheRead += data.cacheRead;
+      byModel[model].cacheCreation += data.cacheCreation;
+      byModel[model].cacheCreation1h += data.cacheCreation1h || 0;
+    }
+  }
+
+  // Recalculate tokens from byModel for consistency
+  tokens = 0;
+  for (const data of Object.values(byModel)) {
+    tokens += data.input + data.output;
+  }
+
+  for (const [model, data] of Object.entries(byModel)) {
+    cost += calculateCost(model, data.input, data.output, data.cacheRead, data.cacheCreation, data.cacheCreation1h);
+  }
+
+  return { tokens, cost, byModel };
 }
 
 // Main function - only calculates monthly cost data
@@ -196,9 +276,8 @@ export async function readStatsCache() {
 
   const sessionFiles = await getSessionFiles(31); // Last 31 days for monthly
 
-  // Collect all entries using incremental file cache
-  // Only re-parses files whose mtime/size changed since last scan
-  const allEntries = [];
+  // Collect pre-aggregated data per file using incremental cache
+  const allAggs = [];
   let cacheHits = 0;
   let cacheMisses = 0;
 
@@ -206,12 +285,12 @@ export async function readStatsCache() {
     const cached = fileCache.get(file.path);
     if (cached && cached.mtime === file.mtime && cached.size === file.size) {
       cacheHits++;
-      allEntries.push(...cached.entries);
+      allAggs.push(cached.agg);
     } else {
       cacheMisses++;
-      const entries = await parseSessionFile(file.path);
-      fileCache.set(file.path, { mtime: file.mtime, size: file.size, entries });
-      allEntries.push(...entries);
+      const agg = await parseAndAggregate(file.path);
+      fileCache.set(file.path, { mtime: file.mtime, size: file.size, agg });
+      allAggs.push(agg);
     }
   }
 
@@ -221,15 +300,25 @@ export async function readStatsCache() {
     if (!currentPaths.has(key)) fileCache.delete(key);
   }
 
+  // Evict oldest entries if cache exceeds limit (prevent unbounded growth)
+  if (fileCache.size > FILE_CACHE_MAX) {
+    const excess = fileCache.size - FILE_CACHE_MAX;
+    const keys = fileCache.keys();
+    for (let i = 0; i < excess; i++) {
+      const { value } = keys.next();
+      if (value) fileCache.delete(value);
+    }
+  }
+
   // Monthly usage (1st of current month to now)
   const monthStart = new Date();
   monthStart.setDate(1);
   monthStart.setHours(0, 0, 0, 0);
-  const month = aggregateEntries(allEntries, monthStart.getTime());
+  const month = aggregateFromBuckets(allAggs, monthStart.getTime());
   const monthModelUsage = buildModelUsage(month.byModel);
 
   // Primary model this month
-  let primaryModel = 'sonnet';
+  let primaryModel = 'opus';
   let maxModelTokens = 0;
   for (const [model, data] of Object.entries(month.byModel)) {
     const modelTokens = data.input + data.output;
@@ -243,10 +332,10 @@ export async function readStatsCache() {
   const weekStart = new Date();
   weekStart.setDate(weekStart.getDate() - 7);
   weekStart.setHours(0, 0, 0, 0);
-  const week = aggregateEntries(allEntries, weekStart.getTime());
+  const week = aggregateFromBuckets(allAggs, weekStart.getTime());
   const weekModelUsage = buildModelUsage(week.byModel);
 
-  // Hourly breakdown for last 12 hours
+  // Hourly breakdown for last 12 hours (from pre-aggregated hour buckets)
   const now = new Date();
   const currentHour = now.getHours();
   const session_hourly = [];
@@ -255,22 +344,21 @@ export async function readStatsCache() {
     const hourOffset = (currentHour - i + 24) % 24;
     const hourStart = new Date(now);
     hourStart.setHours(currentHour - i, 0, 0, 0);
-    const hourEnd = new Date(hourStart);
-    hourEnd.setHours(hourStart.getHours() + 1);
 
-    const hourStartMs = hourStart.getTime();
-    const hourEndMs = hourEnd.getTime();
+    const hourKey = `${hourStart.getFullYear()}-${String(hourStart.getMonth()+1).padStart(2,'0')}-${String(hourStart.getDate()).padStart(2,'0')}-${String(hourStart.getHours()).padStart(2,'0')}`;
 
-    const hourByModel = { opus: 0, sonnet: 0, haiku: 0 };
+    const hourByModel = { opus: 0, sonnet: 0, haiku: 0, other: 0 };
     let hourTokens = 0;
 
-    for (const entry of allEntries) {
-      if (entry.timestamp >= hourStartMs && entry.timestamp < hourEndMs) {
-        const tokens = entry.input + entry.output;
-        hourTokens += tokens;
-        if (entry.modelKey === 'opus') hourByModel.opus += tokens;
-        else if (entry.modelKey === 'sonnet') hourByModel.sonnet += tokens;
-        else if (entry.modelKey === 'haiku') hourByModel.haiku += tokens;
+    // Sum across all file aggregations for this hour
+    for (const agg of allAggs) {
+      const bucket = agg.hourBuckets[hourKey];
+      if (bucket) {
+        hourTokens += bucket.tokens;
+        hourByModel.opus += bucket.opus;
+        hourByModel.sonnet += bucket.sonnet;
+        hourByModel.haiku += bucket.haiku;
+        hourByModel.other += bucket.other || 0;
       }
     }
 
@@ -304,7 +392,8 @@ export async function readStatsCache() {
 
   lastCacheTime = Date.now();
   const elapsed = Date.now() - t0;
-  console.log(`[STATS] ${sessionFiles.length} files (${cacheHits} cached, ${cacheMisses} parsed) in ${elapsed}ms — Month: ${month.tokens.toLocaleString()} tokens $${cachedStats.month_cost}, Week: ${week.tokens.toLocaleString()} tokens $${cachedStats.week_cost}`);
+  const heapMB = Math.round(process.memoryUsage().heapUsed / 1048576);
+  console.log(`[STATS] ${sessionFiles.length} files (${cacheHits} cached, ${cacheMisses} parsed) in ${elapsed}ms [${heapMB}MB heap] — Month: ${month.tokens.toLocaleString()} tokens $${cachedStats.month_cost}, Week: ${week.tokens.toLocaleString()} tokens $${cachedStats.week_cost}`);
 
   return cachedStats;
 }

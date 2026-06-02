@@ -56,7 +56,13 @@ const hookData = {
   output_tokens: process.env.CLAUDE_OUTPUT_TOKENS,
 
   // Error
-  error: process.env.CLAUDE_ERROR
+  error: process.env.CLAUDE_ERROR,
+
+  // Extended hook metadata (not all available via env)
+  effort: null,
+  duration_ms: null,
+  trigger: null,
+  source: null
 };
 
 // Track pending HTTP requests
@@ -101,6 +107,18 @@ const event = {
   // Error info
   error: hookData.error || null,
 
+  // Extended hook metadata (effort/duration/trigger/source not available via env)
+  effort: null,
+  permissionMode: hookData.permission_mode || null,
+  durationMs: null,
+  trigger: null,
+  sessionSource: null,
+
+  // Background jobs / crons not available via env; last message is
+  backgroundTasks: null,
+  sessionCrons: null,
+  lastAssistantMessage: hookData.last_assistant_message ? String(hookData.last_assistant_message).slice(0, 400) : null,
+
   // Raw data for debugging
   raw: hookData
 };
@@ -114,7 +132,8 @@ if ((eventType === 'PostToolUse' || eventType === 'Stop') && hookData.transcript
 sendEvent(event);
 
 /**
- * Read the last 32KB of the transcript file and extract context window data
+ * Read the last 32KB of the transcript file and extract context window data.
+ * POSTs lastInputTokens + model id to /context-update; the server now computes the % per-model.
  */
 function sendContextUpdate(sessionId, transcriptPath) {
   try {
@@ -137,14 +156,13 @@ function sendContextUpdate(sessionId, transcriptPath) {
         if (parsed.type === 'assistant' && parsed.message?.usage && parsed.message.model !== '<synthetic>') {
           const u = parsed.message.usage;
           const lastInputTokens = (u.input_tokens || 0) + (u.cache_read_input_tokens || 0) + (u.cache_creation_input_tokens || 0);
-          const contextLimit = 200000;
-          const usedPct = Math.round((lastInputTokens / contextLimit) * 100);
 
-          // Send to /context-update
+          // Send to /context-update — server computes the % per-model
           pendingRequests++;
           const payload = JSON.stringify({
             sessionId,
-            contextWindow: { used_percentage: usedPct, remaining_percentage: 100 - usedPct }
+            lastInputTokens,
+            model: (parsed.message.model || null)
           });
           const req = http.request({
             hostname: '127.0.0.1', port: 4824,

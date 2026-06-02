@@ -1,6 +1,9 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { DEMO_EVENTS, DEMO_SESSION_META, DEMO_AGENT_META, DEMO_TEAM_COMMS } from '../data/demoData';
 
+// Per-model context window limit (Opus/Sonnet 4.x = 1M, Haiku = 200k)
+const ctxLimitFor = (m) => /haiku/i.test(m || '') ? 200000 : 1000000;
+
 // Timing per event type (ms)
 const DELAY = {
   UserPromptSubmit: 600,
@@ -203,15 +206,16 @@ export function useDemoReplay(demoMode) {
       const inputRatio = 0.85; // ~85% input tokens
 
       // Simulate context window fill — grows from ~10k to ~180k as session progresses
+      const mainModel = event.model || existing.model || meta.model || 'claude-opus-4-8';
       const simLastInput = Math.min(10000 + Math.floor(newTokens * 0.08), 180000);
-      const simContextPct = Math.round((simLastInput / 200000) * 100);
+      const simContextPct = Math.round((simLastInput / ctxLimitFor(mainModel)) * 100);
 
       const updated = {
         ...existing,
         id: mainId,
         sessionId: event.sessionId,
         type: 'main',
-        model: event.model || existing.model || meta.model || 'claude-opus-4-6',
+        model: mainModel,
         startedAt: existing.startedAt || now,
         lastSeen: now,
         status: event.type === 'Stop' ? 'stopped' : 'active',
@@ -257,7 +261,7 @@ export function useDemoReplay(demoMode) {
             const newTokens = Math.min((agent.tokens || 0) + increment, targetTokens);
             const taskIdx = Math.floor((newTokens / targetTokens) * teamToolTasks.length) % teamToolTasks.length;
             const subLastInput = Math.min(8000 + Math.floor(newTokens * 0.1), 160000);
-            const subContextPct = Math.round((subLastInput / 200000) * 100);
+            const subContextPct = Math.round((subLastInput / ctxLimitFor(agent.model || meta.model)) * 100);
             s.agentsMap.set(id, {
               ...agent,
               tokens: newTokens,
@@ -282,7 +286,7 @@ export function useDemoReplay(demoMode) {
       s.agentsMap.set(event.agentId, {
         id: event.agentId,
         type: meta.agentType || event.agentType || 'subagent',
-        model: meta.model || event.model || 'claude-opus-4-6',
+        model: meta.model || event.model || 'claude-opus-4-8',
         sessionId: event.sessionId,
         parentId: parentId,
         startedAt: now,
@@ -307,7 +311,7 @@ export function useDemoReplay(demoMode) {
         const meta = DEMO_AGENT_META[event.agentId] || {};
         const finalTokens = meta.tokens || existing.tokens;
         const finalLastInput = Math.min(8000 + Math.floor(finalTokens * 0.1), 160000);
-        const finalContextPct = Math.round((finalLastInput / 200000) * 100);
+        const finalContextPct = Math.round((finalLastInput / ctxLimitFor(existing.model || meta.model)) * 100);
         s.agentsMap.set(event.agentId, {
           ...existing,
           status: 'stopped',
@@ -335,7 +339,7 @@ export function useDemoReplay(demoMode) {
         const tokenIncrement = tokenSchedule.tokensPerEvent[event.agentId] || 5000;
         const newTokens = (existing.tokens || 0) + tokenIncrement;
         const agentLastInput = Math.min(8000 + Math.floor(newTokens * 0.1), 160000);
-        const agentContextPct = Math.round((agentLastInput / 200000) * 100);
+        const agentContextPct = Math.round((agentLastInput / ctxLimitFor(existing.model)) * 100);
 
         s.agentsMap.set(event.agentId, {
           ...existing,

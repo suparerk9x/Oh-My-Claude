@@ -8,6 +8,7 @@ export const EVENT_CONFIG = {
   PreToolUse:         { icon: '🔧', key: 'preTool' },
   PostToolUse:        { icon: '✅', key: 'postTool' },
   PostToolUseFailure: { icon: '❌', key: 'postToolFail' },
+  PostToolUseError:   { icon: '❌', key: 'postToolFail' },
   SubagentStart:      { icon: '🤖', key: 'subagentStart' },
   SubagentStop:       { icon: '👥', key: 'subagentStop' },
   UserPromptSubmit:   { icon: '💬', key: 'userPrompt' },

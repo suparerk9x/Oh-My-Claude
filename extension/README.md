@@ -1,6 +1,10 @@
-# Oh My Claude - Usage Sync Extension
+# Oh My Claude - Usage Sync Extension (Optional Fallback)
 
 Chrome extension ที่ดึงข้อมูล usage จาก Claude.ai และส่งไปยัง Oh My Claude dashboard โดยอัตโนมัติ
+
+> ⚠️ **ปกติไม่จำเป็นต้องใช้ตัวนี้แล้ว** — Oh My Claude sync usage % อัตโนมัติจาก OAuth token ของ Claude Code บนเครื่องเดียวกันอยู่แล้ว (ไม่ต้องเปิด browser, ไม่ต้องติดตั้ง extension) extension นี้เก็บไว้เป็น **ทางเลือกสำรอง** สำหรับกรณีเดียว: Claude Code อยู่คนละเครื่องกับ dashboard จึงต้องยืม session ของ claude.ai ใน browser แทนการอ่าน token ในเครื่อง
+>
+> *Not needed in the normal setup — the dashboard already syncs usage % automatically from Claude Code's local OAuth token. Use this extension only when Claude Code runs on a different machine than the dashboard.*
 
 ## How it works
 

@@ -9,10 +9,10 @@ The `ctx %` shown on the Oh-My-Claude dashboard did not match Claude Code's buil
 Reverse-engineered from the minified source (`cli.js`):
 
 ```
-used = Math.round((input_tokens + cache_creation_input_tokens + cache_read_input_tokens) / contextWindow * 100)
+used = Math.round((input_tokens + cache_creation_input_tokens + cache_read_input_tokens) / (model context window) * 100)
 ```
 
-- `contextWindow` = 200,000 tokens (all current Claude models)
+- `contextWindow` is **model-aware**: Opus/Sonnet 4.x = 1,000,000 tokens (1M is the GA default); Haiku 4.5 = 200,000 tokens. Rule: `limit = /haiku/i.test(model) ? 200000 : 1000000`
 - `output_tokens` is **NOT** included
 - Messages with `model === '<synthetic>'` (compaction summaries) are **skipped**
 
@@ -52,7 +52,8 @@ This gives the **exact** value from Claude Code's in-memory state, updated every
 Claude Code → PostToolUse/Stop hook → send_event.js
   → reads last 32KB of transcript file
   → finds last assistant message with usage (skips synthetic)
-  → calculates ctx% using Claude Code's formula
+  → POSTs raw { sessionId, lastInputTokens, model } (no precomputed %)
+  → server computes ctx% per-model (/haiku/ → 200k, else 1M)
   → POST /context-update
 ```
 
@@ -83,7 +84,7 @@ readSessionContext() tail-read → calculate from transcript
 | ~1-2s delay in VSCode | Minor | Transcript buffer flush interval |
 | Exact match only possible in CLI | N/A for VSCode users | StatusLine is a CLI-only feature |
 | 32KB tail-read window | Negligible | Covers ~10-20 assistant messages, more than enough |
-| Hardcoded 200k context limit | None currently | All Claude models use 200k (1M beta would need update) |
+| Per-model context limit | None | The hook now POSTs raw `lastInputTokens` + `model`; the server computes the percentage per model (`/haiku/i.test(model) ? 200000 : 1000000`). Opus/Sonnet 4.x use the 1M GA window, Haiku 4.5 uses 200k. |
 
 ## Files Involved
 
