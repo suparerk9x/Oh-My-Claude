@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { EVENT_CONFIG } from './config/eventTypes';
 import { getThemeColors } from './config/theme';
-import { formatTokens, formatRelativeTime, getUsageBadge, burnSpeedPct, formatEta, rateLimitEta } from './utils/format';
+import { formatTokens, formatRelativeTime, getUsageBadge, burnSpeedPct } from './utils/format';
 import { TokenGauge, AgentTree, HelpGuide, ActivityItem, HourlyBreakdown, TokenStats, getEventTarget } from './components';
 import { useNotifications } from './hooks/useNotifications';
 import { useDemoReplay } from './hooks/useDemoReplay';
@@ -397,9 +397,9 @@ export default function App() {
   // If no usage data, show N/A (null = N/A)
   const tokens = DEMO_TOKENS || (stats?.tokens || {});
   const hasRealUsage = demoMode || claudeUsage?.five_hour != null;
-  // Only show Sync indicator if extension synced within last 2 minutes
-  // Uses lastSync timestamp from backend (set when extension actually syncs)
-  const USAGE_TIMEOUT_MS = 5 * 60 * 1000; // 2 minutes
+  // "Synced" = a SUCCESSFUL usage sync (Claude Code OAuth, or the fallback extension) landed within 5 min.
+  // lastSync is only bumped on success, so during a 429 backoff this can legitimately go stale.
+  const USAGE_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
   const lastSyncTime = claudeUsage?.lastSync ? new Date(claudeUsage.lastSync).getTime() : 0;
   const isSyncActive = hasRealUsage && lastSyncTime && (Date.now() - lastSyncTime) < USAGE_TIMEOUT_MS;
   const sessionPct = demoMode ? 30 : (hasRealUsage ? claudeUsage.five_hour.utilization : null);
@@ -758,7 +758,7 @@ export default function App() {
         return (
           <div className="flex-shrink-0 px-3 py-1 bg-red-500/15 border-b border-red-500/30 flex items-center gap-2 text-[11px] text-red-300">
             <span className="animate-pulse">🔴</span>
-            <span className="font-semibold">ใกล้ชน rate limit — Burn {speed}% · limit ETA ~{formatEta(f.etaMinutes)}</span>
+            <span className="font-semibold">ใกล้ชน rate limit — Burn {speed}%</span>
           </div>
         );
       })()}
@@ -789,21 +789,15 @@ export default function App() {
                 if (speed <= 0) return (
                   <div className="-mt-1 px-1 text-[9px] font-medium text-emerald-400/80 flex items-center gap-1" title="ตอนนี้ไม่ได้ใช้ token — utilization จะค่อยๆ ลดลงเมื่อ window เลื่อน"><span>🟢</span><span>ไม่ได้ใช้งาน</span></div>
                 );
-                const willHit = f.etaMinutes != null; // show ETA whenever a burn rate is measured
                 const sev = speed < 100 ? 'safe' : speed < 150 ? 'warn' : 'crit';
                 const c = sev === 'crit' ? 'text-red-400' : sev === 'warn' ? 'text-amber-400' : 'text-emerald-400';
                 const dotBg = sev === 'crit' ? 'bg-red-400' : sev === 'warn' ? 'bg-amber-400' : 'bg-emerald-400';
-                // ETA colours by *actual* risk, independent of speed: green when the window resets before the
-                // limit would be hit (safe no matter how fast); amber/red only when it'll really hit first.
-                const etaStatus = rateLimitEta(f)?.status;
-                const etaColor = etaStatus === 'critical' ? 'text-red-400' : etaStatus === 'safe' ? 'text-emerald-400' : 'text-amber-400';
                 return (
-                  <div className="-mt-1 px-1 flex flex-col gap-0.5 text-[9px] font-medium leading-tight" title="Burn = ความเร็วใช้ token เทียบเพดาน 20%/ชม. (>100% = เผาเกินอัตราที่ยั่งยืน) · limit ETA = อีกนานเท่าไรจะแตะ 100% — เขียว = window reset ก่อน ไม่ชนแน่นอน">
+                  <div className="-mt-1 px-1 text-[9px] font-medium" title="Burn = ความเร็วใช้ token เทียบเพดาน 20%/ชม. (>100% = เผาเกินอัตราที่ยั่งยืน)">
                     <span className="flex items-center gap-1 whitespace-nowrap">
                       <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${dotBg} ${sev === 'crit' ? 'animate-pulse' : ''}`} />
                       <span className={c}>Burn {speed}%</span>
                     </span>
-                    {willHit && <span className={`pl-2.5 whitespace-nowrap ${etaColor}`}>limit ETA ~{formatEta(f.etaMinutes)}</span>}
                   </div>
                 );
               })()}

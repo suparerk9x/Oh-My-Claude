@@ -424,11 +424,11 @@ export default function MiniApp({ onSwitchToFull }) {
           ) : (
             <>
               {isSyncActive ? (
-                <svg className={`w-2.5 h-2.5 ${colors.status.info} animate-spin`} style={{ animationDuration: '20s' }} fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24" title="Extension syncing">
+                <svg className={`w-2.5 h-2.5 ${colors.status.info} animate-spin`} style={{ animationDuration: '20s' }} fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24" title="กำลัง sync usage % (Claude Code OAuth)">
                   <path d="M21 2v6h-6M3 12a9 9 0 0 1 15-6.7L21 8M3 22v-6h6M21 12a9 9 0 0 1-15 6.7L3 16" />
                 </svg>
               ) : (
-                <span className={`text-[8px] ${colors.status.error}`} title="Extension not syncing">💀</span>
+                <span className={`text-[8px] ${colors.status.error}`} title="Usage sync ค้าง — ยังไม่ sync สำเร็จเกิน 5 นาที (sync ผ่าน Claude Code OAuth · อาจติด rate-limit ชั่วคราว ไม่เกี่ยวกับ extension)">💀</span>
               )}
             </>
           )}

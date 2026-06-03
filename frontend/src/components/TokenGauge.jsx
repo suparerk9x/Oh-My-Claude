@@ -4,7 +4,7 @@ import PropTypes from 'prop-types';
  * Token Gauge Component - Displays usage percentage with progress bar
  * Shows N/A when no Chrome extension data is available
  */
-export function TokenGauge({ label, pct = null, resetTime = null, resetAt = null, headerRight = null, segments = 0, resetType = 'rolling', colors = {} }) {
+export function TokenGauge({ label, pct = null, resetTime = null, resetAt = null, headerRight = null, segments = 0, markerPct = null, resetType = 'rolling', colors = {} }) {
   // Handle N/A case (pct is null when no Chrome extension data)
   const isNA = pct === null;
   const displayPct = isNA ? 0 : pct;
@@ -36,19 +36,31 @@ export function TokenGauge({ label, pct = null, resetTime = null, resetAt = null
         {headerRight}
       </div>
 
-      {/* Progress Bar - Fixed gradient with reveal mask */}
-      <div className={`w-full h-1.5 ${progressBg} rounded-full overflow-hidden relative`}>
-        {/* Full gradient background */}
-        <div className={`absolute inset-0 ${progressBarClass}`} />
-        {/* Dark overlay from right - reveals gradient based on % */}
-        <div
-          className={`absolute inset-0 ${progressBg} transition-all duration-500 ease-out`}
-          style={{ left: `${Math.min(displayPct, 100)}%` }}
-        />
-        {/* Segment dividers drawn over the bar (e.g. segments=5 → 4 ticks = the 5h window) */}
-        {segments >= 2 && Array.from({ length: segments - 1 }, (_, i) => (
-          <div key={i} className="absolute inset-y-0 w-px bg-white/50" style={{ left: `${((i + 1) / segments) * 100}%` }} />
-        ))}
+      {/* Progress Bar (gradient + reveal mask) + optional time-position marker under it */}
+      <div className={`relative ${markerPct != null && !isNA ? 'pb-1' : ''}`}>
+        <div className={`w-full h-1.5 ${progressBg} rounded-full overflow-hidden relative`}>
+          {/* Full gradient background */}
+          <div className={`absolute inset-0 ${progressBarClass}`} />
+          {/* Dark overlay from right - reveals gradient based on % */}
+          <div
+            className={`absolute inset-0 ${progressBg} transition-all duration-500 ease-out`}
+            style={{ left: `${Math.min(displayPct, 100)}%` }}
+          />
+          {/* Segment dividers drawn over the bar (e.g. segments=5 → 4 ticks = the 5h window) */}
+          {segments >= 2 && Array.from({ length: segments - 1 }, (_, i) => (
+            <div key={i} className="absolute inset-y-0 w-px bg-white/50" style={{ left: `${((i + 1) / segments) * 100}%` }} />
+          ))}
+        </div>
+        {/* Time-position playhead: small ▲ under the bar = how far through the window we are (vs the coloured fill = % used) */}
+        {markerPct != null && !isNA && (
+          <div
+            className="absolute top-1.5 -translate-x-1/2 z-10"
+            style={{ left: `${Math.min(Math.max(markerPct, 0), 100)}%` }}
+            title={`เวลาผ่านไป ${Math.round(markerPct)}% ของ window · marker = ตำแหน่งเวลา, แถบสี = % ที่ใช้`}
+          >
+            <div className="w-0 h-0 border-l-[3px] border-r-[3px] border-b-[4px] border-l-transparent border-r-transparent border-b-white/80" />
+          </div>
+        )}
       </div>
 
       {/* Bottom: Reset info (left, 2 lines) + Large % (right, spanning 2 lines) */}
@@ -83,6 +95,7 @@ TokenGauge.propTypes = {
   resetAt: PropTypes.string,
   headerRight: PropTypes.node,
   segments: PropTypes.number,
+  markerPct: PropTypes.number,
   resetType: PropTypes.oneOf(['rolling', 'fixed']),
   colors: PropTypes.shape({
     text: PropTypes.shape({

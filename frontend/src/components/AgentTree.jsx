@@ -658,14 +658,6 @@ export function AgentTree({ agents = [], colors = {}, compact = false, expanded 
                     <span className={`font-mono text-[10px] tabular-nums ${mi.tokens || 'text-amber-500'} w-[45px] text-right`} title={`Context window: ${(main?.lastInputTokens || 0).toLocaleString()} tokens (the value behind ctx %)`}>
                       {formatTokens(main?.lastInputTokens || 0)}
                     </span>
-                    {(() => {
-                      const pct = main?.contextPct || 0;
-                      return (
-                        <span className={`font-mono text-[8px] tabular-nums px-1 py-0.5 rounded shrink-0 w-[42px] text-right ${pct >= 80 ? 'bg-red-500/15 text-red-400' : pct >= 50 ? 'bg-amber-500/15 text-amber-400' : 'bg-emerald-500/15 text-emerald-400'}`} title={`Context window ${pct}% full`}>
-                          ctx {pct}%
-                        </span>
-                      );
-                    })()}
                   </div>
                 </div>
 
@@ -687,7 +679,7 @@ export function AgentTree({ agents = [], colors = {}, compact = false, expanded 
                         ⚠ {teamInfo.fileConflicts.length} conflict{teamInfo.fileConflicts.length > 1 ? 's' : ''}
                       </span>
                     )}
-                    {/* Context window gauge — right-aligned */}
+                    {/* Context % badge + gauge — grouped, right-aligned (moved down off the header line) */}
                     {main?.contextPct > 0 && (() => {
                       const pct = main.contextPct;
                       const clamp = Math.min(pct, 100);
@@ -697,16 +689,21 @@ export function AgentTree({ agents = [], colors = {}, compact = false, expanded 
                       const ctxLimit = /haiku/i.test(main.model || '') ? 200000 : 1000000;
                       const limitK = ctxLimit >= 1000000 ? '1M' : '200k';
                       return (
-                        <div className="ml-auto flex items-center shrink-0" title={`Context window: ${lastInput.toLocaleString()} / ${limitK} tokens (${pct}%)`}>
-                          <div className={`relative h-[6px] w-[42px] rounded-full ${mi.tokenBarTrack || 'bg-gray-700/40'} overflow-hidden ${glowColor ? `shadow-sm ${glowColor}` : ''}`}>
-                            <div
-                              className={`absolute inset-y-0 left-0 rounded-full ${barColor} transition-all duration-700 ease-out`}
-                              style={{ width: `${clamp}%` }}
-                            />
-                            {/* Tick marks at 50% and 80% */}
-                            <div className="absolute inset-y-0 left-[50%] w-px bg-white/10" />
-                            <div className="absolute inset-y-0 left-[80%] w-px bg-white/15" />
+                        <div className="ml-auto flex items-center gap-1.5 shrink-0">
+                          <div className="flex items-center shrink-0" title={`Context window: ${lastInput.toLocaleString()} / ${limitK} tokens (${pct}%)`}>
+                            <div className={`relative h-[6px] w-[42px] rounded-full ${mi.tokenBarTrack || 'bg-gray-700/40'} overflow-hidden ${glowColor ? `shadow-sm ${glowColor}` : ''}`}>
+                              <div
+                                className={`absolute inset-y-0 left-0 rounded-full ${barColor} transition-all duration-700 ease-out`}
+                                style={{ width: `${clamp}%` }}
+                              />
+                              {/* Tick marks at 50% and 80% */}
+                              <div className="absolute inset-y-0 left-[50%] w-px bg-white/10" />
+                              <div className="absolute inset-y-0 left-[80%] w-px bg-white/15" />
+                            </div>
                           </div>
+                          <span className={`font-mono text-[8px] tabular-nums px-1 py-0.5 rounded shrink-0 w-[42px] text-right ${pct >= 80 ? 'bg-red-500/15 text-red-400' : pct >= 50 ? 'bg-amber-500/15 text-amber-400' : 'bg-emerald-500/15 text-emerald-400'}`} title={`Context window ${pct}% full`}>
+                            ctx {pct}%
+                          </span>
                         </div>
                       );
                     })()}

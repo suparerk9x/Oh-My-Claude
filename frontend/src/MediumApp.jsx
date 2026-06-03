@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { getThemeColors } from './config/theme';
-import { formatTokens, getUsageBadge, burnSpeedPct, formatEta, rateLimitEta } from './utils/format';
+import { formatTokens, getUsageBadge, burnSpeedPct } from './utils/format';
 import { useDemoReplay } from './hooks/useDemoReplay';
 import { useNotifications } from './hooks/useNotifications';
 import { AgentTree } from './components/AgentTree';
@@ -219,6 +219,27 @@ export default function MediumApp({ onSwitchToFull }) {
     } catch { return null; }
   };
   const sessionResetAt = demoMode ? '17:00' : formatResetAt(claudeUsage?.five_hour?.resets_at);
+  // Time-position marker for the Session bar: how far through the 5h window we are (derived from resets_at).
+  // elapsed = 5h − (time until reset); recomputed every render (the 1s clock re-render keeps it moving).
+  const sessionTimePct = (() => {
+    const r = claudeUsage?.five_hour?.resets_at;
+    if (!r) return null;
+    const resetMs = new Date(r).getTime();
+    if (!Number.isFinite(resetMs)) return null;
+    const FIVE_H = 5 * 60 * 60 * 1000;
+    const pct = ((FIVE_H - (resetMs - Date.now())) / FIVE_H) * 100;
+    return Math.min(100, Math.max(0, pct));
+  })();
+  // Same time-position marker for the Weekly bar, over the 7-day window.
+  const weeklyTimePct = (() => {
+    const r = claudeUsage?.seven_day?.resets_at;
+    if (!r) return null;
+    const resetMs = new Date(r).getTime();
+    if (!Number.isFinite(resetMs)) return null;
+    const WEEK = 7 * 24 * 60 * 60 * 1000;
+    const pct = ((WEEK - (resetMs - Date.now())) / WEEK) * 100;
+    return Math.min(100, Math.max(0, pct));
+  })();
   // Burn-rate indicator split into a header chip (dot + "Burn N%", sits right of the SESSION label)
   // and a below-gauge ETA line. Measuring/idle states stay below the gauge as before.
   const burnIndicator = (() => {
@@ -227,23 +248,17 @@ export default function MediumApp({ onSwitchToFull }) {
     const raw = burnSpeedPct(f);          // null = no sample yet, <=0 = idle (not burning)
     const active = raw != null && raw > 0;
     const speed = active ? raw : 0;        // idle / no-sample → "Burn 0%" so the readout always sits on the header
-    const willHit = f.etaMinutes != null;
     const sev = speed < 100 ? 'safe' : speed < 150 ? 'warn' : 'crit';
     const c = sev === 'crit' ? 'text-red-400' : sev === 'warn' ? 'text-amber-400' : 'text-emerald-400';
-    const etaStatus = rateLimitEta(f)?.status;
-    const etaColor = etaStatus === 'critical' ? 'text-red-400' : 'text-amber-400';
     const title = active
       ? 'Burn = ความเร็วใช้ token เทียบเพดาน 20%/ชม. (>100% = เผาเกินอัตราที่ยั่งยืน)'
       : (raw == null ? 'ยังไม่มี sample burn (รอ ~3 นาที) — แสดง 0% ไปก่อน' : 'ไม่ได้ใช้งาน — ตอนนี้ไม่ได้เผา token');
+    // header-only — the Session limit-ETA line was removed (low value: the 5h window resets so often it rarely matters)
     return {
       header: (
         // smaller than the 9px SESSION label + dimmed (no dot) — an understated secondary readout
         <span className={`whitespace-nowrap normal-case text-[8px] font-medium opacity-50 ${c}`} title={title}>Burn {speed}%</span>
-      ),
-      // ETA only when actively burning AND it's a real threat (will hit the cap before the window resets).
-      below: (active && willHit && etaStatus !== 'safe') ? (
-        <div className={`mt-0.5 text-[9px] font-medium leading-tight whitespace-nowrap ${etaColor}`} title="limit ETA = อีกนานเท่าไรจะแตะ 100% ก่อน window reset (โผล่เฉพาะตอนเสี่ยงชนจริง)">limit ETA ~{formatEta(f.etaMinutes)}</div>
-      ) : null
+      )
     };
   })();
   // Weekly burn: 7-day data moves too slowly to rate-sample, so derive pace from POSITION in the week
@@ -262,19 +277,11 @@ export default function MediumApp({ onSwitchToFull }) {
     const speed = util > 0 ? Math.round((util / (elapsedFrac * 100)) * 100) : 0; // % of sustainable pace (0 = nothing used)
     const sev = speed < 100 ? 'safe' : speed < 150 ? 'warn' : 'crit';
     const c = sev === 'crit' ? 'text-red-400' : sev === 'warn' ? 'text-amber-400' : 'text-emerald-400';
-    // ETA to 100% at the average rate so far, vs time left until the window resets.
-    const avgRatePerMin = util / (elapsedMs / 60000);
-    const etaMin = avgRatePerMin > 0 ? (100 - util) / avgRatePerMin : null;
-    const toResetMin = (resetMs - now) / 60000;
-    const threat = etaMin != null && etaMin < toResetMin; // will exhaust before the week resets
-    const etaColor = etaMin != null && etaMin < 1440 ? 'text-red-400' : 'text-amber-400';
+    // header-only — the Weekly limit-ETA line was removed
     return {
       header: (
         <span className={`whitespace-nowrap normal-case text-[8px] font-medium opacity-50 ${c}`} title="Burn = ใช้ไปเทียบ pace ที่ยั่งยืนของ 7 วัน (คิดจากผ่านมากี่ % ของสัปดาห์ · >100% = ใช้เร็วเกิน จะหมดก่อนครบสัปดาห์)">Burn {speed}%</span>
-      ),
-      below: threat ? (
-        <div className={`mt-0.5 text-[9px] font-medium leading-tight whitespace-nowrap ${etaColor}`} title="limit ETA = อีกนานเท่าไรจะใช้ครบ 100% ก่อน window reset (โผล่เฉพาะตอนเสี่ยงหมดจริง)">limit ETA ~{formatEta(etaMin)}</div>
-      ) : null
+      )
     };
   })();
   const weeklyResetAt = demoMode ? 'Sat 15:00' : (() => {
@@ -361,7 +368,7 @@ export default function MediumApp({ onSwitchToFull }) {
               <path d="M21 2v6h-6M3 12a9 9 0 0 1 15-6.7L21 8M3 22v-6h6M21 12a9 9 0 0 1-15 6.7L3 16" />
             </svg>
           ) : (
-            <span className={`text-[8px] ${colors.status.error}`} title="Extension not syncing">💀</span>
+            <span className={`text-[8px] ${colors.status.error}`} title="Usage sync ค้าง — ยังไม่ sync สำเร็จเกิน 5 นาที (sync ผ่าน Claude Code OAuth · อาจติด rate-limit ชั่วคราว ไม่เกี่ยวกับ extension)">💀</span>
           )}
         </div>
         <div className="flex items-center gap-0.5">
@@ -469,12 +476,10 @@ export default function MediumApp({ onSwitchToFull }) {
       {/* Token Gauges Row */}
       <div className={`grid grid-cols-2 gap-4 px-3 py-2 border-b ${colors.border} ${colors.bg.secondary} flex-shrink-0`}>
         <div>
-          <TokenGauge label="Session" pct={sessionPct} resetTime={getSessionResetTime()} resetAt={sessionResetAt} resetType="rolling" colors={colors} headerRight={burnIndicator?.header} segments={5} />
-          {burnIndicator?.below}
+          <TokenGauge label="Session" pct={sessionPct} resetTime={getSessionResetTime()} resetAt={sessionResetAt} resetType="rolling" colors={colors} headerRight={burnIndicator?.header} segments={5} markerPct={sessionTimePct} />
         </div>
         <div>
-          <TokenGauge label="Weekly" pct={weeklyPct} resetTime={getWeeklyResetTime()} resetAt={weeklyResetAt} resetType="rolling" colors={colors} segments={7} headerRight={weeklyBurnIndicator?.header} />
-          {weeklyBurnIndicator?.below}
+          <TokenGauge label="Weekly" pct={weeklyPct} resetTime={getWeeklyResetTime()} resetAt={weeklyResetAt} resetType="rolling" colors={colors} segments={7} headerRight={weeklyBurnIndicator?.header} markerPct={weeklyTimePct} />
         </div>
       </div>
 
