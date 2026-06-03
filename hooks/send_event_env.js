@@ -7,7 +7,7 @@
 const http = require('http');
 const fs = require('fs');
 
-const SERVER_URL = process.env.MONITOR_SERVER || 'http://localhost:4824';
+const SERVER_URL = process.env.MONITOR_SERVER || 'http://localhost:4825';
 const SOURCE_APP = process.env.MONITOR_SOURCE || 'claude-monitor';
 
 // Read event type from command line
@@ -165,7 +165,7 @@ function sendContextUpdate(sessionId, transcriptPath) {
             model: (parsed.message.model || null)
           });
           const req = http.request({
-            hostname: '127.0.0.1', port: 4824,
+            hostname: '127.0.0.1', port: 4825,
             path: '/context-update', method: 'POST',
             headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) },
             timeout: 500
@@ -189,7 +189,7 @@ function sendEvent(event) {
 
   const options = {
     hostname: url.hostname,
-    port: url.port || 4824,
+    port: url.port || 4825,
     path: url.pathname,
     method: 'POST',
     headers: {

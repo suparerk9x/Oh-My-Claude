@@ -275,11 +275,12 @@ start.bat
 npm run dev
 ```
 
-รัน backend (port 4824) และ frontend (port 4825) พร้อมกัน
+- **`start.bat`** รันแอปผ่าน **PM2** เป็น process เดียวที่ **http://localhost:4825** — UI, API และ WebSocket รวมกัน พร้อม auto-restart และ start ตอน boot (วิธีใช้งานปกติ)
+- **`npm run dev`** รัน dev server แทน: backend ที่ **4825** + Vite HMR frontend ที่ **5173** (เปิด **5173** สำหรับ live-reload ตอนแก้ UI)
 
 ### ขั้นตอน 5: เปิด Dashboard
 
-เปิด **http://localhost:4825** — ควรจะเห็น:
+เปิด **http://localhost:4825** (หรือ **http://localhost:5173** ถ้าใช้ `npm run dev`) — ควรจะเห็น:
 
 - Header แสดง **LIVE** (จุดเขียว)
 - สถานะ Backend แสดง **OK**
@@ -296,7 +297,7 @@ flowchart TD
     CC -->|"Events + usage %"| BS
     CE -.->|"Usage % (สำรอง)"| BS
 
-    BS["🖥️ Backend Server\nExpress + WebSocket · port 4824"]
+    BS["🖥️ Backend Server\nExpress + WebSocket · port 4825"]
 
     BS --- Data["Events · Agents · Sessions · Teams · Usage %"]
 
@@ -337,7 +338,7 @@ Sync % การใช้งานจาก Claude.ai มาที่ dashboard 
 ### วิธีทำงาน
 
 ```
-Claude.ai → Extension (ดึง API ทุก 1 นาที) → Backend :4824 → Dashboard
+Claude.ai → Extension (ดึง API ทุก 1 นาที) → Backend :4825 → Dashboard
 ```
 
 1. Extension ตรวจจับ organization และเริ่ม sync
@@ -444,7 +445,7 @@ Oh-My-Claude/
 ├── README_TH.md              # เอกสาร (TH)
 │
 ├── backend/
-│   ├── server.js             # Express + WebSocket server (port 4824)
+│   ├── server.js             # Express + WebSocket server (port 4825)
 │   ├── statsReader.js        # อ่าน transcript files สำหรับ token stats
 │   ├── events.json           # ประวัติ event (สร้างอัตโนมัติ)
 │   ├── agents.json           # สถานะ agent (สร้างอัตโนมัติ)
@@ -511,8 +512,8 @@ Oh-My-Claude/
 
 | Service | Port | ไฟล์ |
 |---------|------|------|
-| Backend | 4824 | `backend/server.js` |
-| Frontend | 4825 | `frontend/vite.config.js` |
+| App — backend เสิร์ฟ UI + API + WS (PM2: `omc-backend`) | 4825 | `backend/server.js` |
+| Vite dev server — เฉพาะตอน `npm run dev`, proxy ไป 4825 | 5173 | `frontend/vite.config.js` |
 
 ### ความปลอดภัย
 
@@ -599,7 +600,7 @@ Oh-My-Claude/
 
 ```bash
 # Test 1: Backend health
-curl http://localhost:4824/health
+curl http://localhost:4825/health
 # → {"status":"ok"}
 
 # Test 2: ส่งข้อความใน Claude Code
@@ -615,7 +616,7 @@ curl http://localhost:4824/health
 
 | ปัญหา | วิธีแก้ |
 |--------|---------|
-| Dashboard แสดง **OFF** | 1. ตรวจ backend: `curl http://localhost:4824/health` <br> 2. ตรวจ browser console หา WebSocket errors <br> 3. Hard refresh: `Ctrl+Shift+R` |
+| Dashboard แสดง **OFF** | 1. ตรวจ backend: `curl http://localhost:4825/health` <br> 2. ตรวจ browser console หา WebSocket errors <br> 3. Hard refresh: `Ctrl+Shift+R` |
 | ไม่มี events ปรากฏ | 1. ตรวจ hooks ใน `~/.claude/settings.json` <br> 2. ตรวจ path ใช้ forward slash `/` <br> 3. Restart terminal ของ Claude Code |
 | Usage % เป็น 0 / ไม่อัปเดต | 1. ตรวจว่า Claude Code login บนเครื่องนี้แล้ว <br> 2. ต้องมีไฟล์ `~/.claude/.credentials.json` <br> 3. ตรวจ backend console หา `[USAGE] Synced from Claude Code OAuth` |
 | Extension ไม่ sync (เฉพาะ fallback) | 1. ต้อง login claude.ai <br> 2. ตรวจ extension เปิดอยู่ที่ `chrome://extensions/` <br> 3. ตรวจ backend console หา "Usage received" |
@@ -647,7 +648,7 @@ curl http://localhost:4824/health
 
 ### WebSocket
 
-เชื่อมต่อ: `ws://localhost:4824`
+เชื่อมต่อ: `ws://localhost:4825`
 
 | Message | ทิศทาง | รายละเอียด |
 |---------|--------|-------------|

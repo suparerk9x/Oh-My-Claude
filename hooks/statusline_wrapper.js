@@ -8,7 +8,7 @@
 
 const http = require('http');
 
-const SERVER_URL = process.env.MONITOR_SERVER || 'http://localhost:4824';
+const SERVER_URL = process.env.MONITOR_SERVER || 'http://localhost:4825';
 
 let inputData = '';
 process.stdin.setEncoding('utf8');
@@ -29,7 +29,7 @@ process.stdin.on('end', () => {
       });
       const req = http.request({
         hostname: '127.0.0.1',
-        port: 4824,
+        port: 4825,
         path: '/context-update',
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) },

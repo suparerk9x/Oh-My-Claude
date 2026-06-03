@@ -1,7 +1,7 @@
 // Oh My Claude - Usage Sync Extension
 // Background service worker - fetches usage directly or via content script, sends to backend
 
-const BACKEND_URL = 'http://localhost:4824';
+const BACKEND_URL = 'http://localhost:4825';
 const SYNC_INTERVAL_MINUTES = 1;
 const MAX_BACKOFF_MINUTES = 16;
 

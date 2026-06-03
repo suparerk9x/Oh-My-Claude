@@ -23,7 +23,7 @@
   ],
   "host_permissions": [
     "https://claude.ai/*",
-    "http://localhost:4824/*"
+    "http://localhost:4825/*"
   ],
   "background": {
     "service_worker": "background.js"

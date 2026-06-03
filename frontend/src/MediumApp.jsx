@@ -8,7 +8,7 @@ import { ActivityItem } from './components/ActivityItem';
 import { TokenGauge } from './components/TokenGauge';
 import { HelpGuide } from './components';
 
-const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:4824';
+const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:4825';
 const STATUS_PRIORITY = { waiting: 8, thinking: 7, writing: 6, executing: 5, spawning: 4, searching: 3, reading: 2, processing: 1, compacting: 0, stopped: -1 };
 
 export default function MediumApp({ onSwitchToFull }) {
@@ -461,7 +461,7 @@ export default function MediumApp({ onSwitchToFull }) {
               </div>
               {!demoMode && displayAgents.some(a => a.status === 'stopped' || a.status === 'timeout') && (
                 <button
-                  onClick={() => fetch('http://localhost:4824/agents/stopped', { method: 'DELETE' })}
+                  onClick={() => fetch('/api/agents/stopped', { method: 'DELETE' })}
                   className={`text-[8px] px-1 py-0.5 rounded ${colors.text.muted} opacity-40 hover:opacity-100 ${colors.semantic?.red?.bgHover || 'hover:bg-red-500/20'} hover:${colors.status?.error || 'text-red-400'} transition-all`}
                   title="Remove stopped agents"
                 >Clear Stopped</button>

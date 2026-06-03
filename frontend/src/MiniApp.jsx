@@ -3,7 +3,7 @@ import { getThemeColors } from './config/theme';
 import { formatTokens, getUsageBadge } from './utils/format';
 import { useDemoReplay } from './hooks/useDemoReplay';
 
-const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:4824';
+const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:4825';
 
 // Module-level constant (no need to recreate per render)
 const STATUS_PRIORITY = { waiting: 8, thinking: 7, writing: 6, executing: 5, spawning: 4, searching: 3, reading: 2, processing: 1, compacting: 0, stopped: -1 };
@@ -435,7 +435,7 @@ export default function MiniApp({ onSwitchToFull }) {
         <div className="flex items-center gap-1">
           {!demoMode && (
             <button
-              onClick={() => { fetch('http://localhost:4824/agents/stopped', { method: 'DELETE' }); }}
+              onClick={() => { fetch('/api/agents/stopped', { method: 'DELETE' }); }}
               className={`p-0.5 rounded ${colors.text.muted} opacity-30 hover:opacity-100 hover:bg-red-500/20 hover:text-red-500 transition-all`}
               title="Clear stopped agents"
             >

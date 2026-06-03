@@ -275,11 +275,12 @@ start.bat
 npm run dev
 ```
 
-This starts both backend (port 4824) and frontend (port 4825).
+- **`start.bat`** runs the app under **PM2** as a single process on **http://localhost:4825** — UI, API, and WebSocket together, with auto-restart and start-on-boot. This is the everyday way to run it.
+- **`npm run dev`** runs the dev servers instead: backend on **4825** plus the Vite HMR frontend on **5173** (open **5173** for live-reload while editing the UI).
 
 ### Step 5: Open Dashboard
 
-Open **http://localhost:4825** — you should see:
+Open **http://localhost:4825** (or **http://localhost:5173** if you used `npm run dev`) — you should see:
 
 - Header shows **LIVE** (green dot)
 - Backend status shows **OK**
@@ -296,7 +297,7 @@ flowchart TD
     CC -->|"Events + usage %"| BS
     CE -.->|"Usage % (fallback)"| BS
 
-    BS["🖥️ Backend Server\nExpress + WebSocket · port 4824"]
+    BS["🖥️ Backend Server\nExpress + WebSocket · port 4825"]
 
     BS --- Data["Events · Agents · Sessions · Teams · Usage %"]
 
@@ -337,7 +338,7 @@ Syncs your Claude.ai usage percentage to the dashboard every minute via the brow
 ### How it works
 
 ```
-Claude.ai → Extension (fetches API every 1 min) → Backend :4824 → Dashboard
+Claude.ai → Extension (fetches API every 1 min) → Backend :4825 → Dashboard
 ```
 
 1. Extension detects your organization and starts syncing
@@ -444,7 +445,7 @@ Oh-My-Claude/
 ├── README_TH.md              # Documentation (TH)
 │
 ├── backend/
-│   ├── server.js             # Express + WebSocket server (port 4824)
+│   ├── server.js             # Express + WebSocket server (port 4825)
 │   ├── statsReader.js        # Read transcript files for token stats
 │   ├── events.json           # Event history (auto-created)
 │   ├── agents.json           # Agent state (auto-created)
@@ -511,8 +512,8 @@ Oh-My-Claude/
 
 | Service | Port | File |
 |---------|------|------|
-| Backend | 4824 | `backend/server.js` |
-| Frontend | 4825 | `frontend/vite.config.js` |
+| App — backend serves UI + API + WS (PM2: `omc-backend`) | 4825 | `backend/server.js` |
+| Vite dev server — only for `npm run dev`, proxies to 4825 | 5173 | `frontend/vite.config.js` |
 
 ### Security
 
@@ -599,7 +600,7 @@ Oh-My-Claude/
 
 ```bash
 # Test 1: Backend health
-curl http://localhost:4824/health
+curl http://localhost:4825/health
 # → {"status":"ok"}
 
 # Test 2: Send a message in Claude Code
@@ -615,7 +616,7 @@ curl http://localhost:4824/health
 
 | Problem | Solution |
 |---------|----------|
-| Dashboard shows **OFF** | 1. Check backend: `curl http://localhost:4824/health` <br> 2. Check browser console for WebSocket errors <br> 3. Hard refresh: `Ctrl+Shift+R` |
+| Dashboard shows **OFF** | 1. Check backend: `curl http://localhost:4825/health` <br> 2. Check browser console for WebSocket errors <br> 3. Hard refresh: `Ctrl+Shift+R` |
 | No events appearing | 1. Verify hooks in `~/.claude/settings.json` <br> 2. Check path uses forward slashes `/` <br> 3. Restart Claude Code terminal |
 | Usage % shows 0 / not updating | 1. Make sure Claude Code is logged in on this machine <br> 2. `~/.claude/.credentials.json` must exist <br> 3. Check backend console for `[USAGE] Synced from Claude Code OAuth` |
 | Extension not syncing (fallback only) | 1. Must be logged into claude.ai <br> 2. Check extension enabled at `chrome://extensions/` <br> 3. Check backend console for "Usage received" |
@@ -647,7 +648,7 @@ curl http://localhost:4824/health
 
 ### WebSocket
 
-Connect: `ws://localhost:4824`
+Connect: `ws://localhost:4825`
 
 | Message | Direction | Description |
 |---------|-----------|-------------|

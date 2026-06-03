@@ -15,17 +15,17 @@ export default defineConfig({
     }
   },
   server: {
-    port: 4825,
+    port: 5173, // dev-only HMR server; the real app runs single-port on the backend (4825)
     strictPort: true, // Fail if port is already in use
     open: false, // Disabled - start.bat handles browser opening
     proxy: {
       '/api': {
-        target: 'http://localhost:4824',
+        target: 'http://localhost:4825',
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api/, '')
       },
       '/ws': {
-        target: 'ws://localhost:4824',
+        target: 'ws://localhost:4825',
         ws: true
       }
     }

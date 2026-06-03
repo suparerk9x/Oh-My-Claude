@@ -362,7 +362,7 @@ function OverviewSection({ lang, theme = 'dark' }) {
                 <span className="text-lg">🖥️</span>
                 <span className="text-[11px] text-emerald-500 font-semibold">{txt.archBackend}</span>
               </div>
-              <span className={`text-[9px] ${colors.text.dimmed}`}>{txt.archBackendDesc} (port 4824)</span>
+              <span className={`text-[9px] ${colors.text.dimmed}`}>{txt.archBackendDesc} (port 4825)</span>
               <div className="flex justify-center gap-1 mt-2">
                 {txt.archDataItems.map((item, i) => (
                   <span key={i} className="text-[7px] px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-600">
@@ -619,7 +619,7 @@ function SetupSection({ lang, theme = 'dark' }) {
         <div className={`p-4 rounded-xl ${colors.card.bgAlt} border ${colors.card.border} font-mono text-[11px]`}>
           <div className={colors.text.muted}>oh-my-claude/</div>
           <div className={`pl-4 ${colors.text.dimmed}`}>├── <span className="text-blue-500">backend/</span></div>
-          <div className={`pl-8 ${colors.text.dimmed}`}>├── <span className="text-emerald-500">server.js</span> <span className={colors.text.faint}>← Express + WebSocket (port 4824)</span></div>
+          <div className={`pl-8 ${colors.text.dimmed}`}>├── <span className="text-emerald-500">server.js</span> <span className={colors.text.faint}>← Express + WebSocket (port 4825)</span></div>
           <div className={`pl-8 ${colors.text.dimmed}`}>├── <span className="text-emerald-500">statsReader.js</span> <span className={colors.text.faint}>← Read transcript data</span></div>
           <div className={`pl-8 ${colors.text.dimmed}`}>├── <span className="text-amber-500">events.json</span> <span className={colors.text.faint}>← Event storage (auto)</span></div>
           <div className={`pl-8 ${colors.text.dimmed}`}>└── <span className="text-amber-500">agents.json</span> <span className={colors.text.faint}>← Agent storage (auto)</span></div>
@@ -817,7 +817,7 @@ function SetupSection({ lang, theme = 'dark' }) {
         <h4 className={`text-[13px] font-semibold ${colors.text.tertiary} uppercase tracking-wider mb-3`}>{txt.ports}</h4>
         <div className="grid grid-cols-2 gap-3">
           <div className={`p-3 rounded-lg ${colors.card.bg} border ${colors.card.border}`}>
-            <div className="text-[12px] font-semibold text-emerald-500 mb-1">Backend: 4824</div>
+            <div className="text-[12px] font-semibold text-emerald-500 mb-1">Backend: 4825</div>
             <div className={`text-[11px] ${colors.text.dimmed}`}>HTTP API + WebSocket</div>
             <div className={`text-[10px] ${colors.text.faint} mt-1`}>POST /events, GET /stats</div>
           </div>

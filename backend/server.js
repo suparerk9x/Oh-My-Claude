@@ -3,6 +3,7 @@ import cors from 'cors';
 import rateLimit from 'express-rate-limit';
 import { WebSocketServer } from 'ws';
 import { createServer } from 'http';
+import https from 'https';
 import path from 'path';
 import fs from 'fs';
 import fsPromises from 'fs/promises';
@@ -147,7 +148,7 @@ const eventSchema = z.object({
 });
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const PORT = 4824;
+const PORT = process.env.PORT || 4825;
 
 // Initialize Express
 const app = express();
@@ -166,8 +167,27 @@ app.use(cors({
   },
   credentials: true
 }));
+
+// ── Serve the built dashboard UI (single-origin: UI + API + WS all on one port) ──
+// Static assets are served BEFORE the rate limiter so loading the page never eats API quota.
+const FRONTEND_DIST = path.join(__dirname, '..', 'frontend', 'dist');
+app.use(express.static(FRONTEND_DIST));
+// Friendly URLs for the display modes (also reachable directly as /mini.html etc.)
+for (const mode of ['mini', 'medium', 'full']) {
+  app.get(`/${mode}`, (_req, res) => res.sendFile(path.join(FRONTEND_DIST, `${mode}.html`)));
+}
+
 app.use(limiter); // Apply rate limiting
 app.use(express.json({ limit: '10mb' }));
+
+// The built UI calls /api/* (the same prefix the Vite dev proxy uses in development). Strip it here so
+// the existing root-level routes match identically whether the request arrives via the dev proxy (4825)
+// or same-origin from the static build (4825).
+app.use((req, _res, next) => {
+  if (req.url === '/api' || req.url === '/api/') req.url = '/';
+  else if (req.url.startsWith('/api/')) req.url = req.url.slice(4);
+  next();
+});
 
 // Initialize HTTP server
 const server = createServer(app);
@@ -2286,39 +2306,63 @@ setInterval(async () => {
 // Backoff state — Anthropic's /oauth/usage endpoint rate-limits (429); don't hammer it every 60s.
 let usageBackoffUntil = 0;
 let usageBackoffMs = 0;
+let usageFetchInFlight = false;           // prevent overlapping fetches (60s tick + watchdog can both fire)
+let lastGoodUsageSyncMs = Date.now();     // timestamp of last SUCCESSFUL sync — watched for staleness
 const usageHistory = []; // recent [{ t, util }] samples of 5h utilization → burn rate / ETA to 100%
+
+// Fresh-connection HTTPS GET. We deliberately avoid the global fetch (undici) here: its keep-alive
+// connection pool holds a TLS socket to api.anthropic.com that dies silently when the NIC drops during
+// hibernate/sleep. On resume undici reuses the dead socket, every request hangs→aborts, and the usage
+// sync freezes forever (the exact "RIP Sync after hibernate" bug). `agent: false` opens a brand-new
+// connection each call, so a resume can never strand us on a poisoned socket. At a 60s cadence the
+// extra TLS handshake is negligible.
+function httpsGetJson(url, headers, timeoutMs = 8000) {
+  return new Promise((resolve, reject) => {
+    const req = https.request(url, { method: 'GET', headers, agent: false }, (res) => {
+      let body = '';
+      res.setEncoding('utf8');
+      res.on('data', (c) => { body += c; });
+      res.on('end', () => resolve({ status: res.statusCode, headers: res.headers, body }));
+      res.on('error', reject);
+    });
+    req.setTimeout(timeoutMs, () => req.destroy(new Error(`timeout after ${timeoutMs}ms`)));
+    req.on('error', reject);
+    req.end();
+  });
+}
+
 async function fetchClaudeCodeUsage() {
+  if (usageFetchInFlight) return;              // don't pile up if a previous fetch is still running
+  if (Date.now() < usageBackoffUntil) return;  // still backing off after a 429
+  usageFetchInFlight = true;
   try {
-    if (Date.now() < usageBackoffUntil) return; // still backing off after a 429
     if (!fs.existsSync(CC_CREDENTIALS_PATH)) return;
     const raw = JSON.parse(fs.readFileSync(CC_CREDENTIALS_PATH, 'utf-8'));
     const oauth = raw.claudeAiOauth || raw;
     const token = oauth.accessToken || oauth.access_token;
     if (!token) return;
 
-    const res = await fetch(CC_USAGE_ENDPOINT, {
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'anthropic-beta': 'oauth-2025-04-20',
-        'Content-Type': 'application/json'
-      },
-      signal: AbortSignal.timeout(8000)
-    });
-    if (res.status === 429) {
-      // Rate limited — back off (respect Retry-After, else exponential 2.5m→30m cap). Keep last-known usage.
-      const ra = parseInt(res.headers.get('retry-after') || '', 10);
+    const { status, headers, body } = await httpsGetJson(CC_USAGE_ENDPOINT, {
+      'Authorization': `Bearer ${token}`,
+      'anthropic-beta': 'oauth-2025-04-20',
+      'Content-Type': 'application/json'
+    }, 8000);
+
+    if (status === 429) {
+      // Rate limited — back off (respect Retry-After, else exponential 1.5m→30m cap). Keep last-known usage.
+      const ra = parseInt(headers['retry-after'] || '', 10);
       usageBackoffMs = ra > 0 ? ra * 1000 : Math.min(Math.max(usageBackoffMs * 2, 90000), 1800000);
       usageBackoffUntil = Date.now() + usageBackoffMs;
       console.warn(`[USAGE] OAuth usage rate-limited (429) — backing off ${Math.round(usageBackoffMs / 1000)}s`);
       return;
     }
-    if (!res.ok) {
+    if (status < 200 || status >= 300) {
       // 401 => token rotated/expired; Claude Code will refresh it. Keep last-known, retry next cycle.
-      console.warn(`[USAGE] OAuth usage fetch failed: HTTP ${res.status}`);
+      console.warn(`[USAGE] OAuth usage fetch failed: HTTP ${status}`);
       return;
     }
     usageBackoffMs = 0; usageBackoffUntil = 0; // healthy — reset backoff
-    const u = await res.json();
+    const u = JSON.parse(body);
     // ── Burn rate + ETA for the 5h window ──
     // Sample utilization over time; rate = Δutil/Δt (%/min). ETA to 100% only when actively rising
     // (rolling window can decay when idle → rate ≤ 0 → "safe/cooling", no ETA).
@@ -2347,14 +2391,46 @@ async function fetchClaudeCodeUsage() {
       lastSync: new Date().toISOString(),
       source: 'claude-code-oauth'
     };
+    lastGoodUsageSyncMs = Date.now();
     broadcast({ type: 'usage', usage: claudeUsage });
     console.log(`[USAGE] Synced from Claude Code OAuth — 5h ${u.five_hour?.utilization ?? '?'}%, 7d ${u.seven_day?.utilization ?? '?'}%`);
   } catch (err) {
     console.warn('[USAGE] OAuth usage fetch error:', err.message);
+  } finally {
+    usageFetchInFlight = false;
   }
 }
 setTimeout(fetchClaudeCodeUsage, 2000);           // initial fetch shortly after boot
 setInterval(fetchClaudeCodeUsage, 60 * 1000);     // refresh every 60s
+
+// ── Wake-from-sleep + staleness watchdog ─────────────────────────────
+// Guards the usage sync against two failure modes a plain 60s interval can't recover from:
+//   1) Hibernate/sleep — timers freeze while suspended, so the first tick after resume arrives wildly
+//      late. We detect that drift, clear any stale backoff, and force an immediate resync.
+//   2) Any silent stall — if the last *successful* sync is older than SYNC_STALE_MS (and we're not
+//      intentionally backing off), force a resync. Together with the fresh-connection fetch above, the
+//      usage % can no longer stay frozen after a resume.
+let lastWatchdogTick = Date.now();
+const WATCHDOG_INTERVAL_MS = 30 * 1000;
+const SYNC_STALE_MS = 3 * 60 * 1000;
+setInterval(() => {
+  const now = Date.now();
+  const drift = now - lastWatchdogTick;
+  lastWatchdogTick = now;
+
+  // Drift far beyond the interval ⇒ the machine just woke from sleep/hibernate.
+  const wokeFromSleep = drift > WATCHDOG_INTERVAL_MS * 2.5;
+  if (wokeFromSleep) {
+    console.warn(`[WAKE] Resume detected (timer drift ${Math.round(drift / 1000)}s) — clearing backoff & forcing usage resync`);
+    usageBackoffUntil = 0;
+    usageBackoffMs = 0;
+  }
+
+  const syncAge = now - lastGoodUsageSyncMs;
+  if (wokeFromSleep || (syncAge > SYNC_STALE_MS && now >= usageBackoffUntil)) {
+    fetchClaudeCodeUsage();
+  }
+}, WATCHDOG_INTERVAL_MS);
 
 // Start server
 server.listen(PORT, () => {
@@ -2385,6 +2461,12 @@ server.listen(PORT, () => {
 
 server.on('error', (err) => {
   console.error('[SERVER] HTTP server error:', err.message);
+  // Another instance already owns the port. Don't linger as a zombie that still runs every timer
+  // (double OAuth polling → extra 429s, duplicate heartbeats) — exit so exactly one instance survives.
+  if (err.code === 'EADDRINUSE') {
+    logCrash(`[FATAL] Port ${PORT} already in use — another instance is running. Exiting to avoid a zombie duplicate.`);
+    process.exit(1);
+  }
 });
 
 wss.on('error', (err) => {

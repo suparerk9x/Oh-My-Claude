@@ -9,7 +9,7 @@ Chrome extension ที่ดึงข้อมูล usage จาก Claude.ai 
 ## How it works
 
 ```
-Claude.ai → Extension (ดึง API ทุก 1 นาที) → Backend :4824 → Dashboard
+Claude.ai → Extension (ดึง API ทุก 1 นาที) → Backend :4825 → Dashboard
 ```
 
 ## Installation
@@ -61,5 +61,5 @@ Dashboard จะแสดง:
 ```
 1. ตรวจสอบว่า backend รันอยู่ (npm run dev)
 2. ดู Network tab ว่า POST /usage สำเร็จ
-3. curl http://localhost:4824/usage
+3. curl http://localhost:4825/usage
 ```

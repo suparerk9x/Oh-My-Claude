@@ -1,35 +1,28 @@
 @echo off
 title Oh My Claude
+cd /d "%~dp0"
 echo.
 echo ========================================
-echo   Oh My Claude Dashboard
+echo   Oh My Claude Dashboard (PM2 - single port 4825)
 echo ========================================
 echo.
-echo Starting servers...
-echo.
 
-REM Start backend in new window
-start "Backend Server" cmd /k "cd backend && node server.js"
+REM PM2 dedupes by app name, so running this twice will NOT create a duplicate backend.
+call pm2 start backend\ecosystem.config.cjs
+call pm2 save
 
-REM Wait 2 seconds for backend to start
 timeout /t 2 /nobreak >nul
-
-REM Start frontend in new window
-start "Frontend Dev Server" cmd /k "cd frontend && npm run dev -- --port 4825"
-
-REM Wait for frontend to start
-timeout /t 3 /nobreak >nul
-
-echo.
-echo ========================================
-echo   Servers Started!
-echo ========================================
-echo.
-echo Backend:  http://localhost:4824
-echo Frontend: http://localhost:4825
-echo.
-echo Opening browser...
 start http://localhost:4825
+
 echo.
-echo Press any key to close this window...
+echo Dashboard: http://localhost:4825   (UI + API + WS, PM2-managed)
+echo.
+echo   pm2 logs omc-backend       view logs
+echo   pm2 restart omc-backend    restart after a code change
+echo   pm2 monit                  live CPU/mem monitor
+echo   pm2 stop omc-backend       stop
+echo.
+echo NOTE: after editing the frontend, rebuild it:  cd frontend ^&^& npm run build
+echo       (then pm2 restart omc-backend to serve the new build)
+echo.
 pause >nul
