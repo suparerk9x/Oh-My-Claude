@@ -3,7 +3,8 @@ import { getThemeColors } from './config/theme';
 import { formatTokens, getUsageBadge } from './utils/format';
 import { useDemoReplay } from './hooks/useDemoReplay';
 
-const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:4825';
+const WS_URL = import.meta.env.VITE_WS_URL ||
+  `${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}`;
 
 // Module-level constant (no need to recreate per render)
 const STATUS_PRIORITY = { waiting: 8, thinking: 7, writing: 6, executing: 5, spawning: 4, searching: 3, reading: 2, processing: 1, compacting: 0, stopped: -1 };

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { getThemeColors } from './config/theme';
-import { formatTokens, getUsageBadge, burnSpeedPct } from './utils/format';
+import { formatTokens, getUsageBadge, burnSpeedPct, formatEta, rateLimitEta } from './utils/format';
 import { useDemoReplay } from './hooks/useDemoReplay';
 import { useNotifications } from './hooks/useNotifications';
 import { AgentTree } from './components/AgentTree';
@@ -8,7 +8,8 @@ import { ActivityItem } from './components/ActivityItem';
 import { TokenGauge } from './components/TokenGauge';
 import { HelpGuide } from './components';
 
-const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:4825';
+const WS_URL = import.meta.env.VITE_WS_URL ||
+  `${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}`;
 const STATUS_PRIORITY = { waiting: 8, thinking: 7, writing: 6, executing: 5, spawning: 4, searching: 3, reading: 2, processing: 1, compacting: 0, stopped: -1 };
 
 export default function MediumApp({ onSwitchToFull }) {
@@ -218,6 +219,64 @@ export default function MediumApp({ onSwitchToFull }) {
     } catch { return null; }
   };
   const sessionResetAt = demoMode ? '17:00' : formatResetAt(claudeUsage?.five_hour?.resets_at);
+  // Burn-rate indicator split into a header chip (dot + "Burn N%", sits right of the SESSION label)
+  // and a below-gauge ETA line. Measuring/idle states stay below the gauge as before.
+  const burnIndicator = (() => {
+    const f = claudeUsage?.five_hour;
+    if (!f) return null;
+    const raw = burnSpeedPct(f);          // null = no sample yet, <=0 = idle (not burning)
+    const active = raw != null && raw > 0;
+    const speed = active ? raw : 0;        // idle / no-sample → "Burn 0%" so the readout always sits on the header
+    const willHit = f.etaMinutes != null;
+    const sev = speed < 100 ? 'safe' : speed < 150 ? 'warn' : 'crit';
+    const c = sev === 'crit' ? 'text-red-400' : sev === 'warn' ? 'text-amber-400' : 'text-emerald-400';
+    const etaStatus = rateLimitEta(f)?.status;
+    const etaColor = etaStatus === 'critical' ? 'text-red-400' : 'text-amber-400';
+    const title = active
+      ? 'Burn = ความเร็วใช้ token เทียบเพดาน 20%/ชม. (>100% = เผาเกินอัตราที่ยั่งยืน)'
+      : (raw == null ? 'ยังไม่มี sample burn (รอ ~3 นาที) — แสดง 0% ไปก่อน' : 'ไม่ได้ใช้งาน — ตอนนี้ไม่ได้เผา token');
+    return {
+      header: (
+        // smaller than the 9px SESSION label + dimmed (no dot) — an understated secondary readout
+        <span className={`whitespace-nowrap normal-case text-[8px] font-medium opacity-50 ${c}`} title={title}>Burn {speed}%</span>
+      ),
+      // ETA only when actively burning AND it's a real threat (will hit the cap before the window resets).
+      below: (active && willHit && etaStatus !== 'safe') ? (
+        <div className={`mt-0.5 text-[9px] font-medium leading-tight whitespace-nowrap ${etaColor}`} title="limit ETA = อีกนานเท่าไรจะแตะ 100% ก่อน window reset (โผล่เฉพาะตอนเสี่ยงชนจริง)">limit ETA ~{formatEta(f.etaMinutes)}</div>
+      ) : null
+    };
+  })();
+  // Weekly burn: 7-day data moves too slowly to rate-sample, so derive pace from POSITION in the week
+  // (used % vs how far through the 7 days you are). Same look as the Session burn; ETA only when a real threat.
+  const weeklyBurnIndicator = (() => {
+    const sd = claudeUsage?.seven_day;
+    if (!sd || typeof sd.utilization !== 'number' || !sd.resets_at) return null;
+    const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+    const resetMs = new Date(sd.resets_at).getTime();
+    const now = Date.now();
+    const elapsedMs = now - (resetMs - WEEK_MS);
+    const elapsedFrac = elapsedMs / WEEK_MS;
+    // Too early in the week → expectedUtil ≈ 0 makes pace wild; need ~10% elapsed (~17h) for a stable read.
+    if (!(elapsedFrac >= 0.1 && elapsedFrac <= 1)) return null; // too early/stale → can't read pace
+    const util = Math.max(0, sd.utilization);
+    const speed = util > 0 ? Math.round((util / (elapsedFrac * 100)) * 100) : 0; // % of sustainable pace (0 = nothing used)
+    const sev = speed < 100 ? 'safe' : speed < 150 ? 'warn' : 'crit';
+    const c = sev === 'crit' ? 'text-red-400' : sev === 'warn' ? 'text-amber-400' : 'text-emerald-400';
+    // ETA to 100% at the average rate so far, vs time left until the window resets.
+    const avgRatePerMin = util / (elapsedMs / 60000);
+    const etaMin = avgRatePerMin > 0 ? (100 - util) / avgRatePerMin : null;
+    const toResetMin = (resetMs - now) / 60000;
+    const threat = etaMin != null && etaMin < toResetMin; // will exhaust before the week resets
+    const etaColor = etaMin != null && etaMin < 1440 ? 'text-red-400' : 'text-amber-400';
+    return {
+      header: (
+        <span className={`whitespace-nowrap normal-case text-[8px] font-medium opacity-50 ${c}`} title="Burn = ใช้ไปเทียบ pace ที่ยั่งยืนของ 7 วัน (คิดจากผ่านมากี่ % ของสัปดาห์ · >100% = ใช้เร็วเกิน จะหมดก่อนครบสัปดาห์)">Burn {speed}%</span>
+      ),
+      below: threat ? (
+        <div className={`mt-0.5 text-[9px] font-medium leading-tight whitespace-nowrap ${etaColor}`} title="limit ETA = อีกนานเท่าไรจะใช้ครบ 100% ก่อน window reset (โผล่เฉพาะตอนเสี่ยงหมดจริง)">limit ETA ~{formatEta(etaMin)}</div>
+      ) : null
+    };
+  })();
   const weeklyResetAt = demoMode ? 'Sat 15:00' : (() => {
     if (!claudeUsage?.seven_day?.resets_at) return null;
     try {
@@ -410,29 +469,13 @@ export default function MediumApp({ onSwitchToFull }) {
       {/* Token Gauges Row */}
       <div className={`grid grid-cols-2 gap-4 px-3 py-2 border-b ${colors.border} ${colors.bg.secondary} flex-shrink-0`}>
         <div>
-          <TokenGauge label="Session" pct={sessionPct} resetTime={getSessionResetTime()} resetAt={sessionResetAt} resetType="rolling" colors={colors} />
-          {(() => {
-            const f = claudeUsage?.five_hour;
-            if (!f) return null;
-            const speed = burnSpeedPct(f);
-            if (speed == null) return (
-              <div className="mt-0.5 text-[9px] font-medium text-gray-500 flex items-center gap-1" title="กำลังวัด burn rate (ต้องมี sample ~3 นาที)"><span>⏳</span><span>วัดความเร็ว…</span></div>
-            );
-            if (speed <= 0) return (
-              <div className="mt-0.5 text-[9px] font-medium text-emerald-400/80 flex items-center gap-1" title="ตอนนี้ไม่ได้ใช้ token — utilization จะค่อยๆ ลดลงเมื่อ window เลื่อน"><span>🟢</span><span>ไม่ได้ใช้งาน</span></div>
-            );
-            const willHit = f.etaMinutes != null; // show ETA whenever a burn rate is measured
-            const sev = speed < 100 ? 'safe' : speed < 150 ? 'warn' : 'crit';
-            const c = sev === 'crit' ? 'text-red-400' : sev === 'warn' ? 'text-amber-400' : 'text-emerald-400';
-            const dot = sev === 'crit' ? '🔴' : sev === 'warn' ? '🟠' : '🟢';
-            return (
-              <div className={`mt-0.5 text-[9px] font-medium ${c} flex items-center gap-1`} title="ความเร็วใช้ token เทียบเพดานปลอดภัย 20%/ชม. (ใช้ครบ 100% พอดีใน 5 ชม.) · <100% ปลอดภัย · >100% อัตรานี้จะชน limit ใน 5 ชม.">
-                <span>{dot}</span><span>เร็ว {speed}%{willHit ? ` · ชนใน ~${f.etaMinutes}m` : ''}</span>
-              </div>
-            );
-          })()}
+          <TokenGauge label="Session" pct={sessionPct} resetTime={getSessionResetTime()} resetAt={sessionResetAt} resetType="rolling" colors={colors} headerRight={burnIndicator?.header} segments={5} />
+          {burnIndicator?.below}
         </div>
-        <TokenGauge label="Weekly" pct={weeklyPct} resetTime={getWeeklyResetTime()} resetAt={weeklyResetAt} resetType="rolling" colors={colors} />
+        <div>
+          <TokenGauge label="Weekly" pct={weeklyPct} resetTime={getWeeklyResetTime()} resetAt={weeklyResetAt} resetType="rolling" colors={colors} segments={7} headerRight={weeklyBurnIndicator?.header} />
+          {weeklyBurnIndicator?.below}
+        </div>
       </div>
 
       {/* Agents Panel — 75% */}

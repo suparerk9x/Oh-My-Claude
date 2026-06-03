@@ -4,7 +4,9 @@
       "Bash(git -C \"d:\\\\Antigravity\\\\Oh-My-Claude\" status --short)",
       "Bash(git -C \"d:\\\\Antigravity\\\\Oh-My-Claude\" diff --stat)",
       "Bash(git -C \"d:\\\\Antigravity\\\\Oh-My-Claude\" branch -vv)",
-      "Bash(git -C \"d:\\\\Antigravity\\\\Oh-My-Claude\" remote -v)"
+      "Bash(git -C \"d:\\\\Antigravity\\\\Oh-My-Claude\" remote -v)",
+      "PowerShell(pm2 jlist)",
+      "PowerShell(Test-NetConnection -ComputerName localhost -Port 4825 -InformationLevel Quiet)"
     ]
   }
 }

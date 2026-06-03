@@ -2308,7 +2308,27 @@ let usageBackoffUntil = 0;
 let usageBackoffMs = 0;
 let usageFetchInFlight = false;           // prevent overlapping fetches (60s tick + watchdog can both fire)
 let lastGoodUsageSyncMs = Date.now();     // timestamp of last SUCCESSFUL sync — watched for staleness
+const USAGE_HISTORY_FILE = path.join(__dirname, 'usage-history.json');
 const usageHistory = []; // recent [{ t, util }] samples of 5h utilization → burn rate / ETA to 100%
+// Restore samples across restarts so burn rate survives deploys instead of resetting to "measuring…"
+// for ~3 min on every restart. Drop anything older than the 12-min window (e.g. stale after hibernate).
+try {
+  if (fs.existsSync(USAGE_HISTORY_FILE)) {
+    const saved = JSON.parse(fs.readFileSync(USAGE_HISTORY_FILE, 'utf-8'));
+    const now = Date.now();
+    for (const s of (Array.isArray(saved?.history) ? saved.history : [])) {
+      if (typeof s?.t === 'number' && typeof s?.util === 'number' && now - s.t <= 12 * 60000) usageHistory.push(s);
+    }
+    if (usageHistory.length) console.log(`[USAGE] Restored ${usageHistory.length} burn-rate samples from disk`);
+  }
+} catch (err) {
+  console.warn('[USAGE] Could not restore usage history:', err.message);
+}
+
+function saveUsageHistory() {
+  try { fs.writeFileSync(USAGE_HISTORY_FILE, JSON.stringify({ history: usageHistory })); }
+  catch (err) { console.warn('[USAGE] Could not save usage history:', err.message); }
+}
 
 // Fresh-connection HTTPS GET. We deliberately avoid the global fetch (undici) here: its keep-alive
 // connection pool holds a TLS socket to api.anthropic.com that dies silently when the NIC drops during
@@ -2372,6 +2392,7 @@ async function fetchClaudeCodeUsage() {
       const now = Date.now();
       usageHistory.push({ t: now, util });
       while (usageHistory.length && now - usageHistory[0].t > 12 * 60000) usageHistory.shift(); // keep ~12 min
+      saveUsageHistory(); // persist so a restart/deploy doesn't reset burn rate to "measuring…"
       const past = usageHistory.find(s => now - s.t >= 3 * 60000); // compare to ~3min+ ago for a stable rate
       if (past && now > past.t) {
         const rate = (util - past.util) / ((now - past.t) / 60000); // %/min

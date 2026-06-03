@@ -109,6 +109,21 @@ export function burnSpeedPct(fiveHour) {
 }
 
 /**
+ * Format an ETA given in minutes as "Xh Ym" (hours and minutes), e.g. 171 → "2h 51m",
+ * 9 → "9m", 120 → "2h 0m". Hours are dropped when under an hour.
+ */
+export function formatEta(minutes) {
+  if (minutes == null || minutes < 0) return '';
+  const total = Math.round(minutes);
+  const d = Math.floor(total / 1440);
+  const h = Math.floor((total % 1440) / 60);
+  const m = total % 60;
+  if (d > 0) return `${d}d ${h}h`;
+  if (h > 0) return `${h}h ${m}m`;
+  return `${m}m`;
+}
+
+/**
  * Get usage badge info for session percentage (shared across App + MiniApp)
  */
 export function getUsageBadge(pct) {

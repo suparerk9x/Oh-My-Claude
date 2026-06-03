@@ -4,7 +4,7 @@ import PropTypes from 'prop-types';
  * Token Gauge Component - Displays usage percentage with progress bar
  * Shows N/A when no Chrome extension data is available
  */
-export function TokenGauge({ label, pct = null, resetTime = null, resetAt = null, resetType = 'rolling', colors = {} }) {
+export function TokenGauge({ label, pct = null, resetTime = null, resetAt = null, headerRight = null, segments = 0, resetType = 'rolling', colors = {} }) {
   // Handle N/A case (pct is null when no Chrome extension data)
   const isNA = pct === null;
   const displayPct = isNA ? 0 : pct;
@@ -30,8 +30,11 @@ export function TokenGauge({ label, pct = null, resetTime = null, resetAt = null
 
   return (
     <div className="space-y-0.5">
-      {/* Header: Label */}
-      <div className={`text-[9px] ${textMuted} uppercase tracking-wider font-medium`}>{label}</div>
+      {/* Header: Label (left) + optional right-aligned slot e.g. burn indicator */}
+      <div className="flex items-center justify-between gap-2">
+        <span className={`text-[9px] ${textMuted} uppercase tracking-wider font-medium`}>{label}</span>
+        {headerRight}
+      </div>
 
       {/* Progress Bar - Fixed gradient with reveal mask */}
       <div className={`w-full h-1.5 ${progressBg} rounded-full overflow-hidden relative`}>
@@ -42,6 +45,10 @@ export function TokenGauge({ label, pct = null, resetTime = null, resetAt = null
           className={`absolute inset-0 ${progressBg} transition-all duration-500 ease-out`}
           style={{ left: `${Math.min(displayPct, 100)}%` }}
         />
+        {/* Segment dividers drawn over the bar (e.g. segments=5 → 4 ticks = the 5h window) */}
+        {segments >= 2 && Array.from({ length: segments - 1 }, (_, i) => (
+          <div key={i} className="absolute inset-y-0 w-px bg-white/50" style={{ left: `${((i + 1) / segments) * 100}%` }} />
+        ))}
       </div>
 
       {/* Bottom: Reset info (left, 2 lines) + Large % (right, spanning 2 lines) */}
@@ -74,6 +81,8 @@ TokenGauge.propTypes = {
   pct: PropTypes.number, // null = N/A
   resetTime: PropTypes.string,
   resetAt: PropTypes.string,
+  headerRight: PropTypes.node,
+  segments: PropTypes.number,
   resetType: PropTypes.oneOf(['rolling', 'fixed']),
   colors: PropTypes.shape({
     text: PropTypes.shape({

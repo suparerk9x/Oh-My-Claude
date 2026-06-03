@@ -1,14 +1,15 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { EVENT_CONFIG } from './config/eventTypes';
 import { getThemeColors } from './config/theme';
-import { formatTokens, formatRelativeTime, getUsageBadge, burnSpeedPct } from './utils/format';
+import { formatTokens, formatRelativeTime, getUsageBadge, burnSpeedPct, formatEta, rateLimitEta } from './utils/format';
 import { TokenGauge, AgentTree, HelpGuide, ActivityItem, HourlyBreakdown, TokenStats, getEventTarget } from './components';
 import { useNotifications } from './hooks/useNotifications';
 import { useDemoReplay } from './hooks/useDemoReplay';
 import MiniApp from './MiniApp.jsx';
 import MediumApp from './MediumApp.jsx';
 
-const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:4825';
+const WS_URL = import.meta.env.VITE_WS_URL ||
+  `${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}`;
 
 // Module-level constant (no need to recreate per render)
 const STATUS_PRIORITY = { waiting: 8, thinking: 7, writing: 6, executing: 5, spawning: 4, searching: 3, reading: 2, processing: 1, compacting: 0, stopped: -1 };
@@ -757,7 +758,7 @@ export default function App() {
         return (
           <div className="flex-shrink-0 px-3 py-1 bg-red-500/15 border-b border-red-500/30 flex items-center gap-2 text-[11px] text-red-300">
             <span className="animate-pulse">🔴</span>
-            <span className="font-semibold">ใกล้ชน rate limit — เร็ว {speed}% · ชนใน ~{f.etaMinutes}m</span>
+            <span className="font-semibold">ใกล้ชน rate limit — Burn {speed}% · limit ETA ~{formatEta(f.etaMinutes)}</span>
           </div>
         );
       })()}
@@ -791,10 +792,18 @@ export default function App() {
                 const willHit = f.etaMinutes != null; // show ETA whenever a burn rate is measured
                 const sev = speed < 100 ? 'safe' : speed < 150 ? 'warn' : 'crit';
                 const c = sev === 'crit' ? 'text-red-400' : sev === 'warn' ? 'text-amber-400' : 'text-emerald-400';
-                const dot = sev === 'crit' ? '🔴' : sev === 'warn' ? '🟠' : '🟢';
+                const dotBg = sev === 'crit' ? 'bg-red-400' : sev === 'warn' ? 'bg-amber-400' : 'bg-emerald-400';
+                // ETA colours by *actual* risk, independent of speed: green when the window resets before the
+                // limit would be hit (safe no matter how fast); amber/red only when it'll really hit first.
+                const etaStatus = rateLimitEta(f)?.status;
+                const etaColor = etaStatus === 'critical' ? 'text-red-400' : etaStatus === 'safe' ? 'text-emerald-400' : 'text-amber-400';
                 return (
-                  <div className={`-mt-1 px-1 text-[9px] font-medium ${c} flex items-center gap-1`} title="ความเร็วใช้ token เทียบเพดานปลอดภัย 20%/ชม. (ใช้ครบ 100% พอดีใน 5 ชม.) · <100% ปลอดภัย · >100% อัตรานี้จะชน limit ใน 5 ชม.">
-                    <span>{dot}</span><span>เร็ว {speed}%{willHit ? ` · ชนใน ~${f.etaMinutes}m` : ''}</span>
+                  <div className="-mt-1 px-1 flex flex-col gap-0.5 text-[9px] font-medium leading-tight" title="Burn = ความเร็วใช้ token เทียบเพดาน 20%/ชม. (>100% = เผาเกินอัตราที่ยั่งยืน) · limit ETA = อีกนานเท่าไรจะแตะ 100% — เขียว = window reset ก่อน ไม่ชนแน่นอน">
+                    <span className="flex items-center gap-1 whitespace-nowrap">
+                      <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${dotBg} ${sev === 'crit' ? 'animate-pulse' : ''}`} />
+                      <span className={c}>Burn {speed}%</span>
+                    </span>
+                    {willHit && <span className={`pl-2.5 whitespace-nowrap ${etaColor}`}>limit ETA ~{formatEta(f.etaMinutes)}</span>}
                   </div>
                 );
               })()}
