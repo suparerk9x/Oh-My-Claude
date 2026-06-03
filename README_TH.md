@@ -4,7 +4,7 @@
 >
 > **🇬🇧 [Read in English](README.md)**
 
-![Version](https://img.shields.io/badge/version-2.2-blue)
+![Version](https://img.shields.io/badge/version-2.3-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Node](https://img.shields.io/badge/node-18%2B-brightgreen)
 ![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey)
@@ -49,20 +49,25 @@
 | ฟีเจอร์ | รายละเอียด |
 |---------|-------------|
 | **Token Tracking** | ดู Session (5h) & Weekly พร้อมนับถอยหลังและแยกตาม model |
-| **Agent Monitoring** | ดู main agent + subagents แบบ tree พร้อม status, token, tool ที่ใช้ |
-| **Team Monitoring** | ติดตาม team agents พร้อม token growth อิสระและสถานะสมาชิก |
-| **Team Comms** | ข้อความระหว่าง agent (broadcast, DM) แสดงแบบเรียลไทม์ |
+| **Burn Pace** | ตัวบอกความเร็วการเผา token แบบสด — ใช้เร็วแค่ไหนเทียบกับเวลาที่ผ่านไป พร้อม ETA จนถึง limit (แสดงเมื่อจำเป็น) |
+| **Agent Monitoring** | ดู main agent + subagents แบบ tree พร้อม status, token, tool ที่ใช้ และ git diff ต่อ session |
+| **Context Window %** | % การเติม context ต่อ session (stuck-detection) จาก status line / transcript ของ Claude Code |
+| **Reply Timeline** | ไล่ดูข้อความตอบของ session — ค้นหาได้ คัดลอกได้ สไตล์แบบ Claude |
+| **Live Reply Push** | ข้อความตอบล่าสุด stream ผ่าน WebSocket; แถวที่รอ prompt จะหรี่ลงจนกว่าคำตอบจะมา |
+| **Team Monitoring** | ติดตาม team agents พร้อม token growth อิสระและคำเตือนสถานะสมาชิก |
+| **Team Comms** | ข้อความระหว่าง agent (broadcast, DM, task update) แสดงแบบเรียลไทม์ |
 | **Activity Feed** | Tool calls, prompts, errors ไหลมาสดๆ พร้อมฟิลเตอร์ event type |
+| **Token Breakdown** | ชิป `session · total · reuse×N` พร้อม popover รายละเอียด cache |
 | **Cost Estimation** | ค่าใช้จ่ายรายเดือนแยกตาม model (Opus / Sonnet / Haiku) |
 | **Last 12 Hours** | กราฟแท่ง token รายชั่วโมงแยกตาม model |
 | **Event Details** | คลิก event ดู Input/Output ใน footer detail panel |
-| **Mini Pop-out** | หน้าต่างลอย 280x400px สำหรับดูระหว่างทำงาน |
+| **3 โหมดหน้าต่าง** | Full (965×870), Medium (300×870), Mini (280×400) pop-out |
 | **Install as App** | PWA — ติดตั้งเป็นแอปบน desktop ได้เลย |
 | **Dark / Light Theme** | ระบบธีมครบวงจรพร้อม semantic color tokens — อ่านง่ายทั้งโหมดมืดและสว่าง |
 | **Notifications** | แจ้งเตือน desktop สำหรับ events |
 | **Bilingual Guide** | คู่มือใน app EN/TH (11 หมวด) |
-| **Auto Usage Sync** | Session/weekly % sync อัตโนมัติจาก OAuth token ของ Claude Code — ไม่ต้องเปิด browser หรือ extension |
-| **Demo Mode** | เล่นซ้ำ 1,006 events จริงพร้อม retro tape counter UI |
+| **Auto Usage Sync** | Session/weekly % sync อัตโนมัติจาก OAuth token ของ Claude Code — ไม่ต้องเปิด browser หรือ extension; คงค่าข้าม restart |
+| **Demo Mode** | เล่นซ้ำ ~1,000 events จริงพร้อม retro tape counter UI |
 
 ### ตัวบอกสถานะ Usage
 
@@ -261,6 +266,8 @@ npm run install:all
 
 > Session/weekly % และตัวนับถอยหลัง sync อัตโนมัติจาก OAuth token ของ Claude Code บนเครื่องนี้ — **ไม่ต้องติดตั้งอะไร** แค่ login Claude Code (`claude` CLI) ค้างไว้ ถ้า Claude Code อยู่*คนละเครื่อง*กับ dashboard ดูทางเลือกสำรองที่หมวด [Chrome Extension](#-chrome-extension-ทางเลือกสำรอง)
 
+> **เสริม — context % ที่แม่นขึ้น:** % context window ต่อ session ทำงานผ่าน hooks ข้างบนอยู่แล้ว (hook อ่าน transcript) ถ้าอยากได้ตัวเลขแม่นแบบเรียลไทม์ที่สุด ตั้งค่า `statusLine` ของ Claude Code ให้ชี้ไป `hooks/statusline_wrapper.js` ได้ มันจะรายงาน context % มาที่ dashboard พร้อมกับแสดง status line ของคุณ — เป็นออปชันเสริม ไม่บังคับ
+
 ### ขั้นตอน 4: เริ่มใช้งาน
 
 **Windows:**
@@ -314,11 +321,12 @@ flowchart TD
 
 **การไหลของข้อมูล:**
 
-1. **Claude Code** → Hooks ยิง events (PreToolUse, PostToolUse, SessionStart, SessionEnd ฯลฯ) → Backend
-2. **Claude Code OAuth** → Backend อ่าน OAuth token ในเครื่องแล้ว query usage % จาก Anthropic (ทุก 1 นาที ไม่ต้องเปิด browser) → เป็นตัวเลขเดียวกับ panel "Account & Usage" ของ Claude Code
-3. **Chrome Extension** *(ทางเลือกสำรอง)* → ดึง usage % จาก claude.ai → Backend ใช้เฉพาะกรณี Claude Code ไม่ได้อยู่บนเครื่องนี้
-4. **Backend** → รวมข้อมูลทั้งหมด → กระจายผ่าน WebSocket
-5. **Dashboard** → รับผ่าน WebSocket → แสดงผลแบบเรียลไทม์
+1. **Claude Code** → Hooks ยิง events (PreToolUse, PostToolUse, SubagentStart/Stop, SessionStart/End ฯลฯ) → `POST /events` → Backend
+2. **Claude Code OAuth** → Backend อ่าน OAuth token ในเครื่อง (`~/.claude/.credentials.json`) แล้ว query usage % จาก Anthropic (ทุก 60 วินาที ไม่ต้องเปิด browser) → เป็นตัวเลขเดียวกับ panel "Account & Usage" ของ Claude Code; backend คำนวณ **burn pace** + **ETA** จากหน้าต่างตัวอย่าง 12 นาทีย้อนหลัง และเก็บ snapshot ล่าสุดไว้ให้ gauge ไม่ว่างเปล่าหลัง restart
+3. **Status line / transcript** *(เสริม)* → `statusline_wrapper.js` (หรือการอ่าน transcript ใน `send_event.js`) → `POST /context-update` → **context window %** ต่อ session สำหรับ stuck-detection
+4. **Chrome Extension** *(ทางเลือกสำรอง)* → ดึง usage % จาก claude.ai → `POST /usage` ใช้เฉพาะกรณี Claude Code ไม่ได้อยู่บนเครื่องนี้
+5. **Backend** → รวมข้อมูลทั้งหมด → กระจายผ่าน WebSocket (พอร์ตเดียว 4825)
+6. **Dashboard** → รับผ่าน WebSocket → แสดงผลแบบเรียลไทม์
 
 ---
 
@@ -363,25 +371,30 @@ Oh My Claude รองรับ **Progressive Web App** — ติดตั้�
 - Pin ไว้ที่ taskbar / dock เข้าถึงเร็ว
 - ใช้งานเหมือนแอป desktop จริงๆ
 
-> **หมายเหตุ:** Backend server (`npm run dev`) ต้องรันอยู่
+> **หมายเหตุ:** Backend ต้องรันอยู่ (ผ่าน `start.bat` / PM2 หรือ `npm run dev`) ที่พอร์ต 4825
 
 ---
 
-## 🪟 Mini Pop-out Window
+## 🪟 โหมดหน้าต่าง
 
-หน้าต่างลอยขนาดกะทัดรัดสำหรับดูระหว่างทำงาน:
+Oh My Claude มี layout หน้าต่างแยกกัน **3 แบบ** แต่ละแบบเป็น HTML entry ที่ Vite build ต่างหาก — ใช้ feed WebSocket สดตัวเดียวกันหมด:
 
-- กดปุ่ม **Mini Pop-out** (↗) ใน toolbar
-- เปิดหน้าต่างลอย **280x400px**
-- แสดง: สถานะเชื่อมต่อ, token gauges, รายชื่อ agent พร้อมสมาชิก team, smart status
-- Sync ธีม (dark/light) และ demo mode แบบสองทางกับหน้าหลัก
-- เหมาะสำหรับเปิดไว้ข้างๆ ตอน code
+| โหมด | ขนาด | Entry | เหมาะกับ |
+|------|------|-------|----------|
+| **Full** | 965×870 | `full.html` (`/full`) | dashboard 3 พาเนลเต็ม — token usage, agent tree, activity feed |
+| **Medium** | 300×870 | `medium.html` (`/medium`) | แถบข้างทรงสูง: gauges + agents + activity feed ที่พับเก็บได้ |
+| **Mini** | 280×400 | `mini.html` (`/mini`) | ย่อสุด: สถานะเชื่อมต่อ, gauge bar, รายชื่อ session, smart status |
+
+- เปิด **Medium** หรือ **Mini** ได้จากปุ่ม pop-out (↗) ใน toolbar
+- ทุกหน้าต่าง sync ธีม (dark/light) และ demo mode แบบสองทางกับหน้าหลัก
+- route เริ่มต้น (`/`, `index.html`) แสดง layout แบบ Medium — เหมาะใช้เป็นหน้าต่าง PWA ที่ติดตั้ง
+- เหมาะสำหรับเปิดมอนิเตอร์เล็กๆ ไว้ข้างๆ ตอน code
 
 ---
 
 ## 🎬 Demo Mode
 
-ลองใช้ dashboard เต็มรูปแบบโดยไม่ต้องมี Claude Code session จริง — เล่นซ้ำ 1,006 events จริงพร้อม simulated data
+ลองใช้ dashboard เต็มรูปแบบโดยไม่ต้องมี Claude Code session จริง — เล่นซ้ำ ~1,000 events จริงพร้อม simulated data
 
 ### วิธีเปิดใช้
 
@@ -406,15 +419,17 @@ Oh My Claude รองรับ **Progressive Web App** — ติดตั้�
 | **Idle** | เริ่มต้น — เคาน์เตอร์แสดง 0000, dashboard ว่าง |
 | **Playing** | Events เล่นซ้ำด้วยความเร็วต่างกันตาม event type |
 | **Paused** | หยุดค้าง — ข้อมูลทั้งหมดยังแสดงอยู่ |
-| **Finished** | เล่นครบ 1,006 events — dashboard แสดงสถานะสุดท้าย |
+| **Finished** | เล่นครบ ~1,000 events — dashboard แสดงสถานะสุดท้าย |
 
 ### ความเร็ว Event
 
 | Event Type | หน่วง | หมายเหตุ |
 |------------|-------|----------|
 | `UserPromptSubmit` | 600ms | ข้อความผู้ใช้ — หน่วงนานสุด |
-| `SubagentStart/Stop` | 400ms | Agent lifecycle |
-| `SendMessage/TeamCreate` | 250ms | Team operations |
+| `SubagentStart/Stop`, `Stop` | 400ms | Agent lifecycle |
+| `PermissionRequest` | 300ms | คำขอ permission |
+| `SendMessage/TeamCreate/Task` | 250ms | Team operations |
+| `PreCompact/TeammateIdle` | 200–250ms | context & idle |
 | `PreToolUse/PostToolUse` | 80ms | Tool calls — เร็วสุด |
 
 ### สิ่งที่จำลอง
@@ -438,70 +453,90 @@ Events จับมาจาก Claude Code session จริงโดยใช�
 
 ```
 Oh-My-Claude/
-├── package.json              # Root scripts (npm run dev, install:all)
-├── start.bat                 # Windows quick start
-├── create-shortcut.bat       # สร้าง desktop shortcut (Windows)
+├── package.json              # Root scripts (npm run dev, install:all) — name: claude-agent-monitor
+├── start.bat                 # Windows quick start (รัน backend ผ่าน PM2)
+├── restart-safe.ps1          # Restart backend ผ่าน PM2 (ใส่ -Build เพื่อ build frontend ก่อน)
+├── create-shortcut.bat       # สร้าง desktop shortcut (Windows .bat)
+├── create-shortcut.ps1       # สร้าง desktop shortcut (PowerShell)
 ├── README.md                 # เอกสาร (EN)
 ├── README_TH.md              # เอกสาร (TH)
 │
 ├── backend/
-│   ├── server.js             # Express + WebSocket server (port 4825)
-│   ├── statsReader.js        # อ่าน transcript files สำหรับ token stats
-│   ├── events.json           # ประวัติ event (สร้างอัตโนมัติ)
+│   ├── server.js             # Express + WebSocket server ทั้งหมดบนพอร์ต 4825
+│   ├── statsReader.js        # อ่าน transcript .jsonl สำหรับ token/cost stats
+│   ├── ecosystem.config.cjs  # PM2 process config (app: omc-backend)
+│   ├── events.json           # ประวัติ event — 1,000 ล่าสุด, sanitize แล้ว (สร้างอัตโนมัติ)
 │   ├── agents.json           # สถานะ agent (สร้างอัตโนมัติ)
+│   ├── usage-snapshot.json   # snapshot usage % ล่าสุด — คงค่าข้าม restart (gitignore)
+│   ├── usage-history.json    # ประวัติ sample สำหรับ burn-rate (gitignore)
+│   ├── logs/                 # PM2 out/error logs
 │   └── __tests__/            # Jest tests
 │
 ├── frontend/
-│   ├── index.html            # หน้าหลัก dashboard
-│   ├── mini.html             # หน้า mini pop-out
-│   ├── vite.config.js        # Vite config (port 4825, proxy)
+│   ├── index.html            # Entry เริ่มต้น (แสดง layout Medium)
+│   ├── full.html             # Entry Full dashboard (965×870)
+│   ├── medium.html           # Entry หน้าต่าง Medium (300×870)
+│   ├── mini.html             # Entry mini pop-out (280×400)
+│   ├── vite.config.js        # Vite multi-entry build + dev proxy → 4825
 │   ├── tailwind.config.js    # Tailwind CSS config
 │   ├── postcss.config.js     # PostCSS config
+│   ├── .env / .env.production # API/WS base URL
 │   ├── public/
 │   │   ├── favicon.svg       # ไอคอนแอป
 │   │   ├── manifest.json     # PWA manifest
 │   │   └── sw.js             # Service worker สำหรับ PWA
 │   └── src/
-│       ├── App.jsx           # Dashboard หลัก
+│       ├── App.jsx           # Full dashboard (3 พาเนล)
+│       ├── MediumApp.jsx     # layout หน้าต่าง Medium
 │       ├── MiniApp.jsx       # หน้าต่าง mini pop-out
-│       ├── main.jsx          # Entry หลัก + PWA registration
-│       ├── mini-main.jsx     # Entry mini + PWA registration
-│       ├── index.css          # Global styles (Tailwind imports)
+│       ├── main.jsx          # Entry เริ่มต้น → MediumApp + PWA registration
+│       ├── full-main.jsx     # Entry Full → App
+│       ├── medium-main.jsx   # Entry Medium → MediumApp
+│       ├── mini-main.jsx     # Entry mini → MiniApp
+│       ├── index.css         # Global styles (Tailwind imports)
 │       ├── config/
-│       │   ├── theme.js      # ระบบธีม (11 หมวดสี: status, model, tool, event, semantic ฯลฯ)
+│       │   ├── theme.js      # ระบบธีม dark/light (model, tool, event, agent, team, semantic… tokens)
 │       │   └── eventTypes.js # นิยาม event type (สีปรับตามธีม)
 │       ├── data/
-│       │   └── demoData.js   # ชุดข้อมูล demo (1,006 events)
+│       │   └── demoData.js   # ชุดข้อมูล demo (~1,000 events + metadata session/agent/comms)
 │       ├── hooks/
 │       │   ├── useDemoReplay.js     # State machine สำหรับ demo replay
 │       │   ├── useNotifications.js  # แจ้งเตือน desktop
 │       │   └── usePolling.js        # API polling hook
 │       ├── utils/
-│       │   └── format.js     # จัดรูปแบบ token/ตัวเลข
+│       │   └── format.js     # จัดรูปแบบ token/ตัวเลข + usage badge + burn-speed
+│       ├── test/
+│       │   └── setup.js      # Vitest + jsdom setup
 │       └── components/
-│           ├── AgentTree.jsx       # Agent hierarchy tree
+│           ├── AgentTree.jsx       # Agent tree + reply timeline + background jobs
 │           ├── AgentCard.jsx       # แสดง agent เดี่ยว
 │           ├── ActivityItem.jsx    # รายการ event
-│           ├── TokenGauge.jsx      # วงกลมแสดง usage
-│           ├── TokenStats.jsx      # สถิติแยกตาม model
-│           ├── HourlyBreakdown.jsx # กราฟ usage รายชั่วโมง
+│           ├── TokenGauge.jsx      # gauge usage (segment, time-marker, burn pace, นับถอยหลัง reset)
+│           ├── TokenBreakdown.jsx  # ชิป token breakdown + popover cache
+│           ├── TokenStats.jsx      # สถิติ cost แยกตาม model
+│           ├── HourlyBreakdown.jsx # กราฟแท่ง 12 ชม.ล่าสุด
 │           └── HelpGuide.jsx       # คู่มือ (EN/TH, 11 หมวด)
 │
 ├── hooks/
-│   └── send_event.js         # Hook script → ส่ง events ไป backend
+│   ├── send_event.js         # Hook script (อ่าน stdin) → POST /events + /context-update
+│   ├── send_event_env.js     # variant ที่อ่าน hook data จาก env vars
+│   └── statusline_wrapper.js # ตัวห่อ status line → POST /context-update (context %)
 │
 ├── scripts/
-│   └── prepare-demo-data.js  # แปลง events จริง → ชุดข้อมูล demo
+│   └── prepare-demo-data.js  # แปลง events.json จริง → demoData.js
 │
 ├── extension/                # Chrome extension (ทางเลือกสำรองสำหรับ usage)
 │   ├── manifest.json         # Manifest V3
-│   ├── background.js         # Background sync worker
+│   ├── background.js         # Background sync worker (alarm 1 นาที)
 │   ├── content.js            # ดึง usage จาก claude.ai
-│   └── icons/                # ไอคอน extension
+│   ├── README.md             # เอกสาร extension
+│   └── icons/                # ไอคอน extension (16/48/128)
 │
 └── docs/
-    ├── AUDIT-REPORT.md       # รายงาน audit โค้ด
-    └── CODE_REVIEW.md        # บันทึก code review
+    ├── AUDIT-REPORT.md            # รายงาน audit โค้ด
+    ├── CODE_REVIEW.md             # บันทึก code review
+    ├── CONTEXT_WINDOW_ACCURACY.md # ทำไม ctx % บน dashboard อาจต่างจาก Claude Code
+    └── claude-logo.svg            # ไฟล์โลโก้
 ```
 
 ---
@@ -569,9 +604,10 @@ Oh-My-Claude/
 
 | ปุ่ม | รายละเอียด |
 |------|-------------|
-| **View Mode** | สลับ: Full → Compact → Focus → Expanded → Hidden |
+| **View Mode** | สลับพาเนล agent: Full → Compact → Focus → Expanded → Hidden |
 | **Theme** | สลับ Dark / Light |
-| **Mini** | เปิดหน้าต่าง mini pop-out |
+| **Medium** | เปิดหน้าต่าง medium pop-out (300×870) |
+| **Mini** | เปิดหน้าต่าง mini pop-out (280×400) |
 | **Notifications** | สลับ: Off / Bell |
 | **Guide** | คู่มือพร้อมปุ่ม Demo (11 หมวด, EN/TH) |
 | **Status Badge** | สถานะ usage (🪴⚡🚨🫗) |
@@ -629,22 +665,28 @@ curl http://localhost:4825/health
 
 ### REST
 
+> UI ที่ build แล้วเรียก endpoint เหล่านี้ใต้ prefix `/api/*` (เหมือน Vite dev proxy); server จะตัด `/api` ออก ดังนั้น path ข้างล่างเรียกตรงๆ ก็ได้
+
 | Method | Endpoint | รายละเอียด |
 |--------|----------|-------------|
-| GET | `/health` | Health check |
-| GET | `/stats` | Token stats (cached) |
-| GET | `/events` | Events ล่าสุด |
-| GET | `/agents` | รายชื่อ agent พร้อมสถานะ |
-| GET | `/sessions` | รายชื่อ session |
-| GET | `/teams` | Teams ที่ active |
-| GET | `/teams/:name/comms` | การสื่อสารใน team |
-| GET | `/teams/:name/files` | ไฟล์ที่แชร์ใน team |
-| GET | `/usage` | ข้อมูล usage จาก Chrome extension |
-| POST | `/events` | รับ hook events (rate-limited: 300/min) |
-| POST | `/usage` | รับข้อมูลจาก Chrome extension |
-| DELETE | `/events` | ล้าง events ทั้งหมด |
-| DELETE | `/agents` | ล้าง agents ทั้งหมด |
-| DELETE | `/agents/stopped` | ล้างเฉพาะ agents ที่หยุดแล้ว |
+| GET | `/health` | Health check (`status`, จำนวน WS client, จำนวน event, uptime) |
+| GET | `/stats` | Token stats (cache ~60 วิ) |
+| GET | `/events` | Events ล่าสุด (`?type=`, `?limit=`) |
+| GET | `/agents` | รายชื่อ agent พร้อมสถานะ, token, context %, git diff |
+| GET | `/sessions` | รายชื่อ session (20 อันดับแรกตาม activity ล่าสุด) |
+| GET | `/teams` | Teams ที่ active + สมาชิก + file conflict |
+| GET | `/teams/:name/comms` | การสื่อสารใน team (50 ล่าสุด) |
+| GET | `/teams/:name/files` | ไฟล์ที่แชร์ใน team + ตรวจ conflict |
+| GET | `/session/:id/last-message` | ข้อความตอบล่าสุดเต็มๆ ของ session |
+| GET | `/session/:id/messages` | reply timeline — ข้อความตอบ (`?limit=`, สูงสุด 500) |
+| GET | `/usage` | usage % ปัจจุบัน (OAuth หรือ extension แล้วแต่ตัวไหนใหม่กว่า) |
+| POST | `/events` | รับ hook events (ตรวจด้วย Zod, rate-limited: 300/min) |
+| POST | `/context-update` | รับ context-window % ต่อ session (status line / transcript) |
+| POST | `/usage` | รับข้อมูล usage จาก Chrome extension (สำรอง) |
+| POST | `/restart` | restart แบบ graceful (เซฟ state, exit 0 ให้ PM2) |
+| DELETE | `/events` | ล้าง events, agents, sessions, teams ทั้งหมด |
+| DELETE | `/agents` | ล้าง agents ทั้งหมด (เก็บ events) |
+| DELETE | `/agents/stopped` | ล้างเฉพาะ agents ที่หยุด / timeout |
 
 ### WebSocket
 
@@ -652,13 +694,16 @@ curl http://localhost:4825/health
 
 | Message | ทิศทาง | รายละเอียด |
 |---------|--------|-------------|
-| `init` | Server → Client | สถานะเริ่มต้น (agents, events, stats, usage) |
+| `init` | Server → Client | สถานะเริ่มต้น (events, stats, agents, sessions, usage, teams, comms) |
 | `event` | Server → Client | Event ใหม่มาถึง |
-| `stats` | Server → Client | Token stats อัปเดต |
+| `stats` | Server → Client | snapshot ตามรอบ (stats, agents, sessions, usage, teams) — ทุก 10 วิ |
 | `agents_update` | Server → Client | รายชื่อ agent อัปเดต |
-| `usage` | Server → Client | ข้อมูล usage จาก extension |
+| `usage` | Server → Client | usage % อัปเดต (OAuth sync หรือ extension) |
+| `last-message` | Server → Client | ข้อความตอบสดของ session (+ flag `awaitingReply`) |
 | `clear` | Server → Client | Events ถูกล้าง |
 | `agents_cleared` | Server → Client | Agents ถูกล้าง |
+
+> Dashboard เป็นแบบ push อย่างเดียว — client ไม่ส่ง WebSocket message; การกระทำทั้งหมดผ่าน REST endpoint ข้างบน
 
 ---
 
@@ -666,8 +711,10 @@ curl http://localhost:4825/health
 
 | Layer | เทคโนโลยี |
 |-------|------------|
-| Backend | Node.js, Express, WebSocket (ws), Zod |
-| Frontend | React 18, Vite, Tailwind CSS |
+| Backend | Node.js, Express, WebSocket (ws), Zod, express-rate-limit |
+| Frontend | React 18, Vite 5, Tailwind CSS, react-markdown + remark-gfm, PropTypes |
+| Process mgmt | PM2 (process เดียว `omc-backend`, auto-restart, start ตอน boot) |
+| Testing | Jest (backend), Vitest + jsdom (frontend) |
 | PWA | Service Worker, Web App Manifest |
 | Extension | Chrome Manifest V3 |
 

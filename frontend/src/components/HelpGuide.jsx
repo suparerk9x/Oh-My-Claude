@@ -106,7 +106,7 @@ export function HelpGuide({ onClose, theme = 'dark', demoMode = false, onDemoTog
 
           <div className={`mt-auto pt-4 border-t ${colors.sidebar.border}`}>
             <div className={`text-[10px] ${colors.text.faint} px-2`}>
-              Oh My Claude v2.2<br />
+              Oh My Claude v2.3<br />
               Real-time Dashboard
             </div>
           </div>

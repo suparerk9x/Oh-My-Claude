@@ -4,7 +4,7 @@
 >
 > **🇹🇭 [อ่านภาษาไทย](README_TH.md)**
 
-![Version](https://img.shields.io/badge/version-2.2-blue)
+![Version](https://img.shields.io/badge/version-2.3-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Node](https://img.shields.io/badge/node-18%2B-brightgreen)
 ![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey)
@@ -49,20 +49,25 @@ Started as "how much quota left?" → became a window into how Claude Code works
 | Feature | Description |
 |---------|-------------|
 | **Token Tracking** | Session (5h) & Weekly usage with countdown timers and per-model breakdown |
-| **Agent Monitoring** | Live main agents + subagents tree with status, tokens, and current tool |
-| **Team Monitoring** | Track team agents with independent token growth and member health |
-| **Team Comms** | Inter-agent messages (broadcasts, DMs) displayed in real-time |
+| **Burn Pace** | Live burn-rate indicator — how fast you're spending the window vs. how fast time is passing, with conditional ETA-to-limit |
+| **Agent Monitoring** | Live main agents + subagents tree with status, tokens, current tool, and per-session git diff stats |
+| **Context Window %** | Per-session context fill (stuck-detection) from Claude Code's status line / transcript |
+| **Reply Timeline** | Browse a session's assistant replies — searchable, copyable, Claude-like styling |
+| **Live Reply Push** | Latest assistant message streamed over WebSocket; pending-prompt rows dim until the reply lands |
+| **Team Monitoring** | Track team agents with independent token growth and member health warnings |
+| **Team Comms** | Inter-agent messages (broadcasts, DMs, task updates) displayed in real-time |
 | **Activity Feed** | Tool calls, prompts, errors streamed live with filterable event types |
+| **Token Breakdown** | Inline `session · total · reuse×N` chip with cache-hit popover |
 | **Cost Estimation** | Monthly cost by model (Opus / Sonnet / Haiku) |
 | **Last 12 Hours** | Hourly token usage bar chart with model breakdown |
 | **Event Details** | Click any event to inspect Input/Output in footer detail panel |
-| **Mini Pop-out** | Floating mini window (280x400px) for compact monitoring |
+| **Three Window Modes** | Full (965×870), Medium (300×870), and Mini (280×400) pop-out windows |
 | **Install as App** | PWA support — install to desktop, runs without browser UI |
 | **Dark / Light Theme** | Comprehensive theme system with semantic color tokens — fully readable in both modes |
 | **Notifications** | Desktop notifications for events (bell toggle) |
 | **Bilingual Guide** | Built-in help guide in English & Thai (11 sections) |
-| **Auto Usage Sync** | Session/weekly % synced automatically from Claude Code's OAuth token — no browser or extension needed |
-| **Demo Mode** | Replay 1,006 real events with retro tape counter UI |
+| **Auto Usage Sync** | Session/weekly % synced automatically from Claude Code's OAuth token — no browser or extension needed; survives restarts |
+| **Demo Mode** | Replay ~1,000 real events with retro tape counter UI |
 
 ### Usage Status Indicator
 
@@ -261,6 +266,8 @@ Add the `hooks` section — replace `<PATH>` with your Oh-My-Claude folder path:
 
 > Session/weekly % and countdown timers sync automatically from Claude Code's OAuth token on this machine — **nothing to install**. Just keep Claude Code logged in (the `claude` CLI). If Claude Code runs on a *different* machine than this dashboard, see the optional [Chrome Extension](#-chrome-extension-optional-fallback) fallback.
 
+> **Optional — sharper context %:** Per-session context-window % already works through the hooks above (the hook tails the transcript). For the most accurate, real-time number you can also point Claude Code's `statusLine` at `hooks/statusline_wrapper.js`, which reports context % to the dashboard while rendering your status line. This is purely optional.
+
 ### Step 4: Start
 
 **Windows:**
@@ -314,11 +321,12 @@ flowchart TD
 
 **Data Flow:**
 
-1. **Claude Code** → Hooks fire events (PreToolUse, PostToolUse, SessionStart, SessionEnd, etc.) → Backend
-2. **Claude Code OAuth** → Backend reads the local OAuth token and queries Anthropic for usage % (every 1 min, no browser) → these are the same numbers as Claude Code's "Account & Usage" panel
-3. **Chrome Extension** *(optional fallback)* → Fetches usage % from claude.ai → Backend, only used when Claude Code isn't on this machine
-4. **Backend** → Aggregates all data → Broadcasts via WebSocket
-5. **Dashboard** → Receives via WebSocket → Renders in real-time
+1. **Claude Code** → Hooks fire events (PreToolUse, PostToolUse, SubagentStart/Stop, SessionStart/End, etc.) → `POST /events` → Backend
+2. **Claude Code OAuth** → Backend reads the local OAuth token (`~/.claude/.credentials.json`) and queries Anthropic for usage % (every 60s, no browser) → same numbers as Claude Code's "Account & Usage" panel; backend derives **burn pace** + **ETA** from a rolling 12-min sample window and persists the latest snapshot so the gauge never blanks across restarts
+3. **Status line / transcript** *(optional)* → `statusline_wrapper.js` (or a transcript tail read inside `send_event.js`) → `POST /context-update` → per-session **context window %** for stuck-detection
+4. **Chrome Extension** *(optional fallback)* → Fetches usage % from claude.ai → `POST /usage`, only used when Claude Code isn't on this machine
+5. **Backend** → Aggregates all data → Broadcasts via WebSocket (single port 4825)
+6. **Dashboard** → Receives via WebSocket → Renders in real-time
 
 ---
 
@@ -363,25 +371,30 @@ Oh My Claude supports **Progressive Web App** — you can install it as a standa
 - Can be pinned to taskbar / dock for quick access
 - Works just like a native desktop app
 
-> **Note:** The backend server (`npm run dev`) must be running for the app to work.
+> **Note:** The backend must be running (via `start.bat` / PM2, or `npm run dev`) on port 4825 for the app to work.
 
 ---
 
-## 🪟 Mini Pop-out Window
+## 🪟 Window Modes
 
-A compact floating window for monitoring while you work:
+Oh My Claude ships **three** standalone window layouts, each a separate HTML entry built by Vite — all sharing the same live WebSocket feed:
 
-- Click the **Mini Pop-out** button (↗) in the header toolbar
-- Opens a **280x400px** floating window
-- Shows: connection status, token gauges, agent list with team members, and smart status
-- Syncs theme (dark/light) and demo mode bidirectionally with the main app
-- Perfect for keeping on the side while coding
+| Mode | Size | Entry | Best for |
+|------|------|-------|----------|
+| **Full** | 965×870 | `full.html` (`/full`) | The complete 3-panel dashboard — token usage, agent tree, activity feed |
+| **Medium** | 300×870 | `medium.html` (`/medium`) | A tall side-strip: gauges + agents + a collapsible activity feed |
+| **Mini** | 280×400 | `mini.html` (`/mini`) | The most compact view: connection status, gauge bars, session list, smart status |
+
+- Open **Medium** or **Mini** from the header toolbar pop-out buttons (↗)
+- All windows sync theme (dark/light) and demo mode bidirectionally with the main app
+- The default route (`/`, `index.html`) renders the Medium layout — handy as the installed PWA window
+- Perfect for keeping a small monitor on the side while coding
 
 ---
 
 ## 🎬 Demo Mode
 
-Try the full dashboard without a live Claude Code session. Demo Mode replays 1,006 real captured events with simulated data.
+Try the full dashboard without a live Claude Code session. Demo Mode replays ~1,000 real captured events with simulated data.
 
 ### How to Enable
 
@@ -406,15 +419,17 @@ A retro-styled tape counter and control buttons appear next to the DEMO badge:
 | **Idle** | Initial state — counter shows 0000, dashboard empty |
 | **Playing** | Events replay at variable speed based on event type |
 | **Paused** | Frozen in place — all data visible, counter stopped |
-| **Finished** | All 1,006 events played — dashboard shows final state |
+| **Finished** | All ~1,000 events played — dashboard shows final state |
 
 ### Event Timing
 
 | Event Type | Delay | Note |
 |------------|-------|------|
 | `UserPromptSubmit` | 600ms | User messages — longest pause |
-| `SubagentStart/Stop` | 400ms | Agent lifecycle events |
-| `SendMessage/TeamCreate` | 250ms | Team operations |
+| `SubagentStart/Stop`, `Stop` | 400ms | Agent lifecycle events |
+| `PermissionRequest` | 300ms | Permission prompts |
+| `SendMessage/TeamCreate/Task` | 250ms | Team operations |
+| `PreCompact/TeammateIdle` | 200–250ms | Context & idle events |
 | `PreToolUse/PostToolUse` | 80ms | Tool calls — fastest |
 
 ### What Gets Simulated
@@ -438,70 +453,90 @@ Events are captured from a real Claude Code session using `scripts/prepare-demo-
 
 ```
 Oh-My-Claude/
-├── package.json              # Root scripts (npm run dev, install:all)
-├── start.bat                 # Windows quick start
-├── create-shortcut.bat       # Create desktop shortcut (Windows)
+├── package.json              # Root scripts (npm run dev, install:all) — name: claude-agent-monitor
+├── start.bat                 # Windows quick start (launches backend under PM2)
+├── restart-safe.ps1          # Restart backend via PM2 (optional -Build rebuilds frontend first)
+├── create-shortcut.bat       # Create desktop shortcut (Windows .bat)
+├── create-shortcut.ps1       # Create desktop shortcut (PowerShell)
 ├── README.md                 # Documentation (EN)
 ├── README_TH.md              # Documentation (TH)
 │
 ├── backend/
-│   ├── server.js             # Express + WebSocket server (port 4825)
-│   ├── statsReader.js        # Read transcript files for token stats
-│   ├── events.json           # Event history (auto-created)
+│   ├── server.js             # Express + WebSocket server, all on port 4825
+│   ├── statsReader.js        # Read transcript .jsonl files for token/cost stats
+│   ├── ecosystem.config.cjs  # PM2 process config (app: omc-backend)
+│   ├── events.json           # Event history — last 1,000, sanitized (auto-created)
 │   ├── agents.json           # Agent state (auto-created)
+│   ├── usage-snapshot.json   # Last usage % snapshot — survives restart (gitignored)
+│   ├── usage-history.json    # Burn-rate sample history (gitignored)
+│   ├── logs/                 # PM2 out/error logs
 │   └── __tests__/            # Jest tests
 │
 ├── frontend/
-│   ├── index.html            # Main dashboard entry
-│   ├── mini.html             # Mini pop-out entry
-│   ├── vite.config.js        # Vite config (port 4825, proxy)
+│   ├── index.html            # Default entry (renders Medium layout)
+│   ├── full.html             # Full dashboard entry (965×870)
+│   ├── medium.html           # Medium window entry (300×870)
+│   ├── mini.html             # Mini pop-out entry (280×400)
+│   ├── vite.config.js        # Vite multi-entry build + dev proxy → 4825
 │   ├── tailwind.config.js    # Tailwind CSS config
 │   ├── postcss.config.js     # PostCSS config
+│   ├── .env / .env.production # API/WS base URLs
 │   ├── public/
 │   │   ├── favicon.svg       # App icon
 │   │   ├── manifest.json     # PWA manifest
 │   │   └── sw.js             # Service worker for PWA
 │   └── src/
-│       ├── App.jsx           # Main dashboard
+│       ├── App.jsx           # Full dashboard (3-panel)
+│       ├── MediumApp.jsx     # Medium window layout
 │       ├── MiniApp.jsx       # Mini pop-out window
-│       ├── main.jsx          # Main entry + PWA registration
-│       ├── mini-main.jsx     # Mini entry + PWA registration
-│       ├── index.css          # Global styles (Tailwind imports)
+│       ├── main.jsx          # Default entry → MediumApp + PWA registration
+│       ├── full-main.jsx     # Full entry → App
+│       ├── medium-main.jsx   # Medium entry → MediumApp
+│       ├── mini-main.jsx     # Mini entry → MiniApp
+│       ├── index.css         # Global styles (Tailwind imports)
 │       ├── config/
-│       │   ├── theme.js      # Theme system (11 color categories: status, model, tool, event, semantic, etc.)
+│       │   ├── theme.js      # Dark/light theme system (model, tool, event, agent, team, semantic… tokens)
 │       │   └── eventTypes.js # Event type definitions (theme-aware colors)
 │       ├── data/
-│       │   └── demoData.js   # Demo replay dataset (1,006 events)
+│       │   └── demoData.js   # Demo replay dataset (~1,000 events + session/agent/comms metadata)
 │       ├── hooks/
 │       │   ├── useDemoReplay.js     # Demo replay state machine
 │       │   ├── useNotifications.js  # Desktop notifications
 │       │   └── usePolling.js        # API polling hook
 │       ├── utils/
-│       │   └── format.js     # Token/number formatting
+│       │   └── format.js     # Token/number formatting + usage badge + burn-speed helpers
+│       ├── test/
+│       │   └── setup.js      # Vitest + jsdom setup
 │       └── components/
-│           ├── AgentTree.jsx       # Agent hierarchy tree
-│           ├── AgentCard.jsx       # Single agent display
+│           ├── AgentTree.jsx       # Agent hierarchy tree + reply timeline + background jobs
+│           ├── AgentCard.jsx       # Single agent card
 │           ├── ActivityItem.jsx    # Event list item
-│           ├── TokenGauge.jsx      # Circular usage gauge
-│           ├── TokenStats.jsx      # Model breakdown stats
-│           ├── HourlyBreakdown.jsx # Hourly usage chart
+│           ├── TokenGauge.jsx      # Usage gauge (segments, time-marker, burn pace, reset countdown)
+│           ├── TokenBreakdown.jsx  # Inline token breakdown chip + cache popover
+│           ├── TokenStats.jsx      # Per-model cost breakdown
+│           ├── HourlyBreakdown.jsx # Last-12-hours stacked bar chart
 │           └── HelpGuide.jsx       # Help guide (EN/TH, 11 sections)
 │
 ├── hooks/
-│   └── send_event.js         # Hook script → sends events to backend
+│   ├── send_event.js         # Hook script (reads stdin) → POST /events + /context-update
+│   ├── send_event_env.js     # Variant that reads hook data from env vars
+│   └── statusline_wrapper.js # Status-line wrapper → POST /context-update (context %)
 │
 ├── scripts/
-│   └── prepare-demo-data.js  # Convert real events → demo dataset
+│   └── prepare-demo-data.js  # Convert real events.json → demoData.js
 │
 ├── extension/                # Chrome extension (optional usage fallback)
 │   ├── manifest.json         # Manifest V3
-│   ├── background.js         # Background sync worker
+│   ├── background.js         # Background sync worker (1-min alarm)
 │   ├── content.js            # Fetches usage from claude.ai
-│   └── icons/                # Extension icons
+│   ├── README.md             # Extension docs
+│   └── icons/                # Extension icons (16/48/128)
 │
 └── docs/
-    ├── AUDIT-REPORT.md       # Codebase audit report
-    └── CODE_REVIEW.md        # Code review notes
+    ├── AUDIT-REPORT.md            # Codebase audit report
+    ├── CODE_REVIEW.md             # Code review notes
+    ├── CONTEXT_WINDOW_ACCURACY.md # Why dashboard ctx % can differ from Claude Code
+    └── claude-logo.svg            # Logo asset
 ```
 
 ---
@@ -569,9 +604,10 @@ Oh-My-Claude/
 
 | Button | Description |
 |--------|-------------|
-| **View Mode** | Cycle: Full → Compact → Focus → Expanded → Hidden |
+| **View Mode** | Cycle agent panel: Full → Compact → Focus → Expanded → Hidden |
 | **Theme** | Toggle Dark / Light |
-| **Mini** | Open mini pop-out window |
+| **Medium** | Open medium pop-out window (300×870) |
+| **Mini** | Open mini pop-out window (280×400) |
 | **Notifications** | Toggle: Off / Bell |
 | **Guide** | Help guide with Demo toggle (11 sections, EN/TH) |
 | **Status Badge** | Usage status (🪴⚡🚨🫗) |
@@ -629,22 +665,28 @@ curl http://localhost:4825/health
 
 ### REST
 
+> The built UI calls these under an `/api/*` prefix (same as the Vite dev proxy); the server strips `/api` so the paths below also work directly.
+
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| GET | `/health` | Health check |
-| GET | `/stats` | Token stats (cached) |
-| GET | `/events` | Recent events |
-| GET | `/agents` | Agent list with status |
-| GET | `/sessions` | Session list |
-| GET | `/teams` | Active teams |
-| GET | `/teams/:name/comms` | Team communications |
-| GET | `/teams/:name/files` | Team shared files |
-| GET | `/usage` | Chrome extension usage data |
-| POST | `/events` | Receive hook events (rate-limited: 300/min) |
-| POST | `/usage` | Receive Chrome extension data |
-| DELETE | `/events` | Clear all events |
-| DELETE | `/agents` | Clear all agents |
-| DELETE | `/agents/stopped` | Clear stopped agents only |
+| GET | `/health` | Health check (`status`, WS client count, event count, uptime) |
+| GET | `/stats` | Token stats (cached ~60s) |
+| GET | `/events` | Recent events (`?type=`, `?limit=`) |
+| GET | `/agents` | Agent list with status, tokens, context %, git diff |
+| GET | `/sessions` | Session list (top 20 by last activity) |
+| GET | `/teams` | Active teams + members + file conflicts |
+| GET | `/teams/:name/comms` | Team communications (last 50) |
+| GET | `/teams/:name/files` | Team shared files + conflict detection |
+| GET | `/session/:id/last-message` | Full last assistant message for a session |
+| GET | `/session/:id/messages` | Reply timeline — assistant messages (`?limit=`, max 500) |
+| GET | `/usage` | Current usage % (OAuth or extension, whichever is freshest) |
+| POST | `/events` | Receive hook events (Zod-validated, rate-limited: 300/min) |
+| POST | `/context-update` | Receive per-session context-window % (status line / transcript) |
+| POST | `/usage` | Receive Chrome extension usage data (fallback) |
+| POST | `/restart` | Graceful restart (saves state, exits 0 for PM2) |
+| DELETE | `/events` | Clear all events, agents, sessions, teams |
+| DELETE | `/agents` | Clear all agents (keep events) |
+| DELETE | `/agents/stopped` | Clear stopped / timed-out agents only |
 
 ### WebSocket
 
@@ -652,13 +694,16 @@ Connect: `ws://localhost:4825`
 
 | Message | Direction | Description |
 |---------|-----------|-------------|
-| `init` | Server → Client | Initial state (agents, events, stats, usage) |
+| `init` | Server → Client | Initial state (events, stats, agents, sessions, usage, teams, comms) |
 | `event` | Server → Client | New event arrived |
-| `stats` | Server → Client | Updated token stats |
+| `stats` | Server → Client | Periodic snapshot (stats, agents, sessions, usage, teams) — every 10s |
 | `agents_update` | Server → Client | Updated agent list |
-| `usage` | Server → Client | Usage data from extension |
+| `usage` | Server → Client | Updated usage % (OAuth sync or extension) |
+| `last-message` | Server → Client | Live assistant reply for a session (+ `awaitingReply` flag) |
 | `clear` | Server → Client | Events cleared |
 | `agents_cleared` | Server → Client | Agents cleared |
+
+> The dashboard is push-only — clients don't send WebSocket messages; all actions go through the REST endpoints above.
 
 ---
 
@@ -666,8 +711,10 @@ Connect: `ws://localhost:4825`
 
 | Layer | Technology |
 |-------|------------|
-| Backend | Node.js, Express, WebSocket (ws), Zod |
-| Frontend | React 18, Vite, Tailwind CSS |
+| Backend | Node.js, Express, WebSocket (ws), Zod, express-rate-limit |
+| Frontend | React 18, Vite 5, Tailwind CSS, react-markdown + remark-gfm, PropTypes |
+| Process mgmt | PM2 (single process `omc-backend`, auto-restart, start-on-boot) |
+| Testing | Jest (backend), Vitest + jsdom (frontend) |
 | PWA | Service Worker, Web App Manifest |
 | Extension | Chrome Manifest V3 |
 
