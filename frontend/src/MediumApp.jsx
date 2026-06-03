@@ -268,13 +268,12 @@ export default function MediumApp({ onSwitchToFull }) {
     if (!sd || typeof sd.utilization !== 'number' || !sd.resets_at) return null;
     const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
     const resetMs = new Date(sd.resets_at).getTime();
-    const now = Date.now();
-    const elapsedMs = now - (resetMs - WEEK_MS);
-    const elapsedFrac = elapsedMs / WEEK_MS;
-    // Too early in the week → expectedUtil ≈ 0 makes pace wild; need ~10% elapsed (~17h) for a stable read.
-    if (!(elapsedFrac >= 0.1 && elapsedFrac <= 1)) return null; // too early/stale → can't read pace
+    if (!Number.isFinite(resetMs)) return null;
+    const elapsedFrac = Math.min(1, Math.max(0, (Date.now() - (resetMs - WEEK_MS)) / WEEK_MS));
     const util = Math.max(0, sd.utilization);
-    const speed = util > 0 ? Math.round((util / (elapsedFrac * 100)) * 100) : 0; // % of sustainable pace (0 = nothing used)
+    // Always show — burn must not disappear. Floor the divisor so the first hours of the week don't blow up
+    // (early-week % is naturally sensitive but directionally right); cap the readout for sanity.
+    const speed = util > 0 ? Math.min(999, Math.round((util / (Math.max(elapsedFrac, 0.04) * 100)) * 100)) : 0;
     const sev = speed < 100 ? 'safe' : speed < 150 ? 'warn' : 'crit';
     const c = sev === 'crit' ? 'text-red-400' : sev === 'warn' ? 'text-amber-400' : 'text-emerald-400';
     // header-only — the Weekly limit-ETA line was removed

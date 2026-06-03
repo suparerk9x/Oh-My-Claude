@@ -5,4 +5,5 @@ dist/
 .DS_Store
 Thumbs.db
 backend/usage-history.json
+backend/usage-snapshot.json
 .playwright-mcp/

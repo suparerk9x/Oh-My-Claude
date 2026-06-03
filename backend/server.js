@@ -284,6 +284,25 @@ let claudeUsage = {
   source: null
 };
 
+// Persist the latest usage snapshot so a restart shows the last % immediately, instead of a blank
+// "rip sync" gap until the first fresh OAuth sync lands (which often hits a 429 backoff right after boot).
+const USAGE_SNAPSHOT_FILE = path.join(__dirname, 'usage-snapshot.json');
+try {
+  if (fs.existsSync(USAGE_SNAPSHOT_FILE)) {
+    const saved = JSON.parse(fs.readFileSync(USAGE_SNAPSHOT_FILE, 'utf-8'));
+    if (saved && (saved.five_hour || saved.seven_day)) {
+      claudeUsage = saved;
+      console.log(`[USAGE] Restored last usage snapshot (5h ${saved.five_hour?.utilization ?? '?'}%, lastSync ${saved.lastSync ?? '?'})`);
+    }
+  }
+} catch (err) {
+  console.warn('[USAGE] Could not restore usage snapshot:', err.message);
+}
+function saveUsageSnapshot() {
+  try { fs.writeFileSync(USAGE_SNAPSHOT_FILE, JSON.stringify(claudeUsage)); }
+  catch (err) { console.warn('[USAGE] Could not save usage snapshot:', err.message); }
+}
+
 // Normalize short model names (from Task tool enum) to full model IDs
 function normalizeModel(model) {
   if (!model) return model;
@@ -2135,6 +2154,7 @@ app.post('/usage', (req, res) => {
       type: 'usage',
       usage: claudeUsage
     });
+    saveUsageSnapshot(); // persist so a restart shows this % immediately
 
     res.json({ success: true, received: claudeUsage });
   } catch (err) {
@@ -2413,6 +2433,7 @@ async function fetchClaudeCodeUsage() {
       source: 'claude-code-oauth'
     };
     lastGoodUsageSyncMs = Date.now();
+    saveUsageSnapshot(); // persist so a restart shows this % immediately (no blank gap before the next sync)
     broadcast({ type: 'usage', usage: claudeUsage });
     console.log(`[USAGE] Synced from Claude Code OAuth — 5h ${u.five_hour?.utilization ?? '?'}%, 7d ${u.seven_day?.utilization ?? '?'}%`);
   } catch (err) {
