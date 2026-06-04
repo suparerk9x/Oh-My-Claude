@@ -2458,8 +2458,12 @@ async function fetchClaudeCodeUsage() {
     usageFetchInFlight = false;
   }
 }
+// Poll cadence. Default 150s (not 60s): Claude Code polls this same /oauth/usage endpoint with the same
+// token while you work, and a tight 60s cadence on top of that trips a shared per-token rate limit (429).
+// Usage % moves slowly (1% ≈ ~3 min of heavy use), so 2.5 min is plenty. Override with USAGE_POLL_MS.
+const USAGE_POLL_MS = Number(process.env.USAGE_POLL_MS) || 150 * 1000;
 setTimeout(fetchClaudeCodeUsage, 2000);           // initial fetch shortly after boot
-setInterval(fetchClaudeCodeUsage, 60 * 1000);     // refresh every 60s
+setInterval(fetchClaudeCodeUsage, USAGE_POLL_MS); // refresh on the configured cadence
 
 // ── Wake-from-sleep + staleness watchdog ─────────────────────────────
 // Guards the usage sync against two failure modes a plain 60s interval can't recover from:

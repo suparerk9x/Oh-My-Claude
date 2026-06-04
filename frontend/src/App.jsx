@@ -397,9 +397,11 @@ export default function App() {
   // If no usage data, show N/A (null = N/A)
   const tokens = DEMO_TOKENS || (stats?.tokens || {});
   const hasRealUsage = demoMode || claudeUsage?.five_hour != null;
-  // "Synced" = a SUCCESSFUL usage sync (Claude Code OAuth, or the fallback extension) landed within 5 min.
-  // lastSync is only bumped on success, so during a 429 backoff this can legitimately go stale.
-  const USAGE_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+  // "Synced" = a SUCCESSFUL usage sync (Claude Code OAuth, or the fallback extension) landed recently.
+  // lastSync is only bumped on success, so during a 429 backoff this can legitimately go stale. The
+  // backend now polls every ~150s and caps a 429 backoff at 5 min, so 10 min covers a couple of failed
+  // retries before we call it dead — avoids flashing "RIP Sync" during a normal, recovering backoff.
+  const USAGE_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
   const lastSyncTime = claudeUsage?.lastSync ? new Date(claudeUsage.lastSync).getTime() : 0;
   const isSyncActive = hasRealUsage && lastSyncTime && (Date.now() - lastSyncTime) < USAGE_TIMEOUT_MS;
   const sessionPct = demoMode ? 30 : (hasRealUsage ? claudeUsage.five_hour.utilization : null);

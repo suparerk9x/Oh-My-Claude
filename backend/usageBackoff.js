@@ -12,9 +12,13 @@
 
 export const AUTH_COOLDOWN_MS = 60 * 1000;        // 401/403: brief pause for Claude Code to refresh the token
 export const RATE_LIMIT_MIN_MS = 90 * 1000;       // 429 exponential floor
-export const RATE_LIMIT_MAX_MS = 30 * 60 * 1000;  // 429 exponential cap (30 min)
+// 429 exponential cap. Kept short (5 min) on purpose: a 429 here is usually transient contention with
+// Claude Code's own polling of the same endpoint, so recovering fast beats backing off for half an hour.
+export const RATE_LIMIT_MAX_MS = 5 * 60 * 1000;   // 429 exponential cap (5 min)
 export const WATCHDOG_INTERVAL_MS = 30 * 1000;
-export const SYNC_STALE_MS = 3 * 60 * 1000;       // a successful sync older than this ⇒ force a resync
+// A successful sync older than this ⇒ force a resync. Kept above the poll cadence (default 150s) so the
+// watchdog doesn't fire during normal operation, but below the UI's "RIP Sync" threshold.
+export const SYNC_STALE_MS = 5 * 60 * 1000;
 
 // Classify an HTTP status from the usage endpoint into how the sync should react.
 export function classifyUsageStatus(status) {
