@@ -10,6 +10,10 @@ import fsPromises from 'fs/promises';
 import { fileURLToPath } from 'url';
 import { createInterface } from 'readline';
 import { readStatsCache } from './statsReader.js';
+import {
+  classifyUsageStatus, reduceBackoff, canFetch, watchdogDecision,
+  WATCHDOG_INTERVAL_MS, SYNC_STALE_MS,
+} from './usageBackoff.js';
 import { execSync, exec } from 'child_process';
 import { promisify } from 'util';
 const execAsync = promisify(exec);
@@ -2328,6 +2332,9 @@ let usageBackoffUntil = 0;
 let usageBackoffMs = 0;
 let usageFetchInFlight = false;           // prevent overlapping fetches (60s tick + watchdog can both fire)
 let lastGoodUsageSyncMs = Date.now();     // timestamp of last SUCCESSFUL sync — watched for staleness
+// mtime of the OAuth credentials file at last watchdog check. When Claude Code rewrites it (token
+// refresh), the mtime jumps — our signal that a stale 401/429 backoff can be cleared immediately.
+let lastCredentialsMtimeMs = (() => { try { return fs.statSync(CC_CREDENTIALS_PATH).mtimeMs; } catch { return 0; } })();
 const USAGE_HISTORY_FILE = path.join(__dirname, 'usage-history.json');
 const usageHistory = []; // recent [{ t, util }] samples of 5h utilization → burn rate / ETA to 100%
 // Restore samples across restarts so burn rate survives deploys instead of resetting to "measuring…"
@@ -2372,8 +2379,8 @@ function httpsGetJson(url, headers, timeoutMs = 8000) {
 }
 
 async function fetchClaudeCodeUsage() {
-  if (usageFetchInFlight) return;              // don't pile up if a previous fetch is still running
-  if (Date.now() < usageBackoffUntil) return;  // still backing off after a 429
+  // skip if a previous fetch is still running, or we're inside a backoff window
+  if (!canFetch({ now: Date.now(), backoffUntil: usageBackoffUntil, inFlight: usageFetchInFlight })) return;
   usageFetchInFlight = true;
   try {
     if (!fs.existsSync(CC_CREDENTIALS_PATH)) return;
@@ -2388,17 +2395,26 @@ async function fetchClaudeCodeUsage() {
       'Content-Type': 'application/json'
     }, 8000);
 
-    if (status === 429) {
-      // Rate limited — back off (respect Retry-After, else exponential 1.5m→30m cap). Keep last-known usage.
-      const ra = parseInt(headers['retry-after'] || '', 10);
-      usageBackoffMs = ra > 0 ? ra * 1000 : Math.min(Math.max(usageBackoffMs * 2, 90000), 1800000);
-      usageBackoffUntil = Date.now() + usageBackoffMs;
-      console.warn(`[USAGE] OAuth usage rate-limited (429) — backing off ${Math.round(usageBackoffMs / 1000)}s`);
-      return;
-    }
-    if (status < 200 || status >= 300) {
-      // 401 => token rotated/expired; Claude Code will refresh it. Keep last-known, retry next cycle.
-      console.warn(`[USAGE] OAuth usage fetch failed: HTTP ${status}`);
+    const kind = classifyUsageStatus(status);
+    if (kind !== 'ok') {
+      // Update backoff per response kind (see usageBackoff.js):
+      //   429  → respect Retry-After, else exponential 1.5m→30m cap
+      //   401/403 → short fixed cooldown so Claude Code can refresh the token (never escalates;
+      //             the credentials-refresh watchdog below clears it the moment a new token lands)
+      //   other → keep prior backoff, retry next cycle
+      const next = reduceBackoff(
+        { backoffMs: usageBackoffMs, backoffUntil: usageBackoffUntil },
+        { now: Date.now(), status, retryAfterSec: parseInt(headers['retry-after'] || '', 10) }
+      );
+      usageBackoffMs = next.backoffMs;
+      usageBackoffUntil = next.backoffUntil;
+      if (kind === 'rate_limit') {
+        console.warn(`[USAGE] OAuth usage rate-limited (429) — backing off ${Math.round(next.backoffMs / 1000)}s`);
+      } else if (kind === 'auth') {
+        console.warn(`[USAGE] OAuth token expired (HTTP ${status}) — cooling down ${Math.round(next.backoffMs / 1000)}s for Claude Code to refresh it`);
+      } else {
+        console.warn(`[USAGE] OAuth usage fetch failed: HTTP ${status}`);
+      }
       return;
     }
     usageBackoffMs = 0; usageBackoffUntil = 0; // healthy — reset backoff
@@ -2452,32 +2468,35 @@ setInterval(fetchClaudeCodeUsage, 60 * 1000);     // refresh every 60s
 //   2) Any silent stall — if the last *successful* sync is older than SYNC_STALE_MS (and we're not
 //      intentionally backing off), force a resync. Together with the fresh-connection fetch above, the
 //      usage % can no longer stay frozen after a resume.
+//   3) Token refresh — when Claude Code rewrites the credentials file, a stale 401/429 backoff is now
+//      bogus (the reason for it is gone), so clear it and resync immediately instead of waiting it out.
 let lastWatchdogTick = Date.now();
-const WATCHDOG_INTERVAL_MS = 30 * 1000;
-const SYNC_STALE_MS = 3 * 60 * 1000;
 setInterval(() => {
   const now = Date.now();
   const drift = now - lastWatchdogTick;
   lastWatchdogTick = now;
 
-  // Drift far beyond the interval ⇒ the machine just woke from sleep/hibernate.
-  const wokeFromSleep = drift > WATCHDOG_INTERVAL_MS * 2.5;
-  if (wokeFromSleep) {
-    console.warn(`[WAKE] Resume detected (timer drift ${Math.round(drift / 1000)}s) — clearing backoff & forcing usage resync`);
-    usageBackoffUntil = 0;
-    usageBackoffMs = 0;
-  }
+  // Did Claude Code just rewrite the token while we were backing off? That backoff is now stale.
+  let credRefreshed = false;
+  try {
+    const m = fs.statSync(CC_CREDENTIALS_PATH).mtimeMs;
+    if (lastCredentialsMtimeMs && m > lastCredentialsMtimeMs && now < usageBackoffUntil) credRefreshed = true;
+    lastCredentialsMtimeMs = m;
+  } catch { /* credentials missing — nothing to do */ }
 
-  const syncAge = now - lastGoodUsageSyncMs;
-  if (wokeFromSleep || (syncAge > SYNC_STALE_MS && now >= usageBackoffUntil)) {
-    fetchClaudeCodeUsage();
-  }
+  const { wokeFromSleep, clearBackoff, forceResync } = watchdogDecision({
+    now, drift, lastGoodSyncMs: lastGoodUsageSyncMs, backoffUntil: usageBackoffUntil, credRefreshed,
+  });
+  if (wokeFromSleep) console.warn(`[WAKE] Resume detected (timer drift ${Math.round(drift / 1000)}s) — clearing backoff & forcing usage resync`);
+  if (credRefreshed) console.warn('[USAGE] Credentials refreshed — clearing stale backoff & forcing resync');
+  if (clearBackoff) { usageBackoffUntil = 0; usageBackoffMs = 0; }
+  if (forceResync) fetchClaudeCodeUsage();
 }, WATCHDOG_INTERVAL_MS);
 
 // Start server
 server.listen(PORT, () => {
   console.log(`
-🚀 Oh My Claude! v2.2
+🚀 Oh My Claude! v2.3
 
    HTTP:      http://localhost:${PORT}
    WebSocket: ws://localhost:${PORT}
