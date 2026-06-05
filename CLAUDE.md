@@ -104,5 +104,8 @@ prod `0.0.0.0`) · runtime (PM2 vs systemd) · reverse-proxy+TLS+auth (prod เ�
 ## Related repo (คนละ repo)
 
 ฝั่ง proxy integration อยู่ที่ `D:\Antigravity\Suparerk\claude-proxy` — proxy spawn `claude` ด้วย env
-`CLAUDE_PROJECT` + มี endpoint `/v1/usage` ที่ fetch OMC `/usage`+`/stats` มารวมในผลของตัวเอง.
-**Live บน Oracle แล้ว แต่ local repo ยังไม่ sync.**
+`CLAUDE_PROJECT` (label session) + endpoint `/v1/usage` fetch OMC `/usage`+`/stats` มารวมในผลของตัวเอง.
+**Synced จาก live Oracle แล้ว (2026-06-05) + git-init เป็น repo (`527fa06`).** Live ที่
+`oracle:~/claude-proxy` (Docker container `claude-proxy`, port 3210, รัน `node src/index.js` ตรงๆ
+ไม่ใช่ PM2). **ยังค้าง:** Oracle ยังไม่ใช่ git (แก้มืออยู่) + repo นี้ยังไม่มี GitHub remote → ปิด loop
+PC→push→prod-pull ยังไม่ครบ. OMC fetch ใช้ `OMC_URL` (default bridge `172.25.0.1:4825`).
