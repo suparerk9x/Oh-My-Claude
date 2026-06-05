@@ -50,6 +50,40 @@ Manage it: `sudo systemctl {status,restart} oh-my-claude` · logs `sudo journalc
 
 ---
 
+## 1b. Updating an existing deploy
+
+The install dir is a **git checkout** (`origin/main` = github.com/<you>/Oh-My-Claude). Develop + push
+from your dev machine; the server only ever **pulls**. Never hand-edit code on the server — it causes
+drift that the next pull conflicts with (env differences belong in the systemd unit, not the source).
+
+```bash
+cd ~/oh-my-claude
+git pull
+# only if you touched the frontend (UI/src) — rebuild the served bundle:
+( cd frontend && npm install --no-audit --no-fund && npm run build )
+sudo systemctl restart oh-my-claude
+curl -s http://127.0.0.1:$PORT/health && echo      # expect {"status":"ok",...}
+```
+
+> ⚠ **Runtime state + local config survive a pull** because they're git-ignored: `frontend/dist`
+> (built UI), `node_modules`, `backend/{usage-history,usage-snapshot,agents,events}.json`,
+> `frontend/.env`. The bind address is `BIND` in the systemd unit (default `0.0.0.0`) — not in the
+> code — so a pull never reverts it. Hard-refresh + unregister the service worker after a frontend
+> rebuild (PWA caches the bundle).
+
+> **Converting a copy-deployed box to a checkout** (if it was set up before this kit, no `.git`):
+> ```bash
+> cd ~/oh-my-claude
+> git init -q && git remote add origin <repo-url> && git fetch origin
+> git reset --hard origin/main          # tracked files -> repo; untracked/ignored runtime files kept
+> git branch -m main 2>/dev/null; git branch --set-upstream-to=origin/main main
+> sudo systemctl restart oh-my-claude
+> ```
+> `reset --hard` overwrites only tracked files and leaves untracked ones (dist, node_modules, the
+> `*.json` runtime state) in place. Back up `.claude/` + `frontend/.env` first if unsure.
+
+---
+
 ## 2. Expose it publicly (reverse proxy + Basic-Auth + TLS)
 
 The backend listens on `0.0.0.0:PORT` but your cloud firewall should NOT open that port — put it
