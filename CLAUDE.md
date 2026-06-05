@@ -79,27 +79,29 @@ subscription ของ dockerized `claude -p` proxy. Gotcha ที่กัด�
 OMC บน PC กับบน Oracle **ไม่ใช่ 2 app — เป็น app เดียวกัน deploy 2 ที่.** อย่า fork เป็น 2 repo
 (จะ diverge + ทำลายคุณค่าของ deploy kit). เรียกตาม environment:
 
-| instance | ชื่อ | runtime |
-|---|---|---|
-| บน PC | **OMC local** (dev) | PM2 + boot VBS, Windows |
-| บน Oracle | **OMC prod** | systemd, Linux หลัง Cloudflare+NPM |
+| instance | ชื่อ | บทบาท | runtime |
+|---|---|---|---|
+| บน PC | **OMC local** | **canonical source + dev.** แก้โค้ด→รันทันทีบนเครื่อง. push GitHub = **backup/share** (ไม่ใช่ trigger deploy) | PM2 + boot VBS, Windows |
+| บน Oracle | **OMC prod** | instance ที่ deploy จริง | systemd, Linux หลัง Cloudflare+NPM |
 
 (`claude-proxy` คือคนละ app จริงๆ → อยู่คนละ repo ถูกแล้ว. ภาพรวม: **2 apps; OMC มี 2 instances.**)
 
 **กฎเหล็ก:** ความต่างของ environment **ห้าม hardcode ในโค้ด — ดันไปเป็น env var / install arg.**
 เห็น `if (platform === ...)` หรือ IP/path/port ตรงๆ → หยุดถามว่าควรเป็น env var มั้ย ถ้าใช่ ดันออกไป
-`deploy/install.sh` / env. (ตัวอย่าง: `send_event.js` เลิก hardcode `127.0.0.1` ใช้ `MONITOR_SERVER` แทน.)
+`deploy/install.sh` / env. ตัวอย่างที่ทำไปแล้ว: `send_event.js` เลิก hardcode `127.0.0.1` ใช้
+`MONITOR_SERVER` · bind address ใช้ `BIND` env (default `0.0.0.0`) แทนการให้ install.sh `sed` patch source.
 
-**Sync = ทิศทางเดียว: dev ที่ PC → push → prod pull.** อย่าแก้โค้ดบน Oracle ตรงๆ.
+**Update prod = pull จาก GitHub อย่างเดียว** (ตั้งแต่ 2026-06-05 Oracle OMC เป็น git checkout แล้ว —
+ก่อนหน้านี้ deploy แบบ copy ไฟล์ ไม่ใช่ clone). ทิศทางเดียว PC→GitHub→prod, **ห้ามแก้โค้ดบน Oracle ตรงๆ:**
 ```
-[PC]     แก้ → test → git commit → git push
-[Oracle] git pull → npm run build (ถ้าแตะ frontend) → sudo systemctl restart oh-my-claude
+[PC]     แก้ → รัน/เทสต์ → git commit → git push
+[Oracle] cd ~/oh-my-claude && git pull && (npm run build ถ้าแตะ frontend) && sudo systemctl restart oh-my-claude
 ```
-ส่วนที่ sync ผ่าน git = ทุก source. ส่วนที่ **ต่าง** (อยู่ใน env/install args ไม่ใช่โค้ด):
-`RUN_USER`/`HOME` (prod = root + `HOME=/home/ubuntu`, creds root-owned) · bind (local localhost,
-prod `0.0.0.0`) · runtime (PM2 vs systemd) · reverse-proxy+TLS+auth (prod เท่านั้น) ·
-`MONITOR_SERVER` (local `localhost:4825`, prod bridge gateway `172.x.x.1:4825`) ·
-`VITE_WS_URL` **unset ทั้งคู่** (ห้าม bake).
+ส่วนที่ sync ผ่าน git = ทุก source. ส่วนที่ **ต่าง** (อยู่ใน systemd env / install args ไม่ใช่โค้ด):
+`RUN_USER`/`HOME` (prod = root + `HOME=/home/ubuntu`, creds root-owned) · `BIND` (default `0.0.0.0`) ·
+runtime (PM2 vs systemd) · reverse-proxy+TLS+auth (prod เท่านั้น) · `MONITOR_SERVER` ที่ hook
+(local `localhost:4825`, prod bridge gateway `172.x.x.1:4825`) · `VITE_WS_URL` **unset ทั้งคู่** (ห้าม bake).
+**claude-proxy ยังไม่เข้า loop นี้** (Oracle ยังไม่ git + ไม่มี GitHub remote — ดู `docs/BACKLOG.md` ข้อ 1).
 
 ## Related repo (คนละ repo)
 

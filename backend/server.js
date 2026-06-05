@@ -2497,8 +2497,9 @@ setInterval(() => {
   if (forceResync) fetchClaudeCodeUsage();
 }, WATCHDOG_INTERVAL_MS);
 
-// Start server
-server.listen(PORT, () => {
+// Start server. BIND defaults to all interfaces (0.0.0.0) so a reverse-proxy container can reach
+// it over the docker bridge; override via env (e.g. BIND=127.0.0.1) when you want localhost-only.
+server.listen(PORT, process.env.BIND || '0.0.0.0', () => {
   console.log(`
 🚀 Oh My Claude! v2.3
 

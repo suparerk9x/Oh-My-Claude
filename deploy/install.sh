@@ -18,8 +18,9 @@ PORT="${PORT:-4825}"
 RUN_USER="${RUN_USER:-root}"            # MUST be able to read ~/.claude/.credentials.json + ~/.claude/projects
 CLAUDE_HOME="${CLAUDE_HOME:-$HOME}"     # the HOME whose ~/.claude holds the OAuth creds + transcripts
 NODE_BIN="${NODE_BIN:-$(command -v node || echo /usr/bin/node)}"
+BIND="${BIND:-0.0.0.0}"                 # bind address — 0.0.0.0 so a reverse-proxy container reaches it
 
-echo ">> OMC_DIR=$OMC_DIR  PORT=$PORT  RUN_USER=$RUN_USER  CLAUDE_HOME=$CLAUDE_HOME  NODE=$NODE_BIN"
+echo ">> OMC_DIR=$OMC_DIR  PORT=$PORT  BIND=$BIND  RUN_USER=$RUN_USER  CLAUDE_HOME=$CLAUDE_HOME  NODE=$NODE_BIN"
 [ -d "$OMC_DIR/backend" ] || { echo "!! $OMC_DIR/backend not found — run from the repo"; exit 1; }
 
 # 1) backend deps (no native modules — better-sqlite3 in node_modules is orphaned/unused)
@@ -32,16 +33,9 @@ if [ -f "$OMC_DIR/frontend/.env" ]; then
 fi
 ( cd "$OMC_DIR/frontend" && npm install --no-audit --no-fund && npm run build )
 
-# 3) bind backend to 0.0.0.0 so a reverse-proxy CONTAINER can reach it over the docker bridge.
-#    Public access stays gated by your firewall + the reverse proxy's auth.
-if grep -q "server.listen(PORT, '127.0.0.1'" "$OMC_DIR/backend/server.js" 2>/dev/null; then
-  sed -i "s/server.listen(PORT, '127.0.0.1'/server.listen(PORT, '0.0.0.0'/" "$OMC_DIR/backend/server.js"
-elif grep -q "server.listen(PORT, () =>" "$OMC_DIR/backend/server.js" 2>/dev/null; then
-  sed -i "s/server.listen(PORT, () =>/server.listen(PORT, '0.0.0.0', () =>/" "$OMC_DIR/backend/server.js"
-fi
-
-# 4) systemd service — User=root + HOME=CLAUDE_HOME so it can read root-owned creds/transcripts
+# 3) systemd service — User=root + HOME=CLAUDE_HOME so it can read root-owned creds/transcripts
 #    (common when `claude` runs in a container that bind-mounts the host ~/.claude as root).
+#    The backend binds $BIND (default 0.0.0.0) via env — no source patching, so `git pull` stays clean.
 sudo tee /etc/systemd/system/oh-my-claude.service >/dev/null <<UNIT
 [Unit]
 Description=Oh-My-Claude usage monitor
@@ -52,6 +46,7 @@ Type=simple
 User=$RUN_USER
 Environment=HOME=$CLAUDE_HOME
 Environment=PORT=$PORT
+Environment=BIND=$BIND
 Environment=NODE_OPTIONS=--max-old-space-size=512
 WorkingDirectory=$OMC_DIR/backend
 ExecStart=$NODE_BIN server.js
