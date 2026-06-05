@@ -57,7 +57,10 @@ process.stdin.on('end', () => {
 
       // Session info
       model: hookData.model || null,
-      cwd: hookData.cwd || process.cwd(),
+      // CLAUDE_PROJECT (optional env) lets a caller label the session (e.g. a proxy that runs
+      // `claude -p` for many projects in one cwd). Falls back to the real cwd. For pretty names,
+      // swap this for a map, e.g. ({'tts-web':'TTS Director'}[process.env.CLAUDE_PROJECT] || ...).
+      cwd: process.env.CLAUDE_PROJECT || hookData.cwd || process.cwd(),
 
       // For Stop events
       stopReason: hookData.stop_reason || hookData.reason || null,
@@ -136,9 +139,12 @@ function sendContextUpdate(sessionId, transcriptPath) {
             lastInputTokens,
             model: (parsed.message.model || null)
           });
+          // Use SERVER_URL (MONITOR_SERVER) like /events — hardcoding 127.0.0.1 fails silently
+          // when the hook runs inside a container that must reach the host via a bridge gateway.
+          const cu = new URL('/context-update', SERVER_URL);
           const req = http.request({
-            hostname: '127.0.0.1', port: 4825,
-            path: '/context-update', method: 'POST',
+            hostname: cu.hostname, port: cu.port || 4825,
+            path: cu.pathname, method: 'POST',
             headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) },
             timeout: 500
           });

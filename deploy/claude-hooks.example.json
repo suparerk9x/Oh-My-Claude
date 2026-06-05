@@ -1,0 +1,15 @@
+{
+  "_comment": "MERGE this 'hooks' block into the ~/.claude/settings.json that your `claude` reads (keep any existing keys like model/permissions). Replace the placeholders. If claude runs in a container that bind-mounts host ~/.claude to /root/.claude, the paths below are the CONTAINER paths and MONITOR_SERVER must be the docker-gateway IP the container can reach the host on (find it via `docker inspect <container> | grep Gateway`).",
+  "_placeholders": {
+    "__OMC_URL__": "http://172.25.0.1:4825   (host gateway:PORT reachable from where claude runs; use http://127.0.0.1:PORT if claude runs on the host directly)",
+    "__NODE__": "/usr/local/bin/node   (absolute node path INSIDE the claude env; on the host it is usually /usr/bin/node)",
+    "__HOOKS_DIR__": "/root/.claude/hooks   (where you copied send_event.js, as seen from the claude env)"
+  },
+  "hooks": {
+    "UserPromptSubmit": [{ "hooks": [{ "type": "command", "command": "MONITOR_SERVER=__OMC_URL__ __NODE__ __HOOKS_DIR__/send_event.js --event-type UserPromptSubmit" }] }],
+    "PreToolUse":  [{ "matcher": "*", "hooks": [{ "type": "command", "command": "MONITOR_SERVER=__OMC_URL__ __NODE__ __HOOKS_DIR__/send_event.js --event-type PreToolUse" }] }],
+    "PostToolUse": [{ "matcher": "*", "hooks": [{ "type": "command", "command": "MONITOR_SERVER=__OMC_URL__ __NODE__ __HOOKS_DIR__/send_event.js --event-type PostToolUse" }] }],
+    "Stop":         [{ "hooks": [{ "type": "command", "command": "MONITOR_SERVER=__OMC_URL__ __NODE__ __HOOKS_DIR__/send_event.js --event-type Stop" }] }],
+    "SubagentStop": [{ "hooks": [{ "type": "command", "command": "MONITOR_SERVER=__OMC_URL__ __NODE__ __HOOKS_DIR__/send_event.js --event-type SubagentStop" }] }]
+  }
+}

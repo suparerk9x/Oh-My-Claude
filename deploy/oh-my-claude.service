@@ -1,0 +1,20 @@
+[Unit]
+Description=Oh-My-Claude usage monitor
+After=network-online.target
+
+[Service]
+Type=simple
+# RUN AS A USER THAT CAN READ ~/.claude/.credentials.json + ~/.claude/projects (transcripts).
+# If your `claude` runs inside a Docker container that bind-mounts the host ~/.claude as root,
+# those files become root-owned -> use User=root + Environment=HOME=<that host home>.
+User=root
+Environment=HOME=__CLAUDE_HOME__
+Environment=PORT=__PORT__
+Environment=NODE_OPTIONS=--max-old-space-size=512
+WorkingDirectory=__OMC_DIR__/backend
+ExecStart=/usr/bin/env node server.js
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

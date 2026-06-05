@@ -6,7 +6,10 @@
       "Bash(git -C \"d:\\\\Antigravity\\\\Oh-My-Claude\" branch -vv)",
       "Bash(git -C \"d:\\\\Antigravity\\\\Oh-My-Claude\" remote -v)",
       "PowerShell(pm2 jlist)",
-      "PowerShell(Test-NetConnection -ComputerName localhost -Port 4825 -InformationLevel Quiet)"
+      "PowerShell(Test-NetConnection -ComputerName localhost -Port 4825 -InformationLevel Quiet)",
+      "Bash(curl -s --max-time 5 http://localhost:4825/usage)",
+      "Bash(node -e \"const p=require\\('./package.json'\\);console.log\\(JSON.stringify\\(p.scripts||{},null,2\\)\\);console.log\\('name:',p.name,'v:',p.version\\)\")",
+      "Bash(node -e \"const p=require\\('./backend/package.json'\\);console.log\\(JSON.stringify\\(p.scripts||{},null,2\\)\\)\")"
     ]
   }
 }

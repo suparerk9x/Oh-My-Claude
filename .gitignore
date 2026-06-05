@@ -6,4 +6,7 @@ dist/
 Thumbs.db
 backend/usage-history.json
 backend/usage-snapshot.json
+backend/agents.json
+backend/events.json
+backend/crash.log
 .playwright-mcp/
