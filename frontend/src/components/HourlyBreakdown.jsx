@@ -25,10 +25,11 @@ export function HourlyBreakdown({ hourly = [], colors = {} }) {
       <div className="space-y-0.5">
         {hourly.map((hour) => {
           const isCurrentHour = hour.isCurrentHour;
-          const byModel = hour.byModel || { opus: 0, sonnet: 0, haiku: 0 };
+          const byModel = hour.byModel || { fable: 0, opus: 0, sonnet: 0, haiku: 0 };
           const totalHourTokens = hour.tokens || 0;
 
           // Calculate percentages for stacked bar
+          const fablePct = maxTokens > 0 ? ((byModel.fable || 0) / maxTokens) * 100 : 0;
           const opusPct = maxTokens > 0 ? (byModel.opus / maxTokens) * 100 : 0;
           const sonnetPct = maxTokens > 0 ? (byModel.sonnet / maxTokens) * 100 : 0;
           const haikuPct = maxTokens > 0 ? (byModel.haiku / maxTokens) * 100 : 0;
@@ -42,6 +43,13 @@ export function HourlyBreakdown({ hourly = [], colors = {} }) {
                 </svg>
               </span>
               <div className={`flex-1 h-3 ${colors?.progressBg || 'bg-gray-800/50'} rounded-sm overflow-hidden flex`}>
+                {(byModel.fable || 0) > 0 && (
+                  <div
+                    className={`h-full ${isCurrentHour ? 'bg-amber-400' : 'bg-amber-500'}`}
+                    style={{ width: `${fablePct}%` }}
+                    title={`Fable: ${formatTokens(byModel.fable)}`}
+                  />
+                )}
                 {byModel.opus > 0 && (
                   <div
                     className={`h-full ${isCurrentHour ? 'bg-violet-500' : 'bg-violet-600'}`}
@@ -74,6 +82,7 @@ export function HourlyBreakdown({ hourly = [], colors = {} }) {
 
       {/* Legend - Inline */}
       <div className="flex items-center justify-center gap-3 text-[9px] pt-0.5">
+        <span className={colors?.model?.fable?.text || 'text-amber-400'}>✦ Fable</span>
         <span className={colors?.model?.opus?.text || 'text-violet-400'}>◆ Opus</span>
         <span className={colors?.model?.sonnet?.text || 'text-blue-400'}>● Sonnet</span>
         <span className={colors?.model?.haiku?.text || 'text-emerald-400'}>▪ Haiku</span>
@@ -89,6 +98,7 @@ HourlyBreakdown.propTypes = {
     tokens: PropTypes.number,
     isCurrentHour: PropTypes.bool,
     byModel: PropTypes.shape({
+      fable: PropTypes.number,
       opus: PropTypes.number,
       sonnet: PropTypes.number,
       haiku: PropTypes.number

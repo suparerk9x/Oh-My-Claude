@@ -239,9 +239,10 @@ export function AgentTree({ agents = [], colors = {}, compact = false, expanded 
   // Theme-aware helper: model badge
   const mc = colors.model || {};
   const getModel = (model) => {
-    const versionMatch = model?.match(/(?:opus|sonnet|haiku)-(\d+)-(\d+)/i);
-    const version = versionMatch ? ` ${versionMatch[1]}.${versionMatch[2]}` : '';
+    const versionMatch = model?.match(/(?:opus|sonnet|haiku|fable)-(\d+)(?:-(\d+))?/i);
+    const version = versionMatch ? ` ${versionMatch[1]}${versionMatch[2] ? `.${versionMatch[2]}` : ''}` : '';
 
+    if (model?.includes('fable'))  { const m = mc.fable || {};  return { name: `Fable${version}`,  color: m.text || 'text-amber-400',  bg: m.bg || 'bg-amber-500/15' }; }
     if (model?.includes('opus'))   { const m = mc.opus || {};   return { name: `Opus${version}`,   color: m.text || 'text-violet-400', bg: m.bg || 'bg-violet-500/15' }; }
     if (model?.includes('sonnet')) { const m = mc.sonnet || {}; return { name: `Sonnet${version}`, color: m.text || 'text-sky-400',    bg: m.bg || 'bg-sky-500/15' }; }
     if (model?.includes('haiku'))  { const m = mc.haiku || {};  return { name: `Haiku${version}`,  color: m.text || 'text-teal-400',   bg: m.bg || 'bg-teal-500/15' }; }

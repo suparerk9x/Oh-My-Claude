@@ -44,9 +44,10 @@ function safeReadLines(filePath, onLine) {
 }
 
 // Pricing per 1M tokens (Anthropic official pricing)
-// Opus 4.x / Sonnet 4.6 / Haiku 4.5 GA rates.
+// Fable 5 / Opus 4.x / Sonnet 4.6 / Haiku 4.5 GA rates.
 // cacheCreation = 5-minute cache write (1.25x input); cacheCreation1h = 1-hour cache write (2x input).
 const PRICING = {
+  'fable': { input: 10, output: 50, cacheRead: 1, cacheCreation: 12.5, cacheCreation1h: 20 },
   'opus': { input: 5, output: 25, cacheRead: 0.5, cacheCreation: 6.25, cacheCreation1h: 10 },
   'sonnet': { input: 3, output: 15, cacheRead: 0.30, cacheCreation: 3.75, cacheCreation1h: 6 },
   'haiku': { input: 1, output: 5, cacheRead: 0.1, cacheCreation: 1.25, cacheCreation1h: 2 },
@@ -134,7 +135,8 @@ async function parseAndAggregate(filePath) {
         }
 
         const modelLower = model.toLowerCase();
-        const modelKey = modelLower.includes('opus') ? 'opus' :
+        const modelKey = modelLower.includes('fable') ? 'fable' :
+                        modelLower.includes('opus') ? 'opus' :
                         modelLower.includes('sonnet') ? 'sonnet' :
                         modelLower.includes('haiku') ? 'haiku' : 'other';
 
@@ -159,11 +161,12 @@ async function parseAndAggregate(filePath) {
           const d = new Date(timestampMs);
           const hourKey = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}-${String(d.getHours()).padStart(2,'0')}`;
           if (!hourBuckets[hourKey]) {
-            hourBuckets[hourKey] = { tokens: 0, opus: 0, sonnet: 0, haiku: 0, other: 0 };
+            hourBuckets[hourKey] = { tokens: 0, fable: 0, opus: 0, sonnet: 0, haiku: 0, other: 0 };
           }
           const tokens = input + output;
           hourBuckets[hourKey].tokens += tokens;
-          if (modelKey === 'opus') hourBuckets[hourKey].opus += tokens;
+          if (modelKey === 'fable') hourBuckets[hourKey].fable += tokens;
+          else if (modelKey === 'opus') hourBuckets[hourKey].opus += tokens;
           else if (modelKey === 'sonnet') hourBuckets[hourKey].sonnet += tokens;
           else if (modelKey === 'haiku') hourBuckets[hourKey].haiku += tokens;
           else hourBuckets[hourKey].other += tokens;
@@ -347,7 +350,7 @@ export async function readStatsCache() {
 
     const hourKey = `${hourStart.getFullYear()}-${String(hourStart.getMonth()+1).padStart(2,'0')}-${String(hourStart.getDate()).padStart(2,'0')}-${String(hourStart.getHours()).padStart(2,'0')}`;
 
-    const hourByModel = { opus: 0, sonnet: 0, haiku: 0, other: 0 };
+    const hourByModel = { fable: 0, opus: 0, sonnet: 0, haiku: 0, other: 0 };
     let hourTokens = 0;
 
     // Sum across all file aggregations for this hour
@@ -355,6 +358,7 @@ export async function readStatsCache() {
       const bucket = agg.hourBuckets[hourKey];
       if (bucket) {
         hourTokens += bucket.tokens;
+        hourByModel.fable += bucket.fable || 0;
         hourByModel.opus += bucket.opus;
         hourByModel.sonnet += bucket.sonnet;
         hourByModel.haiku += bucket.haiku;

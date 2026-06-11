@@ -20,9 +20,10 @@ export function AgentCard({ agent, colors = {}, viewMode = 'full' }) {
 
   // Model badge styling
   const getModelBadge = (model) => {
-    const versionMatch = model?.match(/(?:opus|sonnet|haiku)-(\d+)-(\d+)/i);
-    const version = versionMatch ? `${versionMatch[1]}.${versionMatch[2]}` : '';
+    const versionMatch = model?.match(/(?:opus|sonnet|haiku|fable)-(\d+)(?:-(\d+))?/i);
+    const version = versionMatch ? (versionMatch[2] ? `${versionMatch[1]}.${versionMatch[2]}` : versionMatch[1]) : '';
 
+    if (model?.includes('fable')) return { color: 'text-amber-400', bg: 'bg-amber-500/10', icon: '✦', name: `Fable ${version}`.trim() };
     if (model?.includes('opus')) return { color: 'text-violet-400', bg: 'bg-violet-500/10', icon: '◆', name: `Opus ${version}`.trim() };
     if (model?.includes('sonnet')) return { color: 'text-blue-400', bg: 'bg-blue-500/10', icon: '●', name: `Sonnet ${version}`.trim() };
     if (model?.includes('haiku')) return { color: 'text-emerald-400', bg: 'bg-emerald-500/10', icon: '▪', name: `Haiku ${version}`.trim() };

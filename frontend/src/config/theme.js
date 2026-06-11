@@ -76,6 +76,7 @@ export const darkTheme = {
   },
   // Model badge colors
   model: {
+    fable:   { bg: 'bg-amber-500/15',  text: 'text-amber-400' },
     opus:    { bg: 'bg-violet-500/15', text: 'text-violet-400' },
     sonnet:  { bg: 'bg-sky-500/15',    text: 'text-sky-400' },
     haiku:   { bg: 'bg-teal-500/15',   text: 'text-teal-400' },
@@ -272,6 +273,7 @@ export const lightTheme = {
   },
   // Model badge colors
   model: {
+    fable:   { bg: 'bg-amber-100',  text: 'text-amber-700' },
     opus:    { bg: 'bg-violet-100', text: 'text-violet-700' },
     sonnet:  { bg: 'bg-sky-100',    text: 'text-sky-700' },
     haiku:   { bg: 'bg-teal-100',   text: 'text-teal-700' },

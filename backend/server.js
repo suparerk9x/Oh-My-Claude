@@ -49,8 +49,8 @@ function safeReadLines(filePath, onLine) {
 
 // Model context window limits (tokens)
 const MODEL_CONTEXT_LIMITS = {
-  'opus': 1000000, 'sonnet': 1000000, 'haiku': 200000,
-  'claude-opus-4-8': 1000000, 'claude-opus-4-7': 1000000, 'claude-opus-4-6': 1000000, 'claude-sonnet-4-6': 1000000, 'claude-sonnet-4-5-20250929': 1000000, 'claude-haiku-4-5-20251001': 200000,
+  'fable': 1000000, 'opus': 1000000, 'sonnet': 1000000, 'haiku': 200000,
+  'claude-fable-5': 1000000, 'claude-opus-4-8': 1000000, 'claude-opus-4-7': 1000000, 'claude-opus-4-6': 1000000, 'claude-sonnet-4-6': 1000000, 'claude-sonnet-4-5-20250929': 1000000, 'claude-haiku-4-5-20251001': 200000,
 };
 const DEFAULT_CONTEXT_LIMIT = 1000000;
 
@@ -313,9 +313,10 @@ function normalizeModel(model) {
   // Strip a trailing window tag like "[1m]" -> "claude-opus-4-8[1m]" becomes "claude-opus-4-8"
   model = model.replace(/\[[^\]]*\]$/, '');
   const m = model.toLowerCase();
-  // Already has version digits like "claude-haiku-4-5-20251001"
-  if (/(?:opus|sonnet|haiku)-\d/.test(m)) return model;
+  // Already has version digits like "claude-haiku-4-5-20251001" or "claude-fable-5"
+  if (/(?:opus|sonnet|haiku|fable)-\d/.test(m)) return model;
   // Map short/partial names to full IDs
+  if (m.includes('fable')) return 'claude-fable-5';
   if (m.includes('opus')) return 'claude-opus-4-8';
   if (m.includes('sonnet')) return 'claude-sonnet-4-6';
   if (m.includes('haiku')) return 'claude-haiku-4-5-20251001';
@@ -1590,13 +1591,14 @@ async function getAgents() {
 
   // Update main agents' model based on actual usage
   if (primaryModel) {
-    const modelName = primaryModel === 'opus' ? 'claude-opus-4-8' :
+    const modelName = primaryModel === 'fable' ? 'claude-fable-5' :
+                      primaryModel === 'opus' ? 'claude-opus-4-8' :
                       primaryModel === 'sonnet' ? 'claude-sonnet-4-6' :
                       primaryModel === 'haiku' ? 'claude-haiku-4-5-20251001' : null;
     if (modelName) {
       for (const [id, agent] of agents.entries()) {
         // Skip overwrite if agent already has a versioned real id (preserves transcript-derived model)
-        if (agent.type === 'main' && !/(?:opus|sonnet|haiku)-\d/.test(agent.model)) {
+        if (agent.type === 'main' && !/(?:opus|sonnet|haiku|fable)-\d/.test(agent.model)) {
           agents.set(id, { ...agent, model: modelName });
         }
       }
@@ -1895,12 +1897,16 @@ app.post('/context-update', (req, res) => {
     statusLineContextCache.set(sessionId, { contextPct: usedPct, lastInputTokens, timestamp: Date.now() });
 
     // Find main agent with this sessionId and update context data
+    // The payload's model comes from the session's own transcript — authoritative, so it
+    // overrides the SessionStart default (hooks don't carry model, so creation guesses Opus)
+    const realModel = normalizeModel(req.body.model);
     for (const [id, agent] of agents.entries()) {
       if (agent.type === 'main' && agent.sessionId === sessionId) {
         agents.set(id, {
           ...agent,
           contextPct: usedPct,
           ...(lastInputTokens != null ? { lastInputTokens } : {}),
+          ...(realModel ? { model: realModel, modelVerified: true } : {}),
           lastSeen: new Date().toISOString()
         });
         break;

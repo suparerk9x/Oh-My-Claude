@@ -295,9 +295,10 @@ export default function MiniApp({ onSwitchToFull }) {
 
   // Model helper (theme-aware)
   const getModel = (model) => {
-    const v = model?.match(/(?:opus|sonnet|haiku)-(\d+)-(\d+)/i);
-    const ver = v ? ` ${v[1]}.${v[2]}` : '';
+    const v = model?.match(/(?:opus|sonnet|haiku|fable)-(\d+)(?:-(\d+))?/i);
+    const ver = v ? ` ${v[1]}${v[2] ? `.${v[2]}` : ''}` : '';
     const mc = colors.model;
+    if (model?.includes('fable')) return { name: `Fable${ver}`, base: 'Fable', short: 'Fa', color: (mc.fable || mc.opus).text, bg: (mc.fable || mc.opus).bg };
     if (model?.includes('opus')) return { name: `Opus${ver}`, base: 'Opus', short: 'Op', color: mc.opus.text, bg: mc.opus.bg };
     if (model?.includes('sonnet')) return { name: `Sonnet${ver}`, base: 'Sonnet', short: 'So', color: mc.sonnet.text, bg: mc.sonnet.bg };
     if (model?.includes('haiku')) return { name: `Haiku${ver}`, base: 'Haiku', short: 'Ha', color: mc.haiku.text, bg: mc.haiku.bg };

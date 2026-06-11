@@ -1009,6 +1009,9 @@ export default function App() {
           <div className="flex items-center flex-nowrap shrink-0 gap-1.5 text-[9px]">
             <span className={colors.text.muted}>Month</span>
             <span className={`font-mono font-bold ${colors.status.success}`}>${(tokens.month_cost || 0).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>
+            {(tokens.monthModelUsage?.Fable?.estimatedCost || 0) > 0 && (
+              <span className="flex items-center gap-0.5" title="Fable"><span className={colors.model?.fable?.text || 'text-amber-400'}>✦</span><span className={`font-mono ${colors.model?.fable?.text || 'text-amber-400'}`}>${(tokens.monthModelUsage?.Fable?.estimatedCost || 0).toLocaleString('en-US', {maximumFractionDigits: 0})}</span></span>
+            )}
             <span className="flex items-center gap-0.5" title="Opus"><span className={colors.model?.opus?.text || 'text-violet-400'}>◆</span><span className={`font-mono ${colors.model?.opus?.text || 'text-violet-400'}`}>${(tokens.monthModelUsage?.Opus?.estimatedCost || 0).toLocaleString('en-US', {maximumFractionDigits: 0})}</span></span>
             <span className="flex items-center gap-0.5" title="Sonnet"><span className={colors.model?.sonnet?.text || 'text-blue-400'}>●</span><span className={`font-mono ${colors.model?.sonnet?.text || 'text-blue-400'}`}>${(tokens.monthModelUsage?.Sonnet?.estimatedCost || 0).toLocaleString('en-US', {maximumFractionDigits: 0})}</span></span>
             <span className="flex items-center gap-0.5" title="Haiku"><span className={colors.model?.haiku?.text || 'text-emerald-400'}>▪</span><span className={`font-mono ${colors.model?.haiku?.text || 'text-emerald-400'}`}>${(tokens.monthModelUsage?.Haiku?.estimatedCost || 0).toLocaleString('en-US', {maximumFractionDigits: 0})}</span></span>

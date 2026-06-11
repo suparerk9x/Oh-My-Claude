@@ -38,6 +38,16 @@ describe('AgentCard', () => {
   });
 
   describe('Model badges', () => {
+    it('displays Fable 5 badge for claude-fable-5', () => {
+      render(<AgentCard agent={createAgent({ model: 'claude-fable-5' })} colors={defaultColors} />);
+      expect(screen.getByText(/Fable 5/)).toBeInTheDocument();
+    });
+
+    it('displays Fable 5 for the [1m] suffix variant', () => {
+      render(<AgentCard agent={createAgent({ model: 'claude-fable-5[1m]' })} colors={defaultColors} />);
+      expect(screen.getByText(/Fable 5/)).toBeInTheDocument();
+    });
+
     it('displays Opus badge for opus model', () => {
       render(<AgentCard agent={createAgent({ model: 'claude-opus-4-8' })} colors={defaultColors} />);
       expect(screen.getByText(/Opus/)).toBeInTheDocument();
