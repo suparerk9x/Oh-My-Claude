@@ -195,12 +195,51 @@ function calculateCost(model, input, output, cacheRead, cacheCreation, cacheCrea
   );
 }
 
+// Cache efficiency for one model's aggregate.
+//   cacheHitRate   = cacheRead / (cacheRead + cacheCreation + input) — share of prompt tokens
+//                    served cheaply from cache. High = good.
+//   wastedInputCost = the *premium* paid on fresh (uncached) input vs if those same tokens had
+//                    been cache reads (~10x cheaper). It's the money you'd save with perfect caching —
+//                    an upper bound, since the first request always has to be fresh. Big number ⇒
+//                    context kept getting re-sent fresh (idle > 5m cache-TTL expiry, or prefix churn).
+function cacheEfficiencyForModel(model, data) {
+  const pricing = PRICING[model] || PRICING.opus;
+  const cacheableTotal = data.cacheRead + data.cacheCreation + data.input;
+  const cacheHitRate = cacheableTotal > 0 ? data.cacheRead / cacheableTotal : 0;
+  const wastedInputCost = (data.input / 1000000) * (pricing.input - pricing.cacheRead);
+  return {
+    cacheHitRate: Math.round(cacheHitRate * 1000) / 1000,
+    wastedInputCost: Math.round(wastedInputCost * 100) / 100
+  };
+}
+
+// Overall cache efficiency across all models (for the single dashboard badge).
+function computeCacheEfficiency(byModel) {
+  let cacheRead = 0, cacheCreation = 0, input = 0, wastedCost = 0;
+  for (const [model, data] of Object.entries(byModel)) {
+    const pricing = PRICING[model] || PRICING.opus;
+    cacheRead += data.cacheRead;
+    cacheCreation += data.cacheCreation;
+    input += data.input;
+    wastedCost += (data.input / 1000000) * (pricing.input - pricing.cacheRead);
+  }
+  const cacheableTotal = cacheRead + cacheCreation + input;
+  const hitRate = cacheableTotal > 0 ? cacheRead / cacheableTotal : 0;
+  return {
+    hitRate: Math.round(hitRate * 1000) / 1000,
+    wastedCost: Math.round(wastedCost * 100) / 100,
+    cacheReadTokens: cacheRead,
+    freshInputTokens: input
+  };
+}
+
 // Build model usage display object
 function buildModelUsage(byModel) {
   const result = {};
   for (const [model, data] of Object.entries(byModel)) {
     const displayName = model.charAt(0).toUpperCase() + model.slice(1);
     const cost = calculateCost(model, data.input, data.output, data.cacheRead, data.cacheCreation, data.cacheCreation1h);
+    const { cacheHitRate, wastedInputCost } = cacheEfficiencyForModel(model, data);
     result[displayName] = {
       inputTokens: data.input,
       outputTokens: data.output,
@@ -208,7 +247,9 @@ function buildModelUsage(byModel) {
       cacheCreationTokens: data.cacheCreation,
       cacheCreation1hTokens: data.cacheCreation1h || 0,
       totalTokens: data.input + data.output,
-      estimatedCost: Math.round(cost * 100) / 100
+      estimatedCost: Math.round(cost * 100) / 100,
+      cacheHitRate,
+      wastedInputCost
     };
   }
   return result;
@@ -390,6 +431,10 @@ export async function readStatsCache() {
 
     modelUsage: weekModelUsage,
     totalCost: Math.round(week.cost * 100) / 100,
+
+    // Cache efficiency badge (this-week window). hitRate 0–1; wastedCost = $ premium paid on
+    // uncached fresh input vs cache reads — see cacheEfficiencyForModel().
+    cacheEfficiency: computeCacheEfficiency(week.byModel),
 
     last_updated: new Date().toISOString()
   };

@@ -12,6 +12,14 @@ export function TokenStats({ tokens = {}, colors = {} }) {
   // Calculate total weekly cost
   const totalWeeklyCost = Object.values(modelUsage).reduce((sum, m) => sum + (m.estimatedCost || 0), 0);
 
+  // Cache-efficiency badge: hit rate + $ wasted on uncached fresh input (this week).
+  const cacheEff = tokens.cacheEfficiency;
+  const hasCacheData = cacheEff && (cacheEff.cacheReadTokens > 0 || cacheEff.freshInputTokens > 0);
+  const hr = cacheEff?.hitRate ?? 0;
+  const cacheBadgeStyle = hr >= 0.8 ? 'text-emerald-400 bg-emerald-500/10'
+    : hr >= 0.5 ? 'text-amber-400 bg-amber-500/10'
+    : 'text-rose-400 bg-rose-500/10';
+
   // Theme-aware model colors
   const getModelStyle = (model) => {
     if (model === 'Opus')   return { icon: '◆', color: mc.opus?.text   || 'text-violet-400',  bg: mc.opus?.bg   || 'bg-violet-500/10' };
@@ -24,7 +32,17 @@ export function TokenStats({ tokens = {}, colors = {} }) {
       {/* Header */}
       <div className="flex items-center justify-between py-1">
         <span className={`text-[10px] ${textMuted} uppercase tracking-wider font-medium`}>This Week</span>
-        <span className={`text-[11px] font-mono font-bold ${colors?.status?.success || 'text-emerald-400'}`}>${totalWeeklyCost.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>
+        <div className="flex items-center gap-1.5">
+          {hasCacheData && (
+            <span
+              title={`Cache hit ${(hr * 100).toFixed(0)}% · ~$${cacheEff.wastedCost.toFixed(2)} extra paid on uncached input this week (lower cache hit = context re-sent fresh: idle >5m or prefix churn)`}
+              className={`text-[9px] font-mono font-bold px-1 py-0.5 rounded ${cacheBadgeStyle}`}
+            >
+              ⚡{(hr * 100).toFixed(0)}%{cacheEff.wastedCost >= 0.01 ? ` ·$${cacheEff.wastedCost.toFixed(2)}` : ''}
+            </span>
+          )}
+          <span className={`text-[11px] font-mono font-bold ${colors?.status?.success || 'text-emerald-400'}`}>${totalWeeklyCost.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>
+        </div>
       </div>
 
       {/* Model Details - Always Visible */}
@@ -69,8 +87,16 @@ TokenStats.propTypes = {
       outputTokens: PropTypes.number,
       totalTokens: PropTypes.number,
       cacheReadTokens: PropTypes.number,
-      estimatedCost: PropTypes.number
-    }))
+      estimatedCost: PropTypes.number,
+      cacheHitRate: PropTypes.number,
+      wastedInputCost: PropTypes.number
+    })),
+    cacheEfficiency: PropTypes.shape({
+      hitRate: PropTypes.number,
+      wastedCost: PropTypes.number,
+      cacheReadTokens: PropTypes.number,
+      freshInputTokens: PropTypes.number
+    })
   }),
   colors: PropTypes.shape({
     text: PropTypes.shape({
